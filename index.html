@@ -317,6 +317,10 @@ const MARKET_REFRESH_INTERVAL = 60 * 60 * 1000; // 1 hour in ms
 // DUNGEON STATE
 let dungeonState = { active: false, stage: 0, hp: 0, maxHp: 0, rewards: [], log: [], inBattle: false, currentEnemy: null };
 
+// Save/load snapshots so compact saves can restore into a clean baseline
+const INITIAL_GAME_STATE_SNAPSHOT = JSON.parse(JSON.stringify(gameState));
+const INITIAL_DUNGEON_STATE_SNAPSHOT = JSON.parse(JSON.stringify(dungeonState));
+
 // PVP STATE
 let pvpEnemies = [];
 let pvpActive = false;
@@ -4360,6 +4364,616 @@ function decryptData(encryptedBase64) {
     }
 }
 
+// COMPACT SAVE UTILITIES
+const SAVE_SCHEMA_VERSION = 2;
+const SAVE_ITEM_NAME_PATTERN = /\(\d+-\d+\)( \d+)?$/;
+const SAVE_PLAYER_KEY_ALIASES = {
+    name: 'n', hp: 'h', maxHp: 'H', mp: 'm', maxMp: 'M', atk: 'a', def: 'd', level: 'l',
+    xp: 'x', xpToNext: 'X', gold: 'g', location: 'o', luck: 'u', crit: 'c', critDmg: 'cd',
+    dodge: 'dg', lifesteal: 'ls', dmgReduction: 'dr', armorPen: 'ap', magicPen: 'mp',
+    attackSpeed: 'as', cdr: 'cr', moveSpeed: 'ms', healthRegen: 'hr', manaRegen: 'mr',
+    magicFind: 'mf', expBonus: 'xb', goldFind: 'gf', block: 'bl', reflect: 'rf',
+    thorns: 'th', eleDmg: 'ed', stunChance: 'sc', baseAtk: 'ba', baseDef: 'bd',
+    baseMaxHp: 'bH', baseMaxMp: 'bM', baseLuck: 'bu', baseCrit: 'bc', baseCritDmg: 'bcd',
+    baseDodge: 'bdg', baseLifesteal: 'bls', baseDmgReduction: 'bdr', baseArmorPen: 'bap',
+    baseMagicPen: 'bmp', baseAttackSpeed: 'bas', baseCdr: 'bcr', baseMoveSpeed: 'bms'
+};
+const SAVE_ITEM_KEY_ALIASES = {
+    name: 'n', type: 't', equipSlot: 's', rarity: 'r', levelReq: 'l', qty: 'q', atk: 'a',
+    def: 'd', crit: 'c', luck: 'u', critDmg: 'cd', atkPercent: 'ap', defPercent: 'dp',
+    hp: 'h', mp: 'm', maxHp: 'H', maxMp: 'M', effect: 'e', value: 'v', duration: 'du',
+    specialAbility: 'sa', uberUnique: 'uu', mergeLevel: 'ml', canMerge: 'cm',
+    weapon_luck: 'wl', onHitDebuff: 'oh', dmgReduction: 'dr', dodge: 'dg',
+    lifesteal: 'ls', manaRegen: 'mr', healthRegen: 'hr', magicFind: 'mf', expBonus: 'xb',
+    goldFind: 'gf', armorPen: 'arp', magicPen: 'mpn', block: 'bl', reflect: 'rf',
+    thorns: 'th', moveSpeed: 'ms', eleDmg: 'ed', stunChance: 'sc', cdr: 'cr',
+    attackSpeed: 'as'
+};
+const SAVE_EQUIPMENT_KEY_ALIASES = {
+    weapon: 'w', armor: 'a', helmet: 'h', shield: 's', ring: 'r', amulet: 'm',
+    boots: 'b', gloves: 'g', cape: 'c', weapon_ml: 'wml', weapon_luck: 'wl',
+    armor_ml: 'aml', helmet_ml: 'hml', shield_ml: 'sml', ring_ml: 'rml',
+    amulet_ml: 'mml', boots_ml: 'bml', gloves_ml: 'gml', cape_ml: 'cml'
+};
+const SAVE_EQUIPMENT_SLOT_KEYS = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
+const SAVE_ITEM_BASE_EXTRAS = {
+    'Blessing Oil': BLESSING_OIL,
+    'World Boss Ticket': WORLD_BOSS_TICKET
+};
+
+function invertAliasMap(map) {
+    return Object.fromEntries(Object.entries(map).map(([key, value]) => [value, key]));
+}
+
+const SAVE_PLAYER_KEY_FROM_ALIAS = invertAliasMap(SAVE_PLAYER_KEY_ALIASES);
+const SAVE_ITEM_KEY_FROM_ALIAS = invertAliasMap(SAVE_ITEM_KEY_ALIASES);
+const SAVE_EQUIPMENT_KEY_FROM_ALIAS = invertAliasMap(SAVE_EQUIPMENT_KEY_ALIASES);
+
+function cloneData(value) {
+    if (value === undefined) return undefined;
+    return JSON.parse(JSON.stringify(value));
+}
+
+function valuesEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function isGeneratedCatalogItemName(name) {
+    return typeof name === 'string' && SAVE_ITEM_NAME_PATTERN.test(name);
+}
+
+function buildStaticSaveItemCatalog() {
+    const entries = new Map();
+    const addEntry = (name, item) => {
+        if (!name || !item || entries.has(name) || isGeneratedCatalogItemName(name)) return;
+        entries.set(name, item);
+    };
+
+    Object.entries(itemPool || {}).forEach(([name, item]) => addEntry(name, item));
+    Object.entries(scrollPool || {}).forEach(([name, item]) => addEntry(name, item));
+    Object.entries(SAVE_ITEM_BASE_EXTRAS).forEach(([name, item]) => addEntry(name, item));
+
+    return Array.from(entries.keys()).sort((a, b) => a.localeCompare(b));
+}
+
+const SAVE_ITEM_CATALOG = buildStaticSaveItemCatalog();
+const SAVE_ITEM_ID_TO_NAME = Object.create(null);
+const SAVE_ITEM_NAME_TO_ID = Object.create(null);
+SAVE_ITEM_CATALOG.forEach((name, index) => {
+    const id = index + 1;
+    SAVE_ITEM_ID_TO_NAME[id] = name;
+    SAVE_ITEM_NAME_TO_ID[name] = id;
+});
+
+function getCanonicalItemByName(name) {
+    if (!name) return null;
+    return itemPool[name] || scrollPool[name] || SAVE_ITEM_BASE_EXTRAS[name] || null;
+}
+
+function getCatalogBaseForItem(item) {
+    if (!item || !item.name) return null;
+    const baseName = item.name.replace(/ \+\d+$/, '');
+    const id = SAVE_ITEM_NAME_TO_ID[baseName];
+    if (!id) return null;
+    const base = getCanonicalItemByName(baseName);
+    if (!base) return null;
+    return { id, baseName, base };
+}
+
+function encodeAliasedDiffObject(source, base, aliases, options = {}) {
+    const out = {};
+    const omitKeys = new Set(options.omitKeys || []);
+    const keys = new Set([
+        ...Object.keys(base || {}),
+        ...Object.keys(source || {})
+    ]);
+
+    keys.forEach(key => {
+        if (omitKeys.has(key)) return;
+        const value = source ? source[key] : undefined;
+        if (value === undefined || typeof value === 'function') return;
+        if (key === 'qty' && (value === undefined || value === 1) && (!base || base[key] === undefined)) return;
+
+        const baseValue = base ? base[key] : undefined;
+        const normalizedValue = key === 'qty' ? (value ?? 1) : value;
+        const normalizedBase = key === 'qty' ? (baseValue ?? 1) : baseValue;
+        if (base && valuesEqual(normalizedValue, normalizedBase)) return;
+
+        const alias = aliases[key] || key;
+        out[alias] = cloneData(value);
+    });
+
+    return out;
+}
+
+function decodeAliasedObject(source, reverseAliases) {
+    const out = {};
+    Object.entries(source || {}).forEach(([key, value]) => {
+        out[reverseAliases[key] || key] = cloneData(value);
+    });
+    return out;
+}
+
+function getExpectedMergedItemName(baseName, mergeLevel) {
+    return mergeLevel > 0 ? `${baseName} +${mergeLevel}` : baseName;
+}
+
+function humanizeSpecialAbility(ability) {
+    const labels = {
+        half_current_hp: 'Deals 50% of enemy current HP as bonus damage',
+        status_immunity: 'Immune to negative status effects',
+        encounter_multiplier_escape: 'Wander counts as extra encounters and escape keeps rewards'
+    };
+    return labels[ability] || String(ability || '').replace(/_/g, ' ');
+}
+
+function buildFallbackItemDescription(item) {
+    if (!item) return '';
+
+    const statLabels = [
+        ['atk', 'ATK'], ['def', 'DEF'], ['crit', '% CRIT'], ['luck', 'LUCK'], ['critDmg', '% Crit Damage'],
+        ['atkPercent', '% ATK'], ['defPercent', '% DEF'], ['hp', 'HP'], ['mp', 'MP'], ['maxHp', 'Max HP'],
+        ['maxMp', 'Max MP'], ['dodge', '% Dodge'], ['lifesteal', '% Lifesteal'], ['dmgReduction', '% Damage Reduction'],
+        ['armorPen', 'Armor Pen'], ['magicPen', 'Magic Pen'], ['attackSpeed', 'Attack Speed'], ['cdr', '% CDR'],
+        ['moveSpeed', 'Move Speed'], ['healthRegen', 'Health Regen'], ['manaRegen', 'Mana Regen'],
+        ['magicFind', 'Magic Find'], ['expBonus', '% EXP'], ['goldFind', '% Gold'], ['block', '% Block'],
+        ['reflect', 'Reflect Damage'], ['thorns', 'Thorns'], ['eleDmg', 'Elemental Damage'], ['stunChance', '% Stun']
+    ];
+
+    if (item.type === 'scroll' || item.type === 'consumable') {
+        const effectParts = [];
+        if (item.effect) effectParts.push(String(item.effect).replace(/_/g, ' '));
+        if (item.value !== undefined) effectParts.push(String(item.value));
+        if (item.duration !== undefined) effectParts.push(`${item.duration} turns`);
+        if (effectParts.length) return effectParts.join(' | ');
+    }
+
+    const parts = [];
+    statLabels.forEach(([key, label]) => {
+        if (typeof item[key] === 'number' && item[key] !== 0) {
+            const prefix = label.startsWith('%') ? '' : '+';
+            parts.push(`${prefix}${item[key]} ${label}`.trim());
+        }
+    });
+
+    if (item.specialAbility) {
+        parts.push(`Special: ${humanizeSpecialAbility(item.specialAbility)}`);
+    }
+
+    let desc = parts.join(', ');
+    if (item.mergeLevel > 0) {
+        const totalPercent = Math.round((Math.pow(1.5, item.mergeLevel) - 1) * 100);
+        desc += `${desc ? '\n' : ''}✨ Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+    }
+
+    return desc;
+}
+
+function ensureItemDescription(item) {
+    if (!item) return item;
+    if (item.desc) return item;
+
+    const baseName = item.name ? item.name.replace(/ \+\d+$/, '') : null;
+    const base = getCanonicalItemByName(baseName);
+    if (base && base.desc) {
+        item.desc = base.desc.split('\n✨')[0];
+        if (item.mergeLevel > 0) {
+            const totalPercent = Math.round((Math.pow(1.5, item.mergeLevel) - 1) * 100);
+            item.desc += `\n✨ Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+        }
+        return item;
+    }
+
+    item.desc = buildFallbackItemDescription(item);
+    return item;
+}
+
+function encodeItemForSave(item) {
+    if (!item) return 0;
+
+    const catalogBase = getCatalogBaseForItem(item);
+    if (catalogBase) {
+        const { id, baseName, base } = catalogBase;
+        const overrides = encodeAliasedDiffObject(item, base, SAVE_ITEM_KEY_ALIASES, {
+            omitKeys: ['desc', 'equipped', 'equippedAt']
+        });
+
+        const mergeLevel = item.mergeLevel || 0;
+        const expectedName = getExpectedMergedItemName(baseName, mergeLevel);
+        if (item.name && item.name !== expectedName && item.name !== baseName) {
+            overrides[SAVE_ITEM_KEY_ALIASES.name] = item.name;
+        }
+
+        if (Object.keys(overrides).length === 0) return id;
+        return [id, overrides];
+    }
+
+    return ['c', encodeAliasedDiffObject(item, null, SAVE_ITEM_KEY_ALIASES, {
+        omitKeys: ['desc', 'equipped', 'equippedAt']
+    })];
+}
+
+function decodeItemForSave(entry) {
+    if (!entry) return null;
+
+    let item;
+    if (typeof entry === 'number') {
+        const baseName = SAVE_ITEM_ID_TO_NAME[entry];
+        const base = getCanonicalItemByName(baseName);
+        if (!base) return null;
+        item = cloneData(base);
+    } else if (Array.isArray(entry) && entry[0] === 'c') {
+        item = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
+    } else if (Array.isArray(entry)) {
+        const baseName = SAVE_ITEM_ID_TO_NAME[entry[0]];
+        const base = getCanonicalItemByName(baseName);
+        if (!base) return null;
+        const overrides = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
+        item = { ...cloneData(base), ...overrides };
+        if (item.mergeLevel > 0 && !overrides.name) {
+            item.name = getExpectedMergedItemName(baseName, item.mergeLevel);
+        }
+    } else {
+        return null;
+    }
+
+    if (item.qty === 1) delete item.qty;
+    return ensureItemDescription(item);
+}
+
+function encodeEquipmentForSave(equipment) {
+    const encoded = {};
+    Object.entries(equipment || {}).forEach(([key, value]) => {
+        const alias = SAVE_EQUIPMENT_KEY_ALIASES[key] || key;
+        if (SAVE_EQUIPMENT_SLOT_KEYS.includes(key)) {
+            if (!value) return;
+            encoded[alias] = encodeItemForSave(value);
+            return;
+        }
+        if (value === undefined || value === null || value === 0) return;
+        encoded[alias] = value;
+    });
+    return encoded;
+}
+
+function decodeEquipmentFromSave(encoded) {
+    const equipment = cloneData(INITIAL_GAME_STATE_SNAPSHOT.equipment);
+    Object.entries(encoded || {}).forEach(([alias, value]) => {
+        const key = SAVE_EQUIPMENT_KEY_FROM_ALIAS[alias] || alias;
+        if (SAVE_EQUIPMENT_SLOT_KEYS.includes(key)) {
+            equipment[key] = decodeItemForSave(value);
+        } else {
+            equipment[key] = cloneData(value);
+        }
+    });
+    return equipment;
+}
+
+function encodeActiveQuestsForSave() {
+    return (gameState.quests || []).map((quest, idx) => [
+        quest.id,
+        (gameState.questProgress && gameState.questProgress[idx]) || quest.progress || 0
+    ]);
+}
+
+function decodeActiveQuestsFromSave(entries) {
+    const quests = [];
+    const questProgress = {};
+    (entries || []).forEach((entry, idx) => {
+        const [questId, progress = 0] = entry || [];
+        const def = questDefs.find(q => q.id === questId);
+        if (!def) return;
+        quests.push({ ...def, progress });
+        if (progress > 0) questProgress[quests.length - 1] = progress;
+    });
+    return { quests, questProgress };
+}
+
+function findGuildQuestTemplate(name, target) {
+    for (const rarity of Object.keys(guildQuestTemplates || {})) {
+        const template = (guildQuestTemplates[rarity] || []).find(q => q.name === name && q.target === target);
+        if (template) return { ...template, rarity };
+    }
+    return null;
+}
+
+function encodeGuildQuestsForSave() {
+    return (gameState.guildQuests || []).map((quest, idx) => [
+        quest.name,
+        quest.target,
+        quest.count,
+        quest.reward?.xp || 0,
+        quest.reward?.gold || 0,
+        quest.reward?.soulGem ? 1 : 0,
+        quest.rarity || '',
+        quest.accepted ? 1 : 0,
+        (gameState.guildQuestProgress && gameState.guildQuestProgress[idx]) || quest.progress || 0
+    ]);
+}
+
+function decodeGuildQuestsFromSave(entries) {
+    const quests = [];
+    const guildQuestProgress = {};
+
+    (entries || []).forEach((entry, idx) => {
+        const [name, target, count, xp, gold, soulGem, rarity, accepted, progress = 0] = entry || [];
+        if (!name || !target || !count) return;
+        const template = findGuildQuestTemplate(name, target);
+        const desc = template
+            ? template.desc.replace('{count}', count)
+            : `Defeat ${count} ${String(target).replace(/_/g, ' ')}`;
+
+        quests.push({
+            id: `guild_restore_${idx}_${target}`,
+            name,
+            desc,
+            target,
+            count,
+            reward: { xp: xp || 0, gold: gold || 0, soulGem: !!soulGem },
+            rarity: rarity || (template ? template.rarity : 'common'),
+            accepted: !!accepted,
+            progress
+        });
+
+        if (progress > 0) guildQuestProgress[quests.length - 1] = progress;
+    });
+
+    return { quests, guildQuestProgress };
+}
+
+function ensurePlayerBaseStats(player) {
+    if (!player) return;
+    const level = Math.max(1, player.level || 1);
+    const computedMaxHp = Math.floor(100 * Math.pow(1.10, level - 1));
+    const computedMaxMp = Math.floor(50 * Math.pow(1.10, level - 1));
+    const computedAtk = 10 + ((level - 1) * 3);
+    const computedDef = 5 + ((level - 1) * 3);
+
+    if (player.baseAtk === undefined) player.baseAtk = computedAtk;
+    if (player.baseDef === undefined) player.baseDef = computedDef;
+    if (player.baseMaxHp === undefined) player.baseMaxHp = computedMaxHp;
+    if (player.baseMaxMp === undefined) player.baseMaxMp = computedMaxMp;
+    if (player.baseLuck === undefined) player.baseLuck = 0;
+    if (player.baseCrit === undefined) player.baseCrit = 0;
+    if (player.baseCritDmg === undefined) player.baseCritDmg = 50;
+    if (player.baseDodge === undefined) player.baseDodge = 0;
+    if (player.baseLifesteal === undefined) player.baseLifesteal = 0;
+    if (player.baseDmgReduction === undefined) player.baseDmgReduction = 0;
+    if (player.baseArmorPen === undefined) player.baseArmorPen = 0;
+    if (player.baseMagicPen === undefined) player.baseMagicPen = 0;
+    if (player.baseAttackSpeed === undefined) player.baseAttackSpeed = 0;
+    if (player.baseCdr === undefined) player.baseCdr = 0;
+    if (player.baseMoveSpeed === undefined) player.baseMoveSpeed = 0;
+}
+
+function sanitizeLoadedStateData(state) {
+    const allowedLuckTypes = ['weapon', 'charm'];
+    ensurePlayerBaseStats(state.player);
+
+    if (Array.isArray(state.inventory)) {
+        state.inventory = state.inventory
+            .filter(Boolean)
+            .map(item => {
+                if (item.luck && !allowedLuckTypes.includes(item.type)) delete item.luck;
+                const resolved = resolveEquipSlot(item);
+                if (resolved && !item.equipSlot) item.equipSlot = resolved;
+                return ensureItemDescription(item);
+            });
+    }
+
+    Object.keys(state.equipment || {}).forEach(slot => {
+        const eq = state.equipment[slot];
+        if (!eq || !SAVE_EQUIPMENT_SLOT_KEYS.includes(slot)) return;
+        if (eq.luck && !allowedLuckTypes.includes(eq.type)) delete eq.luck;
+        if (!eq.equipSlot) eq.equipSlot = slot;
+        ensureItemDescription(eq);
+    });
+
+    if (Array.isArray(state.equippedScrolls)) {
+        state.equippedScrolls = state.equippedScrolls.map(scroll => {
+            if (!scroll) return null;
+            if (!scroll.type) scroll.type = 'scroll';
+            return ensureItemDescription(scroll);
+        });
+    }
+}
+
+function pruneTransientState(state) {
+    state.inBattle = false;
+    state.currentEnemy = null;
+    state.battleLog = [];
+    state.itemLog = [];
+    state.activeScrollEffects = [];
+    state.activeStatusEffects = [];
+    state.dungeonActive = false;
+    state.dungeonHP = 0;
+    state.dungeonMaxHP = 0;
+    state.bossActive = false;
+    state.currentBoss = null;
+    state.worldBossActive = false;
+    state.currentWorldBoss = null;
+    state.worldBossDamage = {};
+    state.worldBossTotalDamage = 0;
+    state.worldBossSpawnTime = 0;
+    state.auctionItems = [];
+    state.chatMessages = [];
+    state.fakePlayers = [];
+    state.wandering = cloneData(INITIAL_GAME_STATE_SNAPSHOT.wandering);
+}
+
+function buildCompactSaveData() {
+    const save = {
+        v: SAVE_SCHEMA_VERSION,
+        p: encodeAliasedDiffObject(gameState.player, INITIAL_GAME_STATE_SNAPSHOT.player, SAVE_PLAYER_KEY_ALIASES),
+        i: (gameState.inventory || []).map(encodeItemForSave)
+    };
+
+    const equipment = encodeEquipmentForSave(gameState.equipment);
+    if (Object.keys(equipment).length) save.e = equipment;
+
+    const quests = encodeActiveQuestsForSave();
+    if (quests.length) save.q = quests;
+    if (gameState.completedQuests && gameState.completedQuests.length) save.cq = gameState.completedQuests.slice();
+    if (gameState.jobCooldown) save.jc = gameState.jobCooldown;
+    if (gameState.daysPassed) save.dp = gameState.daysPassed;
+    if (gameState.wanderMode) save.wm = 1;
+    if (gameState.jobsCompleted) save.jb = gameState.jobsCompleted;
+    if (gameState.soulGems) save.sg = gameState.soulGems;
+    if ((gameState.premiumMultiplier || 1) !== 1 || gameState.premiumActionsUsed) {
+        save.pm = [gameState.premiumMultiplier || 1, gameState.premiumActionsUsed || 0];
+    }
+    if (
+        gameState.jobPoints !== INITIAL_GAME_STATE_SNAPSHOT.jobPoints ||
+        gameState.maxJobPoints !== INITIAL_GAME_STATE_SNAPSHOT.maxJobPoints ||
+        gameState.lastJobPointRegen !== INITIAL_GAME_STATE_SNAPSHOT.lastJobPointRegen
+    ) {
+        save.jp = [gameState.jobPoints || 0, gameState.maxJobPoints || 0, gameState.lastJobPointRegen || Date.now()];
+    }
+    if (
+        gameState.scrollSlots !== INITIAL_GAME_STATE_SNAPSHOT.scrollSlots ||
+        gameState.unlockedScrollSlots !== INITIAL_GAME_STATE_SNAPSHOT.unlockedScrollSlots
+    ) {
+        save.ss = [gameState.scrollSlots || 5, gameState.unlockedScrollSlots || 1];
+    }
+
+    const equippedScrolls = (gameState.equippedScrolls || []).map(scroll => scroll ? encodeItemForSave(scroll) : 0);
+    if (equippedScrolls.some(Boolean)) save.es = equippedScrolls;
+    if (gameState.lastRegen !== INITIAL_GAME_STATE_SNAPSHOT.lastRegen) save.lr = gameState.lastRegen || Date.now();
+    if (gameState.highestDungeonStage) save.hd = gameState.highestDungeonStage;
+    if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
+
+    const guildQuests = encodeGuildQuestsForSave();
+    if (guildQuests.length) save.gq = guildQuests;
+    if (gameState.lastGuildQuestRefresh) save.lgr = gameState.lastGuildQuestRefresh;
+
+    if (
+        gameState.forceRefreshCost !== INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCost ||
+        gameState.forceRefreshCount !== INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCount ||
+        gameState.marketForceRefreshCost !== INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCost ||
+        gameState.marketForceRefreshCount !== INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCount
+    ) {
+        save.frc = [
+            gameState.forceRefreshCost || 100,
+            gameState.forceRefreshCount || 0,
+            gameState.marketForceRefreshCost || 150,
+            gameState.marketForceRefreshCount || 0
+        ];
+    }
+
+    return save;
+}
+
+function decodeCompactSaveData(data) {
+    const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+    hydrated.player = {
+        ...hydrated.player,
+        ...decodeAliasedObject(data.p || {}, SAVE_PLAYER_KEY_FROM_ALIAS)
+    };
+    hydrated.equipment = decodeEquipmentFromSave(data.e || {});
+    hydrated.inventory = Array.isArray(data.i) ? data.i.map(decodeItemForSave).filter(Boolean) : cloneData(hydrated.inventory);
+
+    const activeQuestState = decodeActiveQuestsFromSave(data.q || []);
+    hydrated.quests = activeQuestState.quests;
+    hydrated.questProgress = activeQuestState.questProgress;
+    hydrated.completedQuests = Array.isArray(data.cq) ? data.cq.slice() : [];
+
+    if (data.jc !== undefined) hydrated.jobCooldown = data.jc;
+    if (data.dp !== undefined) hydrated.daysPassed = data.dp;
+    if (data.wm !== undefined) hydrated.wanderMode = !!data.wm;
+    if (data.jb !== undefined) hydrated.jobsCompleted = data.jb;
+    if (data.sg !== undefined) hydrated.soulGems = data.sg;
+    if (Array.isArray(data.pm)) {
+        hydrated.premiumMultiplier = data.pm[0] ?? 1;
+        hydrated.premiumActionsUsed = data.pm[1] ?? 0;
+    }
+    if (Array.isArray(data.jp)) {
+        hydrated.jobPoints = data.jp[0] ?? hydrated.jobPoints;
+        hydrated.maxJobPoints = data.jp[1] ?? hydrated.maxJobPoints;
+        hydrated.lastJobPointRegen = data.jp[2] ?? Date.now();
+    }
+    if (Array.isArray(data.ss)) {
+        hydrated.scrollSlots = data.ss[0] ?? hydrated.scrollSlots;
+        hydrated.unlockedScrollSlots = data.ss[1] ?? hydrated.unlockedScrollSlots;
+    }
+    if (Array.isArray(data.es)) {
+        hydrated.equippedScrolls = data.es.map(entry => entry ? decodeItemForSave(entry) : null);
+    }
+    if (data.lr !== undefined) hydrated.lastRegen = data.lr;
+    if (data.hd !== undefined) hydrated.highestDungeonStage = data.hd;
+    if (data.wbn !== undefined) hydrated.worldBossNextSpawn = data.wbn;
+
+    const guildQuestState = decodeGuildQuestsFromSave(data.gq || []);
+    hydrated.guildQuests = guildQuestState.quests;
+    hydrated.guildQuestProgress = guildQuestState.guildQuestProgress;
+    if (data.lgr !== undefined) hydrated.lastGuildQuestRefresh = data.lgr;
+
+    if (Array.isArray(data.frc)) {
+        hydrated.forceRefreshCost = data.frc[0] ?? hydrated.forceRefreshCost;
+        hydrated.forceRefreshCount = data.frc[1] ?? hydrated.forceRefreshCount;
+        hydrated.marketForceRefreshCost = data.frc[2] ?? hydrated.marketForceRefreshCost;
+        hydrated.marketForceRefreshCount = data.frc[3] ?? hydrated.marketForceRefreshCount;
+    }
+
+    pruneTransientState(hydrated);
+    sanitizeLoadedStateData(hydrated);
+    return hydrated;
+}
+
+function decodeLegacySaveData(data) {
+    const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+
+    Object.keys(hydrated).forEach(key => {
+        if (data[key] !== undefined) {
+            hydrated[key] = cloneData(data[key]);
+        }
+    });
+
+    hydrated.player = { ...cloneData(INITIAL_GAME_STATE_SNAPSHOT.player), ...(cloneData(data.player) || {}) };
+    hydrated.equipment = { ...cloneData(INITIAL_GAME_STATE_SNAPSHOT.equipment), ...(cloneData(data.equipment) || {}) };
+    hydrated.inventory = Array.isArray(data.inventory) ? cloneData(data.inventory) : cloneData(hydrated.inventory);
+    hydrated.equippedScrolls = Array.isArray(data.equippedScrolls)
+        ? cloneData(data.equippedScrolls)
+        : cloneData(hydrated.equippedScrolls);
+    hydrated.quests = Array.isArray(data.quests) ? cloneData(data.quests) : [];
+    hydrated.completedQuests = Array.isArray(data.completedQuests) ? cloneData(data.completedQuests) : [];
+    hydrated.questProgress = cloneData(data.questProgress || {});
+    hydrated.guildQuests = Array.isArray(data.guildQuests) ? cloneData(data.guildQuests) : [];
+    hydrated.guildQuestProgress = cloneData(data.guildQuestProgress || {});
+
+    pruneTransientState(hydrated);
+    sanitizeLoadedStateData(hydrated);
+    return hydrated;
+}
+
+function applyHydratedGameState(state) {
+    const cleaned = cloneData(state);
+    Object.keys(gameState).forEach(key => {
+        gameState[key] = cleaned[key];
+    });
+    Object.keys(dungeonState).forEach(key => {
+        dungeonState[key] = cloneData(INITIAL_DUNGEON_STATE_SNAPSHOT[key]);
+    });
+
+    recalculateAllPlayerStats();
+}
+
+function restoreGameStateFromSaveData(rawData) {
+    let parsed = rawData;
+    if (typeof rawData === 'string') {
+        parsed = JSON.parse(rawData);
+    }
+    if (!parsed || typeof parsed !== 'object') return false;
+
+    const hydrated = parsed.v === SAVE_SCHEMA_VERSION
+        ? decodeCompactSaveData(parsed)
+        : decodeLegacySaveData(parsed);
+
+    if (!hydrated.player || !hydrated.inventory || !hydrated.equipment) return false;
+
+    applyHydratedGameState(hydrated);
+    return true;
+}
+
 // SAVE RENDER
 function renderSave() {
     const container = document.getElementById('save-screen-content');
@@ -4381,7 +4995,7 @@ function renderSave() {
 
 function exportSavefile() {
     try {
-        const encrypted = encryptData(gameState);
+        const encrypted = encryptData(buildCompactSaveData());
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `realm-of-shadows-save-${timestamp}.ros`;
         
@@ -4419,14 +5033,16 @@ function importSavefile(event) {
             }
             
             // Validate essential game state properties
-            if (!decrypted.player || !decrypted.inventory || !decrypted.equipment) {
+            if ((!decrypted.v && (!decrypted.player || !decrypted.inventory || !decrypted.equipment)) || (decrypted.v && typeof decrypted !== 'object')) {
                 addBattleMsg('Invalid savefile format!', 'damage');
                 return;
             }
             
             // Confirm before overwriting
             if (confirm('This will overwrite your current progress. Continue?')) {
-                Object.assign(gameState, decrypted);
+                if (!restoreGameStateFromSaveData(decrypted)) {
+                    throw new Error('Unable to restore imported save');
+                }
                 updateStats();
                 showScreen('travel');
                 updateSidePanels();
@@ -4446,7 +5062,7 @@ function importSavefile(event) {
 
 function saveGame() {
     try {
-        localStorage.setItem('realmOfShadows', JSON.stringify(gameState));
+        localStorage.setItem('realmOfShadows', JSON.stringify(buildCompactSaveData()));
         addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
     } catch (e) {
         console.log('Save failed', e);
@@ -4458,28 +5074,12 @@ function loadGame() {
     try {
         const saved = localStorage.getItem('realmOfShadows');
         if (saved) {
-            const parsed = JSON.parse(saved);
-            Object.assign(gameState, parsed);
-            
-            // Sanitize loaded inventory and equipment
-            const allowedLuckTypes = ['weapon', 'charm'];
-            if (Array.isArray(gameState.inventory)) {
-                gameState.inventory.forEach(it => {
-                    if (!it) return;
-                    if (it.luck && !allowedLuckTypes.includes(it.type)) delete it.luck;
-                    const res = resolveEquipSlot(it);
-                    if (res && !it.equipSlot) it.equipSlot = res;
-                });
+            if (!restoreGameStateFromSaveData(saved)) {
+                throw new Error('Unable to restore local save');
             }
-            Object.keys(gameState.equipment || {}).forEach(slot => {
-                const eq = gameState.equipment[slot];
-                if (!eq) return;
-                if (eq.luck && !allowedLuckTypes.includes(eq.type)) delete eq.luck;
-                if (!eq.equipSlot) eq.equipSlot = slot;
-            });
             
             updateStats();
-            renderSave();
+            showScreen('travel');
             updateSidePanels();
             addChatMessage('SYSTEM', '✅ Game loaded successfully!', true);
         } else {
@@ -4590,25 +5190,7 @@ function init() {
     const saved = localStorage.getItem('realmOfShadows');
     if (saved) {
         try {
-            const parsed = JSON.parse(saved);
-            Object.assign(gameState, parsed);
-            // Sanitize loaded inventory and equipment: remove misplaced luck and ensure equipSlot is resolved
-            const allowedLuckTypes = ['weapon', 'charm'];
-            if (Array.isArray(gameState.inventory)) {
-                gameState.inventory.forEach(it => {
-                    if (!it) return;
-                    if (it.luck && !allowedLuckTypes.includes(it.type)) delete it.luck;
-                    const res = resolveEquipSlot(it);
-                    if (res && !it.equipSlot) it.equipSlot = res;
-                });
-            }
-            // Sanitize currently equipped items
-            Object.keys(gameState.equipment || {}).forEach(slot => {
-                const eq = gameState.equipment[slot];
-                if (!eq) return;
-                if (eq.luck && !allowedLuckTypes.includes(eq.type)) delete eq.luck;
-                if (!eq.equipSlot) eq.equipSlot = slot;
-            });
+            restoreGameStateFromSaveData(saved);
         } catch (e) {
             console.log('Failed to load save, starting new game');
         }
