@@ -4459,7 +4459,10 @@ function importSavefile(event) {
 function saveGame() {
     try {
         console.log('💾 Save initiated by user');
-        getStateSize(gameState, 'Current gameState BEFORE cleaning');
+        // Only log state size if function is available
+        if (typeof getStateSize === 'function') {
+            getStateSize(gameState, 'Current gameState BEFORE cleaning');
+        }
         saveToLocalStorage(gameState, 
             (msg) => {
                 addChatMessage('SYSTEM', msg, true);
