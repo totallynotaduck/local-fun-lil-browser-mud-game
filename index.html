@@ -834,9 +834,84 @@ function ensureFakePlayerRoster() {
     return pvpEnemies;
 }
 
+function getTradableInventoryEquipmentIndices() {
+    return gameState.inventory
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => {
+            const slot = resolveEquipSlot(item);
+            return !!slot &&
+                item.type !== 'material' &&
+                item.type !== 'currency' &&
+                item.type !== 'consumable' &&
+                item.type !== 'scroll';
+        })
+        .map(({ idx }) => idx);
+}
+
+function getPlayerTradeRewardRarity() {
+    const roll = Math.random() * 100;
+    if (roll < 1) return 'unique';
+    if (roll < 15) return 'legendary';
+    return 'epic';
+}
+
+function getPlayerTradeRewardItem(targetRarity) {
+    const maxLevel = Math.max(6, (gameState.player.level || 1) + 5);
+    const allItems = Object.values(itemPool || {});
+    const baseFilter = item =>
+        item &&
+        item.rarity === targetRarity &&
+        item.equipSlot &&
+        item.type !== 'material' &&
+        item.type !== 'currency' &&
+        item.type !== 'consumable';
+
+    let matches = allItems.filter(item => baseFilter(item) && (!item.levelReq || item.levelReq <= maxLevel));
+    if (matches.length === 0) {
+        matches = allItems.filter(baseFilter);
+    }
+
+    return matches.length > 0 ? { ...pick(matches) } : null;
+}
+
+function tradeWithPlayer(idx) {
+    const trader = ensureFakePlayerRoster()[idx];
+    const tradableIndices = getTradableInventoryEquipmentIndices();
+    if (tradableIndices.length === 0) {
+        addChatMessage('SYSTEM', 'You need at least one unequipped equipment item in your inventory to trade.', true);
+        return;
+    }
+
+    const rewardRarity = getPlayerTradeRewardRarity();
+    const rewardItem = getPlayerTradeRewardItem(rewardRarity);
+    if (!rewardItem) {
+        addChatMessage('SYSTEM', 'No valid trade rewards are available right now. Try again later.', true);
+        return;
+    }
+
+    const removedIndex = pick(tradableIndices);
+    const removedItem = gameState.inventory[removedIndex];
+    if (!removedItem) return;
+
+    removeFromInventory(removedIndex);
+    addToInventory({ ...rewardItem, qty: 1 });
+    addItemLog('trade', rewardItem.name);
+
+    const traderName = trader ? trader.name : 'Traveler';
+    addChatMessage(traderName, `Pleasure doing business with you.`, false, true);
+    addChatMessage('SYSTEM', `You traded away ${removedItem.name} and received ${rewardItem.name} (${rewardItem.rarity}).`, true);
+
+    updateStats();
+    updateSidePanels();
+    if (document.getElementById('players-screen').classList.contains('active')) renderPlayers();
+    if (document.getElementById('inventory-screen').classList.contains('active')) renderInventory();
+    scheduleSilentPersist();
+}
+
 function renderFakePlayerCard(enemy, idx, isOnCooldown) {
     const isHigherLevel = enemy.level > gameState.player.level;
     const gearText = enemy.gearSummary || 'Travel gear';
+    const canTrade = getTradableInventoryEquipmentIndices().length > 0;
     return `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
         <div>
             <div>
@@ -846,7 +921,10 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
             <div style="color:#888;font-size:0.8em">${enemy.region} | ATK: ${enemy.atk} DEF: ${enemy.def} CRIT: ${enemy.crit}% | Gold: ${enemy.gold}</div>
             <div style="color:#666;font-size:0.75em">Gear: ${gearText}</div>
         </div>
-        <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+            <button class="action-btn" onclick="tradeWithPlayer(${idx})" style="font-size:0.7em" ${canTrade ? '' : 'disabled'}>Trade</button>
+            <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
+        </div>
     </div>`;
 }
 
@@ -983,6 +1061,7 @@ function recordWorldBossPlayerDamage(dmg) {
 
     gameState.worldBossDamage[playerName] += dmg;
     gameState.worldBossTotalDamage += dmg;
+    scheduleSilentPersist();
 }
 
 function tryConsumeReviveScroll(playerObj, logCallback = addBattleMsg) {
@@ -1543,6 +1622,18 @@ function addBattleMsg(msg, type = 'info') {
     const cls = type === 'damage' ? 'damage' : type === 'heal' ? 'heal' : type === 'reward' ? 'reward' : 'info';
     gameState.battleLog.push({ msg, cls });
     if (gameState.battleLog.length > 100) gameState.battleLog.shift();
+}
+
+let silentPersistTimeoutId = null;
+function scheduleSilentPersist(delay = 250) {
+    if (silentPersistTimeoutId) {
+        clearTimeout(silentPersistTimeoutId);
+    }
+
+    silentPersistTimeoutId = setTimeout(() => {
+        silentPersistTimeoutId = null;
+        persistCurrentGameState().catch(err => console.warn('Silent persist failed', err));
+    }, delay);
 }
 
 // Use a scroll from equipped scrolls
@@ -4133,35 +4224,113 @@ function renderCrafting() {
 // ==============================================
 // AUCTION SYSTEM
 // ==============================================
-let auctionState = {
-    active: false,
-    currentItem: null,
-    currentPrice: 0,
-    minimumBid: 0,
-    bidders: [],
-    endTime: 0,
-    highestBidder: null,
-    lastBidTime: 0,
-    playerHasBid: false
-};
+function createDefaultAuctionState() {
+    return {
+        active: false,
+        currentItem: null,
+        currentPrice: 0,
+        minimumBid: 0,
+        bidders: [],
+        endTime: 0,
+        highestBidder: null,
+        lastBidTime: 0,
+        playerHasBid: false,
+        maxPrice: 0,
+        nextStartTime: 0
+    };
+}
+
+let auctionState = createDefaultAuctionState();
+let auctionStartTimeoutId = null;
+let auctionEndTimeoutId = null;
+let auctionTickIntervalId = null;
 
 const AUCTION_BIDDER_NAMES = ['DragonSlayer', 'ShadowMage', 'IronFist', 'MysticWolf', 'DarkKnight', 'FireStorm', 'IceQueen', 'ThunderBolt', 'NightBlade', 'StormBreaker', 'GoldHunter', 'TreasureSeeker', 'ItemCollector', 'LegendFinder', 'EpicHunter'];
 
+function setAuctionTabAlert(isActive) {
+    const tab = document.getElementById('auction-tab');
+    if (!tab) return;
+    tab.classList.toggle('alert', !!isActive);
+}
+
+function clearAuctionTimers() {
+    if (auctionStartTimeoutId) {
+        clearTimeout(auctionStartTimeoutId);
+        auctionStartTimeoutId = null;
+    }
+    if (auctionEndTimeoutId) {
+        clearTimeout(auctionEndTimeoutId);
+        auctionEndTimeoutId = null;
+    }
+}
+
+function scheduleAuctionStartAt(timestamp) {
+    if (!timestamp) return;
+    if (auctionStartTimeoutId) clearTimeout(auctionStartTimeoutId);
+    auctionState.nextStartTime = timestamp;
+    auctionStartTimeoutId = setTimeout(() => {
+        auctionStartTimeoutId = null;
+        startNewAuction();
+    }, Math.max(0, timestamp - Date.now()));
+    scheduleSilentPersist();
+}
+
+function scheduleAuctionEndAt(timestamp) {
+    if (auctionEndTimeoutId) clearTimeout(auctionEndTimeoutId);
+    if (!timestamp) return;
+    auctionEndTimeoutId = setTimeout(() => {
+        auctionEndTimeoutId = null;
+        endAuction();
+    }, Math.max(0, timestamp - Date.now() + 1000));
+}
+
 function initAuctionSystem() {
-    // Schedule first auction between 10-60 minutes from now
-    scheduleNextAuction();
-    
-    // Check auction every second
-    setInterval(() => {
-        if (auctionState.active) {
-            processAuctionTick();
+    if (!auctionTickIntervalId) {
+        auctionTickIntervalId = setInterval(() => {
+            if (auctionState.active) {
+                if (auctionState.endTime <= Date.now()) {
+                    endAuction();
+                    return;
+                }
+                processAuctionTick();
+                if (document.getElementById('auction-screen').classList.contains('active')) {
+                    renderAuction();
+                }
+            } else if (auctionState.nextStartTime && auctionState.nextStartTime <= Date.now()) {
+                startNewAuction();
+            }
+        }, 1000);
+    }
+
+    resumeAuctionSystem();
+}
+
+function resumeAuctionSystem() {
+    clearAuctionTimers();
+
+    if (auctionState.active && auctionState.currentItem) {
+        setAuctionTabAlert(true);
+        if (auctionState.endTime <= Date.now()) {
+            endAuction();
+            return;
         }
-    }, 1000);
+        scheduleAuctionEndAt(auctionState.endTime);
+        return;
+    }
+
+    setAuctionTabAlert(false);
+    if (auctionState.nextStartTime && auctionState.nextStartTime > Date.now()) {
+        scheduleAuctionStartAt(auctionState.nextStartTime);
+    } else if (auctionState.nextStartTime && auctionState.nextStartTime <= Date.now()) {
+        startNewAuction();
+    } else {
+        scheduleNextAuction();
+    }
 }
 
 function scheduleNextAuction() {
     const delay = rand(10 * 60 * 1000, 60 * 60 * 1000); // 10-60 minutes
-    setTimeout(startNewAuction, delay);
+    scheduleAuctionStartAt(Date.now() + delay);
 }
 
 function selectAuctionItemRarity() {
@@ -4205,17 +4374,20 @@ function startNewAuction() {
     const itemLevel = item.levelReq || Math.max(1, gameState.player.level);
     const basePrice = getBasePriceForRarity(rarity, itemLevel);
     
+    clearAuctionTimers();
     auctionState = {
+        ...createDefaultAuctionState(),
         active: true,
-        currentItem: {...item},
+        currentItem: { ...item },
         currentPrice: Math.floor(basePrice * 0.7),
         minimumBid: Math.floor(basePrice * 0.7 * 1.05),
         bidders: [],
-    endTime: Date.now() + 30 * 60 * 1000, // 30 minute auction duration
+        endTime: Date.now() + 30 * 60 * 1000,
         highestBidder: null,
         lastBidTime: Date.now(),
         playerHasBid: false,
-        maxPrice: basePrice * (1.2 + Math.random() * 0.6)
+        maxPrice: basePrice * (1.2 + Math.random() * 0.6),
+        nextStartTime: 0
     };
     
     // Add initial bidders
@@ -4233,12 +4405,15 @@ function startNewAuction() {
     }
     
     // Highlight auction tab
-    document.getElementById('auction-tab').classList.add('alert');
+    setAuctionTabAlert(true);
     
     addChatMessage('SYSTEM', `⚠️ NEW AUCTION STARTED: ${item.name} (${rarity})! Click Auction tab to view.`, true);
     
-    // Auto schedule next auction when this one ends
-    setTimeout(endAuction, auctionState.endTime - Date.now() + 1000);
+    scheduleAuctionEndAt(auctionState.endTime);
+    scheduleSilentPersist();
+    if (document.getElementById('auction-screen').classList.contains('active')) {
+        renderAuction();
+    }
 }
 
 function processAuctionTick() {
@@ -4278,6 +4453,7 @@ function placeFakeBid(bidder) {
     bidder.bidDelay = rand(4000, 12000);
     
     addChatMessage(bidder.name, `placed a bid of ${auctionState.currentPrice} gold on ${auctionState.currentItem.name}!`, false, true);
+    scheduleSilentPersist();
     
     if (document.getElementById('auction-screen').classList.contains('active')) {
         renderAuction();
@@ -4322,36 +4498,44 @@ function placePlayerBid() {
     addChatMessage('You', `placed a bid of ${auctionState.currentPrice} gold!`);
     
     updateStats();
+    scheduleSilentPersist();
     renderAuction();
 }
 
 function endAuction() {
     if (!auctionState.active) return;
+    const completedAuction = {
+        ...auctionState,
+        currentItem: auctionState.currentItem ? { ...auctionState.currentItem } : null,
+        bidders: cloneData(auctionState.bidders || [])
+    };
+    clearAuctionTimers();
     
-    auctionState.active = false;
+    auctionState = createDefaultAuctionState();
     
     // Remove alert from tab
-    document.getElementById('auction-tab').classList.remove('alert');
+    setAuctionTabAlert(false);
     
-    if (auctionState.highestBidder === 'You') {
-        addToInventory({...auctionState.currentItem, qty: 1});
-        addChatMessage('SYSTEM', `🎉 You won the auction! You received: ${auctionState.currentItem.name}`, true);
-        addItemLog('auction', auctionState.currentItem.name);
+    if (completedAuction.highestBidder === 'You') {
+        addToInventory({ ...completedAuction.currentItem, qty: 1 });
+        addChatMessage('SYSTEM', `🎉 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
+        addItemLog('auction', completedAuction.currentItem.name);
     } else {
-        if (auctionState.highestBidder) {
-            addChatMessage('SYSTEM', `Auction ended. ${auctionState.highestBidder} won ${auctionState.currentItem.name} for ${auctionState.currentPrice} gold`, true);
+        if (completedAuction.highestBidder) {
+            addChatMessage('SYSTEM', `Auction ended. ${completedAuction.highestBidder} won ${completedAuction.currentItem.name} for ${completedAuction.currentPrice} gold`, true);
         } else {
-            addChatMessage('SYSTEM', `Auction ended with no bids on ${auctionState.currentItem.name}`, true);
+            addChatMessage('SYSTEM', `Auction ended with no bids on ${completedAuction.currentItem.name}`, true);
         }
         // Refund player if they bid but didn't win
-        if (auctionState.playerHasBid && auctionState.highestBidder !== 'You') {
-            gameState.player.gold += auctionState.currentPrice;
+        if (completedAuction.playerHasBid && completedAuction.highestBidder !== 'You') {
+            gameState.player.gold += completedAuction.currentPrice;
             updateStats();
         }
     }
     
     // Schedule next auction
     scheduleNextAuction();
+    scheduleSilentPersist();
     
     if (document.getElementById('auction-screen').classList.contains('active')) {
         renderAuction();
@@ -5823,15 +6007,83 @@ function pruneTransientState(state) {
     state.dungeonMaxHP = 0;
     state.bossActive = false;
     state.currentBoss = null;
-    state.worldBossActive = false;
-    state.currentWorldBoss = null;
-    state.worldBossDamage = {};
-    state.worldBossTotalDamage = 0;
-    state.worldBossSpawnTime = 0;
     state.auctionItems = [];
     state.chatMessages = [];
     state.fakePlayers = [];
     state.wandering = cloneData(INITIAL_GAME_STATE_SNAPSHOT.wandering);
+}
+
+function encodeWorldBossStateForSave() {
+    if (!gameState.worldBossActive || !gameState.currentWorldBoss) return null;
+    return {
+        b: cloneData(gameState.currentWorldBoss),
+        d: cloneData(gameState.worldBossDamage || {}),
+        t: gameState.worldBossTotalDamage || 0,
+        s: gameState.worldBossSpawnTime || 0
+    };
+}
+
+function decodeWorldBossStateFromSave(entry) {
+    if (!entry || typeof entry !== 'object' || !entry.b) return null;
+    return {
+        active: true,
+        boss: cloneData(entry.b),
+        damage: cloneData(entry.d || {}),
+        totalDamage: Number(entry.t) || 0,
+        spawnTime: Number(entry.s) || 0
+    };
+}
+
+function encodeAuctionStateForSave() {
+    if (auctionState.active && auctionState.currentItem) {
+        return {
+            a: 1,
+            ci: encodeItemForSave(auctionState.currentItem),
+            cp: auctionState.currentPrice || 0,
+            mb: auctionState.minimumBid || 0,
+            b: cloneData(auctionState.bidders || []),
+            et: auctionState.endTime || 0,
+            hb: auctionState.highestBidder || '',
+            lb: auctionState.lastBidTime || 0,
+            ph: auctionState.playerHasBid ? 1 : 0,
+            mp: auctionState.maxPrice || 0
+        };
+    }
+
+    if (auctionState.nextStartTime) {
+        return { ns: auctionState.nextStartTime };
+    }
+
+    return null;
+}
+
+function decodeAuctionStateFromSave(entry) {
+    const restored = createDefaultAuctionState();
+    if (!entry || typeof entry !== 'object') return restored;
+
+    if (entry.ns !== undefined) {
+        restored.nextStartTime = Number(entry.ns) || 0;
+    }
+
+    if (entry.a) {
+        restored.active = true;
+        restored.currentItem = decodeItemForSave(entry.ci) || null;
+        restored.currentPrice = Number(entry.cp) || 0;
+        restored.minimumBid = Number(entry.mb) || 0;
+        restored.bidders = Array.isArray(entry.b) ? cloneData(entry.b) : [];
+        restored.endTime = Number(entry.et) || 0;
+        restored.highestBidder = entry.hb || null;
+        restored.lastBidTime = Number(entry.lb) || 0;
+        restored.playerHasBid = !!entry.ph;
+        restored.maxPrice = Number(entry.mp) || 0;
+        restored.nextStartTime = 0;
+    }
+
+    return restored;
+}
+
+function restoreAuctionStateFromSaveData(data) {
+    auctionState = decodeAuctionStateFromSave(data && data.au);
 }
 
 function isQuotaExceededError(error) {
@@ -6052,8 +6304,12 @@ function buildCompactSaveData() {
     if (equippedScrolls.some(Boolean)) save.es = equippedScrolls;
     if (gameState.lastRegen !== INITIAL_GAME_STATE_SNAPSHOT.lastRegen) save.lr = gameState.lastRegen || Date.now();
     if (gameState.highestDungeonStage) save.hd = gameState.highestDungeonStage;
+    const worldBossState = encodeWorldBossStateForSave();
+    if (worldBossState) save.wb = worldBossState;
     if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
     if (gameState.pvpCooldownUntil) save.pc = gameState.pvpCooldownUntil;
+    const persistedAuctionState = encodeAuctionStateForSave();
+    if (persistedAuctionState) save.au = persistedAuctionState;
 
     const guildQuests = encodeGuildQuestsForSave();
     if (guildQuests.length) save.gq = guildQuests;
@@ -6113,6 +6369,14 @@ function decodeCompactSaveData(data) {
     }
     if (data.lr !== undefined) hydrated.lastRegen = data.lr;
     if (data.hd !== undefined) hydrated.highestDungeonStage = data.hd;
+    const restoredWorldBoss = decodeWorldBossStateFromSave(data.wb);
+    if (restoredWorldBoss) {
+        hydrated.worldBossActive = true;
+        hydrated.currentWorldBoss = restoredWorldBoss.boss;
+        hydrated.worldBossDamage = restoredWorldBoss.damage;
+        hydrated.worldBossTotalDamage = restoredWorldBoss.totalDamage;
+        hydrated.worldBossSpawnTime = restoredWorldBoss.spawnTime;
+    }
     if (data.wbn !== undefined) hydrated.worldBossNextSpawn = data.wbn;
     if (data.pc !== undefined) hydrated.pvpCooldownUntil = data.pc;
 
@@ -6171,6 +6435,11 @@ function applyHydratedGameState(state) {
     recalculateAllPlayerStats();
 }
 
+function initializePersistentEventSystems() {
+    initAuctionSystem();
+    initializeWorldBossSystem();
+}
+
 function restoreGameStateFromSaveData(rawData) {
     let parsed = rawData;
     if (typeof rawData === 'string') {
@@ -6185,6 +6454,8 @@ function restoreGameStateFromSaveData(rawData) {
     if (!hydrated.player || !hydrated.inventory || !hydrated.equipment) return false;
 
     applyHydratedGameState(hydrated);
+    restoreAuctionStateFromSaveData(parsed);
+    initializePersistentEventSystems();
     return true;
 }
 
@@ -6413,6 +6684,8 @@ async function init() {
     } catch (e) {
         console.log('Failed to load save, starting new game');
     }
+
+    initializePersistentEventSystems();
     
     updateStats();
     showScreen('travel');
@@ -6437,15 +6710,123 @@ const WORLD_BOSS_SPAWN_INTERVAL_MIN = 10 * 60 * 1000; // 10 minutes
 const WORLD_BOSS_SPAWN_INTERVAL_MAX = 60 * 60 * 1000; // 60 minutes
 const WORLD_BOSS_DURATION = 30 * 60 * 1000; // 30 minutes duration
 
-function scheduleNextWorldBoss() {
-    const delay = rand(WORLD_BOSS_SPAWN_INTERVAL_MIN, WORLD_BOSS_SPAWN_INTERVAL_MAX);
-    gameState.worldBossNextSpawn = Date.now() + delay;
-    
-    setTimeout(() => {
+let worldBossSpawnTimeoutId = null;
+let worldBossExpiryTimeoutId = null;
+let worldBossAttackIntervalId = null;
+
+function setWorldBossBattleTabAlert(isActive) {
+    const battleNavBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => btn.textContent.includes('Battle'));
+    if (!battleNavBtn) return;
+
+    if (isActive) {
+        battleNavBtn.style.backgroundColor = '#660000';
+        battleNavBtn.style.color = '#ff4444';
+        battleNavBtn.style.animation = 'bossPulse 1.5s infinite';
+        battleNavBtn.style.fontWeight = 'bold';
+    } else {
+        battleNavBtn.style.backgroundColor = '';
+        battleNavBtn.style.color = '';
+        battleNavBtn.style.animation = '';
+        battleNavBtn.style.fontWeight = '';
+    }
+}
+
+function clearWorldBossTimers() {
+    if (worldBossSpawnTimeoutId) {
+        clearTimeout(worldBossSpawnTimeoutId);
+        worldBossSpawnTimeoutId = null;
+    }
+    if (worldBossExpiryTimeoutId) {
+        clearTimeout(worldBossExpiryTimeoutId);
+        worldBossExpiryTimeoutId = null;
+    }
+    if (worldBossAttackIntervalId) {
+        clearInterval(worldBossAttackIntervalId);
+        worldBossAttackIntervalId = null;
+    }
+}
+
+function scheduleWorldBossExpiry() {
+    if (worldBossExpiryTimeoutId) {
+        clearTimeout(worldBossExpiryTimeoutId);
+        worldBossExpiryTimeoutId = null;
+    }
+
+    if (!gameState.worldBossActive || !gameState.currentWorldBoss) return;
+
+    const expiresAt = (gameState.worldBossSpawnTime || 0) + WORLD_BOSS_DURATION;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+        despawnWorldBoss(false);
+        return;
+    }
+
+    worldBossExpiryTimeoutId = setTimeout(() => {
+        worldBossExpiryTimeoutId = null;
+        if (gameState.worldBossActive) {
+            despawnWorldBoss(false);
+        }
+    }, remaining + 50);
+}
+
+function initializeWorldBossSystem() {
+    if (worldBossSpawnTimeoutId) {
+        clearTimeout(worldBossSpawnTimeoutId);
+        worldBossSpawnTimeoutId = null;
+    }
+    if (worldBossExpiryTimeoutId) {
+        clearTimeout(worldBossExpiryTimeoutId);
+        worldBossExpiryTimeoutId = null;
+    }
+
+    if (gameState.worldBossActive && gameState.currentWorldBoss) {
+        if ((gameState.currentWorldBoss.hp || 0) <= 0) {
+            despawnWorldBoss(true);
+            return;
+        }
+
+        const expiresAt = (gameState.worldBossSpawnTime || 0) + WORLD_BOSS_DURATION;
+        if (!gameState.worldBossSpawnTime || expiresAt <= Date.now()) {
+            despawnWorldBoss(false);
+            return;
+        }
+
+        setWorldBossBattleTabAlert(true);
+        scheduleWorldBossExpiry();
+        startFakePlayerBossAttacks();
+        return;
+    }
+
+    setWorldBossBattleTabAlert(false);
+    if (gameState.worldBossNextSpawn && gameState.worldBossNextSpawn > Date.now()) {
+        scheduleNextWorldBoss(gameState.worldBossNextSpawn);
+    } else if (gameState.worldBossNextSpawn && gameState.worldBossNextSpawn <= Date.now()) {
+        spawnWorldBoss();
+    } else {
+        scheduleNextWorldBoss();
+    }
+}
+
+function scheduleNextWorldBoss(nextSpawnAt = null) {
+    if (worldBossSpawnTimeoutId) {
+        clearTimeout(worldBossSpawnTimeoutId);
+        worldBossSpawnTimeoutId = null;
+    }
+
+    const spawnAt = (typeof nextSpawnAt === 'number' && nextSpawnAt > 0)
+        ? nextSpawnAt
+        : Date.now() + rand(WORLD_BOSS_SPAWN_INTERVAL_MIN, WORLD_BOSS_SPAWN_INTERVAL_MAX);
+
+    gameState.worldBossNextSpawn = spawnAt;
+
+    worldBossSpawnTimeoutId = setTimeout(() => {
+        worldBossSpawnTimeoutId = null;
         if (!gameState.worldBossActive) {
             spawnWorldBoss();
         }
-    }, delay);
+    }, Math.max(0, spawnAt - Date.now()));
+
+    scheduleSilentPersist();
 }
 
 function spawnWorldBoss() {
@@ -6472,40 +6853,32 @@ function spawnWorldBoss() {
     gameState.worldBossDamage = {};
     gameState.worldBossTotalDamage = 0;
     gameState.worldBossSpawnTime = Date.now();
+    gameState.worldBossNextSpawn = 0;
     
-    // Highlight Battle tab in red
-    const battleNavBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => btn.textContent.includes('Battle'));
-    if (battleNavBtn) {
-        battleNavBtn.style.backgroundColor = '#660000';
-        battleNavBtn.style.color = '#ff4444';
-        battleNavBtn.style.animation = 'bossPulse 1.5s infinite';
-        battleNavBtn.style.fontWeight = 'bold';
-    }
+    setWorldBossBattleTabAlert(true);
     
     addChatMessage('SYSTEM', `⚠️ WORLD BOSS ${bossTemplate.name} HAS APPEARED! Go to the Battle tab!`, true);
     addChatMessage('SYSTEM', `⚠️ World Boss has ${gameState.currentWorldBoss.maxHp.toLocaleString()} HP! All players can attack!`, true);
     
     // Start fake player attacks
     startFakePlayerBossAttacks();
-    
-    // Boss will remain until defeated - no automatic despawn
+    scheduleWorldBossExpiry();
+    scheduleSilentPersist();
 }
 
 function despawnWorldBoss(defeated) {
+    const hadBoss = !!gameState.currentWorldBoss;
+    clearWorldBossTimers();
     gameState.worldBossActive = false;
     resetCombatScrollSession();
     
     // Reset Battle tab styling
-    const battleNavBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => btn.textContent.includes('Battle'));
-    if (battleNavBtn) {
-        battleNavBtn.style.backgroundColor = '';
-        battleNavBtn.style.color = '';
-        battleNavBtn.style.animation = '';
-        battleNavBtn.style.fontWeight = '';
-    }
+    setWorldBossBattleTabAlert(false);
     
     // Distribute rewards to all participants
-    distributeWorldBossRewards();
+    if (hadBoss) {
+        distributeWorldBossRewards();
+    }
     
     if (defeated) {
         addChatMessage('SYSTEM', `🎉 WORLD BOSS ${gameState.currentWorldBoss.name} HAS BEEN DEFEATED! Rewards distributed!`, true);
@@ -6517,6 +6890,7 @@ function despawnWorldBoss(defeated) {
     
     // Schedule next boss
     scheduleNextWorldBoss();
+    scheduleSilentPersist();
     
     // Refresh battle screen if open
     if (document.getElementById('battle-screen').classList.contains('active')) {
@@ -6561,6 +6935,7 @@ function attackWorldBoss() {
 
     // Record player damage
     recordWorldBossPlayerDamage(dmg);
+    scheduleSilentPersist();
     
     addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}!`, crit ? 'reward' : 'info');
 
@@ -6613,10 +6988,15 @@ function attackWorldBoss() {
 
 function startFakePlayerBossAttacks() {
     const fakeRoster = ensureFakePlayerRoster();
+    if (worldBossAttackIntervalId) {
+        clearInterval(worldBossAttackIntervalId);
+        worldBossAttackIntervalId = null;
+    }
     
-    const attackInterval = setInterval(() => {
+    worldBossAttackIntervalId = setInterval(() => {
         if (!gameState.worldBossActive) {
-            clearInterval(attackInterval);
+            clearInterval(worldBossAttackIntervalId);
+            worldBossAttackIntervalId = null;
             return;
         }
         
@@ -6649,9 +7029,12 @@ function startFakePlayerBossAttacks() {
         
         // Check if boss is dead
         if (gameState.currentWorldBoss.hp <= 0) {
-            clearInterval(attackInterval);
+            clearInterval(worldBossAttackIntervalId);
+            worldBossAttackIntervalId = null;
             despawnWorldBoss(true);
+            return;
         }
+        scheduleSilentPersist();
     }, 3000);
 }
 
@@ -6775,12 +7158,6 @@ renderBattle = function() {
     // Call original render for normal battle screen
     originalRenderBattle.apply(this, arguments);
 };
-
-// Initialize World Boss system
-scheduleNextWorldBoss();
-
-// Initialize auction system
-initAuctionSystem();
 
 // Start the game
 init();
