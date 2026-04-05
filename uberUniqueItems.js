@@ -1,7 +1,11 @@
 // UBER UNIQUE ITEMS - ONE PER LEVEL BRACKET
 // Better stats than legendary items, each with unique special abilities
 
-require('./items.js');
+if (typeof require !== 'undefined') {
+    require('./items.js');
+}
+
+const uberUniqueSharedItemPool = globalThis.itemPool;
 
 const UBER_UNIQUE_SET = [
     // LEVEL BRACKET 1-10
@@ -82,6 +86,10 @@ const UBER_UNIQUE_SET = [
 ];
 
 // Add these to item pool
-UBER_UNIQUE_SET.forEach(item => {
-    itemPool[item.name] = item;
-});
+if (uberUniqueSharedItemPool) {
+    UBER_UNIQUE_SET.forEach(item => {
+        uberUniqueSharedItemPool[item.name] = item;
+    });
+}
+
+globalThis.UBER_UNIQUE_SET = UBER_UNIQUE_SET;

@@ -469,7 +469,13 @@ const rarityMultipliers = { common: 1, uncommon: 1.5, rare: 2, epic: 3, legendar
     });
 })();
 
-// Make available globally for node environment
+// Make available globally for browser and other non-module script environments
 globalThis.itemPool = itemPool;
+globalThis.scrollPool = scrollPool;
+globalThis.craftingRecipes = craftingRecipes;
+globalThis.UNIQUE_ATTRIBUTE_POOL = UNIQUE_ATTRIBUTE_POOL;
+globalThis.SELL_VALUES = SELL_VALUES;
 
-module.exports = { itemPool, scrollPool, craftingRecipes, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { itemPool, scrollPool, craftingRecipes, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
+}

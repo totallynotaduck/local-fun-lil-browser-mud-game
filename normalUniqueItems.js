@@ -1,7 +1,11 @@
 // NORMAL UNIQUE ITEMS - NO SPECIAL ABILITIES
 // Generated for every equipment slot across all level brackets
 
-require('./items.js');
+if (typeof require !== 'undefined') {
+    require('./items.js');
+}
+
+const normalUniqueSharedItemPool = globalThis.itemPool;
 
 const NORMAL_UNIQUE_ITEMS = {
     // ======================
@@ -246,6 +250,10 @@ const NORMAL_UNIQUE_ITEMS = {
 };
 
 // Add all normal unique items to main item pool
-Object.keys(NORMAL_UNIQUE_ITEMS).forEach(key => {
-    itemPool[key] = NORMAL_UNIQUE_ITEMS[key];
-});
+if (normalUniqueSharedItemPool) {
+    Object.keys(NORMAL_UNIQUE_ITEMS).forEach(key => {
+        normalUniqueSharedItemPool[key] = NORMAL_UNIQUE_ITEMS[key];
+    });
+}
+
+globalThis.NORMAL_UNIQUE_ITEMS = NORMAL_UNIQUE_ITEMS;

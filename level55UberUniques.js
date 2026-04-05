@@ -2,7 +2,11 @@
 // 8 Uber Uniques for every equipment slot - level 55 requirement
 // All items are completely game breaking but do NOT make user invincible
 
-require('./items.js');
+if (typeof require !== 'undefined') {
+    require('./items.js');
+}
+
+const level55UberSharedItemPool = globalThis.itemPool;
 
 const LEVEL_55_UBER_UNIQUES = {
     // ========== WEAPON ==========
@@ -79,6 +83,10 @@ const LEVEL_55_UBER_UNIQUES = {
 };
 
 // Add all Level 55 Uber Uniques to item pool
-Object.keys(LEVEL_55_UBER_UNIQUES).forEach(key => {
-    itemPool[key] = LEVEL_55_UBER_UNIQUES[key];
-});
+if (level55UberSharedItemPool) {
+    Object.keys(LEVEL_55_UBER_UNIQUES).forEach(key => {
+        level55UberSharedItemPool[key] = LEVEL_55_UBER_UNIQUES[key];
+    });
+}
+
+globalThis.LEVEL_55_UBER_UNIQUES = LEVEL_55_UBER_UNIQUES;
