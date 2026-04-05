@@ -2686,12 +2686,16 @@ function renderWandering() {
             const rarityColor = getRarityColor(item.rarity);
             const isUber = isUberUnique(item);
             const canAfford = gameState.player.gold >= item.merchantPrice;
+            const comparisonHtml = renderPurchasableItemComparison(item);
+            const itemTypeLabel = formatItemTypeLabel(item);
             html += `<div style="background:#1a1a1a;border:2px solid ${rarityColor};padding:12px;margin:8px 0;display:flex;justify-content:space-between;align-items:center;border-radius:5px;">
                 <div>
                     <span style="${isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor};font-weight:bold;font-size:1.1em">${item.name}</span>
                     <span style="color:${rarityColor};font-size:0.8em;margin-left:8px">[${item.rarity.toUpperCase()}]</span>
+                    ${itemTypeLabel ? `<span style="color:#666;font-size:0.8em;margin-left:8px">[${itemTypeLabel}]</span>` : ''}
                     ${item.levelReq ? `<span style="color:#888;font-size:0.8em;margin-left:5px">[Lvl ${item.levelReq}]</span>` : ''}
                     <div style="color:#aaa;font-size:0.85em;margin-top:4px">${item.desc || ''}</div>
+                    ${comparisonHtml}
                 </div>
                 <div style="text-align:right;">
                     <div style="color:#ffd700;font-size:1.1em;font-weight:bold">${item.merchantPrice} Gold</div>
@@ -3197,6 +3201,15 @@ function formatItemStatValue(statKey, value, isDelta = false) {
     return `${roundedValue}${isPercent ? '%' : ''}`;
 }
 
+function formatItemTypeLabel(item) {
+    const rawType = resolveEquipSlot(item) || item?.type;
+    if (!rawType) return '';
+
+    return String(rawType)
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
 function renderInventoryItemComparison(item, equippedItem) {
     const statKeys = getComparableItemStatKeys(item, equippedItem);
     if (statKeys.length === 0) return '';
@@ -3217,6 +3230,13 @@ function renderInventoryItemComparison(item, equippedItem) {
     });
 
     return html;
+}
+
+function renderPurchasableItemComparison(item) {
+    const slot = resolveEquipSlot(item);
+    if (!slot) return '';
+
+    return renderInventoryItemComparison(item, gameState.equipment[slot]);
 }
 
 // INVENTORY RENDER
@@ -4133,12 +4153,16 @@ function renderMarket() {
     } else {
         grandMarketItems.forEach((item, idx) => {
             const rarityColor = getRarityColor(item.rarity);
+            const comparisonHtml = renderPurchasableItemComparison(item);
+            const itemTypeLabel = formatItemTypeLabel(item);
             const isUber = isUberUnique(item);
             const canAfford = gameState.player.gold >= item.marketPrice;
             html += `<div style="background:#1a1a1a;border:1px solid ${rarityColor};padding:10px;margin:5px 0;display:flex;justify-content:space-between;align-items:center;">
                 <div>
+                    ${itemTypeLabel ? `<span style="color:#666;font-size:0.8em;margin-left:8px">[${itemTypeLabel}]</span>` : ''}
                     <span style="${isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor};font-weight:bold">${item.name}</span>
                     ${item.levelReq ? `<span style="color:#888;font-size:0.8em;margin-left:5px">[Lvl ${item.levelReq}]</span>` : ''}
+                    ${comparisonHtml}
                     <div style="color:#888;font-size:0.8em">${item.desc || ''}</div>
                 </div>
                 <div style="text-align:right;">
