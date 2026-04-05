@@ -268,6 +268,7 @@ const gameState = {
     ],
     jobCooldown: 0, daysPassed: 0, itemLog: [], wanderMode: false, jobsCompleted: 0,
     pvpCooldownUntil: 0,
+    tradeCooldownUntil: 0,
     soulGems: 0, premiumMultiplier: 1, premiumActionsUsed: 0,
     activeStatusEffects: [], // Active status effects (buffs/debuffs) with duration
     jobPoints: 5, maxJobPoints: 5, lastJobPointRegen: Date.now(),
@@ -333,6 +334,10 @@ let pvpEnemies = [];
 let pvpActive = false;
 let currentPvpEnemy = null;
 const PVP_COOLDOWN_MS = 15 * 60 * 1000;
+const TRADE_COOLDOWN_MS = 15 * 60 * 1000;
+const WORLD_BOSS_HEALTH_MULTIPLIER = 50;
+const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN = 500;
+const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX = 2000;
 
 // Transient per-battle scroll usage state
 let combatScrollState = {
@@ -345,6 +350,10 @@ let combatScrollState = {
 
 function getPvpCooldownRemainingMs() {
     return Math.max(0, (gameState.pvpCooldownUntil || 0) - Date.now());
+}
+
+function getTradeCooldownRemainingMs() {
+    return Math.max(0, (gameState.tradeCooldownUntil || 0) - Date.now());
 }
 
 function formatPvpCooldown(ms) {
@@ -876,6 +885,13 @@ function getPlayerTradeRewardItem(targetRarity) {
 
 function tradeWithPlayer(idx) {
     const trader = ensureFakePlayerRoster()[idx];
+    const remainingCooldown = getTradeCooldownRemainingMs();
+    if (remainingCooldown > 0) {
+        addChatMessage('SYSTEM', `Trade is on cooldown for ${formatPvpCooldown(remainingCooldown)}.`, true);
+        if (document.getElementById('players-screen').classList.contains('active')) renderPlayers();
+        return;
+    }
+
     const tradableIndices = getTradableInventoryEquipmentIndices();
     if (tradableIndices.length === 0) {
         addChatMessage('SYSTEM', 'You need at least one unequipped equipment item in your inventory to trade.', true);
@@ -896,6 +912,7 @@ function tradeWithPlayer(idx) {
     removeFromInventory(removedIndex);
     addToInventory({ ...rewardItem, qty: 1 });
     addItemLog('trade', rewardItem.name);
+    gameState.tradeCooldownUntil = Date.now() + TRADE_COOLDOWN_MS;
 
     const traderName = trader ? trader.name : 'Traveler';
     addChatMessage(traderName, `Pleasure doing business with you.`, false, true);
@@ -911,7 +928,8 @@ function tradeWithPlayer(idx) {
 function renderFakePlayerCard(enemy, idx, isOnCooldown) {
     const isHigherLevel = enemy.level > gameState.player.level;
     const gearText = enemy.gearSummary || 'Travel gear';
-    const canTrade = getTradableInventoryEquipmentIndices().length > 0;
+    const tradeCooldownRemaining = getTradeCooldownRemainingMs();
+    const canTrade = getTradableInventoryEquipmentIndices().length > 0 && tradeCooldownRemaining <= 0;
     return `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
         <div>
             <div>
@@ -922,7 +940,7 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
             <div style="color:#666;font-size:0.75em">Gear: ${gearText}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-            <button class="action-btn" onclick="tradeWithPlayer(${idx})" style="font-size:0.7em" ${canTrade ? '' : 'disabled'}>Trade</button>
+            <button class="action-btn" onclick="tradeWithPlayer(${idx})" style="font-size:0.7em" ${canTrade ? '' : 'disabled'}>${tradeCooldownRemaining > 0 ? 'Trade Cooldown' : 'Trade'}</button>
             <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
         </div>
     </div>`;
@@ -5507,11 +5525,13 @@ function renderPvp() {
     const container = document.getElementById('players-screen-content');
     const remainingCooldown = getPvpCooldownRemainingMs();
     const isOnCooldown = remainingCooldown > 0;
+    const tradeCooldownRemaining = getTradeCooldownRemainingMs();
     const roster = ensureFakePlayerRoster();
     
     let html = `<div class="section-title">PvP Arena</div>`;
     html += `<div class="description">Challenge other warriors to test your skills! 80 fake adventurers now roam the realm with gear matched to their level.</div>`;
     html += `<div class="description" style="color:${isOnCooldown ? '#ff4444' : '#44ff44'}">${isOnCooldown ? `Next PvP duel available in ${formatPvpCooldown(remainingCooldown)}` : 'PvP ready - rewards now grant half gold.'}</div>`;
+    html += `<div class="description" style="color:${tradeCooldownRemaining > 0 ? '#ff4444' : '#44ff44'}">${tradeCooldownRemaining > 0 ? `Next trade available in ${formatPvpCooldown(tradeCooldownRemaining)}` : 'Trade ready.'}</div>`;
     
     roster.forEach((enemy, idx) => {
         html += renderFakePlayerCard(enemy, idx, isOnCooldown);
@@ -5525,6 +5545,7 @@ function renderPlayers() {
     const container = document.getElementById('players-screen-content');
     const remainingCooldown = getPvpCooldownRemainingMs();
     const isOnCooldown = remainingCooldown > 0;
+    const tradeCooldownRemaining = getTradeCooldownRemainingMs();
     const roster = ensureFakePlayerRoster();
     
     let html = `<div class="section-title">Nearby Players</div>`;
@@ -5533,6 +5554,7 @@ function renderPlayers() {
     html += `<div class="section-title" style="color:#ff4444">PvP Challenges</div>`;
     html += `<div class="description">${roster.length} fake players are active in the realm. Their names, levels, and equipment are now varied so the roster feels more alive.</div>`;
     html += `<div class="description" style="color:${isOnCooldown ? '#ff4444' : '#44ff44'}">${isOnCooldown ? `Next PvP duel available in ${formatPvpCooldown(remainingCooldown)}` : 'PvP ready - rewards now grant half gold.'}</div>`;
+    html += `<div class="description" style="color:${tradeCooldownRemaining > 0 ? '#ff4444' : '#44ff44'}">${tradeCooldownRemaining > 0 ? `Next trade available in ${formatPvpCooldown(tradeCooldownRemaining)}` : 'Trade ready.'}</div>`;
     
     if (pvpEnemies.length === 0) {
         initPvp();
@@ -5964,6 +5986,7 @@ function sanitizeLoadedStateData(state) {
     const allowedLuckTypes = ['weapon', 'charm'];
     ensurePlayerBaseStats(state.player);
     state.pvpCooldownUntil = Math.max(0, Number(state.pvpCooldownUntil) || 0);
+    state.tradeCooldownUntil = Math.max(0, Number(state.tradeCooldownUntil) || 0);
     state.questProgress = normalizeQuestProgressById(state.quests, state.questProgress);
     state.guildQuestProgress = normalizeGuildQuestProgressById(state.guildQuests, state.guildQuestProgress);
 
@@ -6308,6 +6331,7 @@ function buildCompactSaveData() {
     if (worldBossState) save.wb = worldBossState;
     if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
     if (gameState.pvpCooldownUntil) save.pc = gameState.pvpCooldownUntil;
+    if (gameState.tradeCooldownUntil) save.tc = gameState.tradeCooldownUntil;
     const persistedAuctionState = encodeAuctionStateForSave();
     if (persistedAuctionState) save.au = persistedAuctionState;
 
@@ -6379,6 +6403,7 @@ function decodeCompactSaveData(data) {
     }
     if (data.wbn !== undefined) hydrated.worldBossNextSpawn = data.wbn;
     if (data.pc !== undefined) hydrated.pvpCooldownUntil = data.pc;
+    if (data.tc !== undefined) hydrated.tradeCooldownUntil = data.tc;
 
     const guildQuestState = decodeGuildQuestsFromSave(data.gq || []);
     hydrated.guildQuests = guildQuestState.quests;
@@ -6842,8 +6867,8 @@ function spawnWorldBoss() {
     
     gameState.currentWorldBoss = {
         ...bossTemplate,
-        hp: Math.floor(bossTemplate.hp * levelScale * 5),
-        maxHp: Math.floor(bossTemplate.hp * levelScale * 5),
+        hp: Math.floor(bossTemplate.hp * levelScale * WORLD_BOSS_HEALTH_MULTIPLIER),
+        maxHp: Math.floor(bossTemplate.hp * levelScale * WORLD_BOSS_HEALTH_MULTIPLIER),
         atk: Math.floor(bossTemplate.atk * levelScale * 0.7),
         def: Math.floor(bossTemplate.def * levelScale * 0.7),
         name: `⚔️ WORLD BOSS: ${bossTemplate.name} ⚔️`
@@ -6989,13 +7014,13 @@ function attackWorldBoss() {
 function startFakePlayerBossAttacks() {
     const fakeRoster = ensureFakePlayerRoster();
     if (worldBossAttackIntervalId) {
-        clearInterval(worldBossAttackIntervalId);
+        clearTimeout(worldBossAttackIntervalId);
         worldBossAttackIntervalId = null;
     }
-    
-    worldBossAttackIntervalId = setInterval(() => {
+
+    const runFakeAttackTick = () => {
         if (!gameState.worldBossActive) {
-            clearInterval(worldBossAttackIntervalId);
+            clearTimeout(worldBossAttackIntervalId);
             worldBossAttackIntervalId = null;
             return;
         }
@@ -7029,13 +7054,17 @@ function startFakePlayerBossAttacks() {
         
         // Check if boss is dead
         if (gameState.currentWorldBoss.hp <= 0) {
-            clearInterval(worldBossAttackIntervalId);
+            clearTimeout(worldBossAttackIntervalId);
             worldBossAttackIntervalId = null;
             despawnWorldBoss(true);
             return;
         }
         scheduleSilentPersist();
-    }, 3000);
+
+        worldBossAttackIntervalId = setTimeout(runFakeAttackTick, rand(WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN, WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX));
+    };
+
+    worldBossAttackIntervalId = setTimeout(runFakeAttackTick, rand(WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN, WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX));
 }
 
 function distributeWorldBossRewards() {
