@@ -4381,7 +4381,7 @@ function renderSave() {
 
 function exportSavefile() {
     try {
-        const cleanState = getCleanGameState();
+        const cleanState = getCleanGameState(gameState);
         const encrypted = encryptData(cleanState);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `realm-of-shadows-save-${timestamp}.ros`;
@@ -4445,99 +4445,53 @@ function importSavefile(event) {
     event.target.value = '';
 }
 
-// Create a clean copy of gameState for saving (excludes non-essential logs and temp data)
-function getCleanGameState() {
-    const clean = JSON.parse(JSON.stringify(gameState));
-    // Remove non-essential data that accumulates and bloats storage
-    clean.battleLog = [];
-    clean.itemLog = [];
-    clean.chatMessages = [];
-    clean.fakePlayers = [];
-    clean.auctionItems = [];
-    clean.wandering.log = [];
-    clean.worldBossDamage = {};
-    clean.worldBossTotalDamage = 0;
-    // Keep essential game state: player, equipment, inventory, quests, dungeons, etc.
-    return clean;
-}
-
+// Save game using localStorage manager
 function saveGame() {
-    try {
-        const cleanState = getCleanGameState();
-        const json = JSON.stringify(cleanState);
-        const size = new Blob([json]).size;
-        console.log(`Save size: ${size} bytes (cleaned)`);
-        localStorage.setItem('realmOfShadows', json);
-        addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
-    } catch (e) {
-        console.log('Save failed', e);
-        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-            addChatMessage('SYSTEM', '❌ Save failed: Storage quota exceeded. Cleared logs and retrying...', true);
-            try {
-                // Force aggressive cleanup and retry
-                const cleanState = getCleanGameState();
-                cleanState.inventory = cleanState.inventory.slice(0, 50); // Cap inventory at 50 items
-                const json = JSON.stringify(cleanState);
-                localStorage.setItem('realmOfShadows', json);
-                addChatMessage('SYSTEM', '✅ Game saved with reduced inventory!', true);
-            } catch (e2) {
-                addChatMessage('SYSTEM', '❌ Save still failed. Please reduce inventory and try again.', true);
-                console.error('Save failed even after cleanup:', e2);
-            }
-        } else {
-            addChatMessage('SYSTEM', `❌ Failed to save game: ${e.message}`, true);
-        }
-    }
+    saveToLocalStorage(gameState, 
+        (msg) => addChatMessage('SYSTEM', msg, true),
+        (msg) => addChatMessage('SYSTEM', msg, true)
+    );
 }
 
 function loadGame() {
-    try {
-        const saved = localStorage.getItem('realmOfShadows');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            Object.assign(gameState, parsed);
-            
-            // Sanitize loaded inventory and equipment
-            const allowedLuckTypes = ['weapon', 'charm'];
-            if (Array.isArray(gameState.inventory)) {
-                gameState.inventory.forEach(it => {
-                    if (!it) return;
-                    if (it.luck && !allowedLuckTypes.includes(it.type)) delete it.luck;
-                    const res = resolveEquipSlot(it);
-                    if (res && !it.equipSlot) it.equipSlot = res;
-                });
-            }
-            Object.keys(gameState.equipment || {}).forEach(slot => {
-                const eq = gameState.equipment[slot];
-                if (!eq) return;
-                if (eq.luck && !allowedLuckTypes.includes(eq.type)) delete eq.luck;
-                if (!eq.equipSlot) eq.equipSlot = slot;
+    const loadedState = loadFromLocalStorage(
+        (msg) => addChatMessage('SYSTEM', msg, true),
+        (msg) => addChatMessage('SYSTEM', msg, true)
+    );
+    
+    if (loadedState) {
+        Object.assign(gameState, loadedState);
+        
+        // Sanitize loaded inventory and equipment
+        const allowedLuckTypes = ['weapon', 'charm'];
+        if (Array.isArray(gameState.inventory)) {
+            gameState.inventory.forEach(it => {
+                if (!it) return;
+                if (it.luck && !allowedLuckTypes.includes(it.type)) delete it.luck;
+                const res = resolveEquipSlot(it);
+                if (res && !it.equipSlot) it.equipSlot = res;
             });
-            
-            updateStats();
-            renderSave();
-            updateSidePanels();
-            addChatMessage('SYSTEM', '✅ Game loaded successfully!', true);
-        } else {
-            addChatMessage('SYSTEM', '⚠️ No save file found!', true);
         }
-    } catch (e) {
-        console.log('Load failed', e);
-        addChatMessage('SYSTEM', '❌ Failed to load game!', true);
+        Object.keys(gameState.equipment || {}).forEach(slot => {
+            const eq = gameState.equipment[slot];
+            if (!eq) return;
+            if (eq.luck && !allowedLuckTypes.includes(eq.type)) delete eq.luck;
+            if (!eq.equipSlot) eq.equipSlot = slot;
+        });
+        
+        updateStats();
+        renderSave();
+        updateSidePanels();
+        addChatMessage('SYSTEM', '✅ Game loaded successfully!', true);
     }
 }
 
 function resetGame() {
     if (confirm('Are you sure you want to reset all progress?')) {
-        localStorage.removeItem('realmOfShadows');
-        location.reload();
-    }
-}
-
-function resetGame() {
-    if (confirm('Are you sure you want to reset all progress?')) {
-        localStorage.removeItem('realmOfShadows');
-        location.reload();
+        deleteSaveFile(
+            () => location.reload(),
+            (msg) => console.error(msg)
+        );
     }
 }
 
@@ -4996,5 +4950,6 @@ initAuctionSystem();
 // Start the game
 init();
 </script>
+<script src="localStorage.js"></script>
 </body>
 </html>
