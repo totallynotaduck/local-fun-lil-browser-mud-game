@@ -4447,10 +4447,23 @@ function importSavefile(event) {
 
 // Save game using localStorage manager
 function saveGame() {
-    saveToLocalStorage(gameState, 
-        (msg) => addChatMessage('SYSTEM', msg, true),
-        (msg) => addChatMessage('SYSTEM', msg, true)
-    );
+    try {
+        console.log('💾 Save initiated by user');
+        getStateSize(gameState, 'Current gameState BEFORE cleaning');
+        saveToLocalStorage(gameState, 
+            (msg) => {
+                addChatMessage('SYSTEM', msg, true);
+                console.log('✅ ' + msg);
+            },
+            (msg) => {
+                addChatMessage('SYSTEM', msg, true);
+                console.error('❌ ' + msg);
+            }
+        );
+    } catch (e) {
+        console.error('Unexpected error in saveGame:', e);
+        addChatMessage('SYSTEM', `❌ Unexpected save error: ${e.message}`, true);
+    }
 }
 
 function loadGame() {
