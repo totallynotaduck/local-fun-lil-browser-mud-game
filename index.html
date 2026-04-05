@@ -4459,6 +4459,21 @@ function importSavefile(event) {
 // Save game using localStorage manager
 function saveGame() {
     try {
+        // Wait for localStorage functions to be available
+        if (typeof saveToLocalStorage !== 'function') {
+            console.error('❌ localStorage functions not yet loaded');
+            // Give it a moment and try again
+            if (window.__localStorageRetries === undefined) window.__localStorageRetries = 0;
+            if (window.__localStorageRetries < 3) {
+                window.__localStorageRetries++;
+                console.log(`Retrying save attempt ${window.__localStorageRetries}...`);
+                setTimeout(saveGame, 500);
+                return;
+            }
+            addChatMessage('SYSTEM', '❌ Failed to load save system. Please refresh the page.', true);
+            return;
+        }
+        
         console.log('💾 Save initiated by user');
         // Only log state size if function is available
         if (typeof getStateSize === 'function') {
@@ -4481,6 +4496,13 @@ function saveGame() {
 }
 
 function loadGame() {
+    // Check if localStorage functions are available
+    if (typeof loadFromLocalStorage !== 'function') {
+        console.error('❌ loadFromLocalStorage not yet loaded');
+        addChatMessage('SYSTEM', '❌ Save system not ready. Please refresh the page.', true);
+        return;
+    }
+    
     const loadedState = loadFromLocalStorage(
         (msg) => addChatMessage('SYSTEM', msg, true),
         (msg) => addChatMessage('SYSTEM', msg, true)
@@ -4515,9 +4537,18 @@ function loadGame() {
 
 function resetGame() {
     if (confirm('Are you sure you want to reset all progress?')) {
+        // Check if localStorage functions are available
+        if (typeof deleteSaveFile !== 'function') {
+            console.error('❌ deleteSaveFile not yet loaded');
+            localStorage.removeItem('realmOfShadows');
+            location.reload();
+            return;
+        }
+        
         deleteSaveFile(
             () => location.reload(),
             (msg) => console.error(msg)
+        );
         );
     }
 }

@@ -3,6 +3,9 @@
  * Handles saving, loading, and managing game state in browser localStorage
  */
 
+// Signal that this module is loading
+console.log('📦 localStorage.js is loading...');
+
 const STORAGE_KEY = 'realmOfShadows';
 const STORAGE_VERSION = '1.0';
 const MAX_INVENTORY_ITEMS = 50;
@@ -483,6 +486,12 @@ if (typeof module !== 'undefined' && module.exports) {
         getSaveFileInfo,
         debugStorage
     };
+}
+
+// Signal that localStorage module has loaded
+if (typeof window !== 'undefined') {
+    window.__localStorageReady = true;
+    console.log('✅ localStorage.js loaded and ready!');
 }
 
 /**
