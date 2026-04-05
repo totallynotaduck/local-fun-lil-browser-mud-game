@@ -428,6 +428,428 @@ function isEquipable(item) {
     return !!resolveEquipSlot(item);
 }
 
+const FAKE_PLAYER_NAMES = [
+    'AetherValkyrie', 'AshenWarden', 'BasiliskByte', 'BladeCantor', 'BloomHex', 'BrassComet', 'BriarMonk', 'CinderArchivist',
+    'CobaltFang', 'CopperHymn', 'CrimsonPilgrim', 'CryptOwl', 'DawnHarrier', 'DreadHarbor', 'EchoRaptor', 'EmberKnell',
+    'FrostLedger', 'GaleMender', 'GildedHowl', 'GlassLancer', 'GrimmTinker', 'HollowVow', 'IvoryRook', 'JadeTempest',
+    'LanternWisp', 'LunarSmith', 'MirthlessFox', 'Mistbreaker', 'MossSentinel', 'NetherBloom', 'NightHarrier', 'ObsidianKite',
+    'OracleRune', 'PaleNomad', 'PhantomWeaver', 'PyreWalker', 'QuartzShade', 'RavenCircuit', 'RiftNomad', 'RuneDrifter',
+    'SableAnchor', 'ScarletTide', 'SeraphSpark', 'ShadeForger', 'SilverMantis', 'SmokeOracle', 'SolarGnash', 'SpiritAnvil',
+    'StarVagrant', 'StormQuill', 'SunkenEcho', 'ThornMarshal', 'ThunderScribe', 'TwilightRaven', 'UmbralCairn', 'VelvetFalcon',
+    'VerdantHex', 'ViperSaint', 'VoidLantern', 'WarpedHalo', 'WhisperForge', 'WildTalon', 'WinterBramble', 'WyrmCaller',
+    'ZephyrMonk', 'AshRune', 'Blackreef', 'CelestialMire', 'DeepCinder', 'ElderQuartz', 'FlintBanner', 'GrimAvalon',
+    'HexHarvester', 'IronComet', 'Kingshade', 'LumenCrow', 'MoonSpur', 'NettleVow', 'OnyxPilgrim', 'PrismHowler'
+];
+
+const FAKE_PLAYER_ARCHETYPES = [
+    { title: 'Vanguard', bias: { atk: 0.95, def: 1.20, maxHp: 1.15 }, critBonus: 0, preferredSlots: ['armor', 'shield', 'helmet', 'amulet'] },
+    { title: 'Duelist', bias: { atk: 1.18, def: 0.95, maxHp: 1.00 }, critBonus: 8, preferredSlots: ['weapon', 'gloves', 'ring'] },
+    { title: 'Ranger', bias: { atk: 1.08, def: 0.90, maxHp: 0.97 }, critBonus: 10, preferredSlots: ['weapon', 'boots', 'cape', 'ring'] },
+    { title: 'Battlemage', bias: { atk: 1.12, def: 0.88, maxHp: 0.95 }, critBonus: 6, preferredSlots: ['weapon', 'amulet', 'cape'] },
+    { title: 'Warden', bias: { atk: 0.90, def: 1.28, maxHp: 1.18 }, critBonus: 0, preferredSlots: ['shield', 'armor', 'helmet'] },
+    { title: 'Reaver', bias: { atk: 1.22, def: 0.85, maxHp: 1.02 }, critBonus: 12, preferredSlots: ['weapon', 'gloves', 'boots'] }
+];
+
+const FAKE_PLAYER_SLOT_ORDER = ['weapon', 'armor', 'helmet', 'shield', 'boots', 'gloves', 'cape', 'ring', 'amulet'];
+const FAKE_PLAYER_RARITY_SCORE = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, unique: 6, uber_unique: 7 };
+
+const FAKE_CHAT_MESSAGE_GROUPS = {
+    auction: [
+        'Anyone else stalking the auction timer for legendary boots?',
+        'Lost a rare ring by one second in the auction house.',
+        'Saving gold for the next epic weapon listing.',
+        'Fake bidders keep pushing every shield I want.',
+        'The auction is the best place to dump spare gold after a dungeon run.',
+        'Someone just listed a perfect crit ring and I am sweating.',
+        'I swear rare cloaks disappear faster than potions.',
+        'Last-second bids are more dangerous than dragons.',
+        'That auction countdown is pure stress and I love it.',
+        'If you see a Dragon Scale Mail on auction, leave it for me.',
+        'I only visit town to check quests and the auction board.',
+        'The auction tab keeps baiting me into selling loot too early.'
+    ],
+    dungeon: [
+        'Stage rewards in the dungeon snowball hard if you stay alive.',
+        'I hit a new dungeon milestone and the permanent stats felt amazing.',
+        'Miniboss loot in the dungeon is always worth the risk.',
+        'The dungeon is where my potion stack goes to die.',
+        'If your scroll slots are ready, the dungeon becomes a different game.',
+        'I keep diving deeper for the record stage, not the gold.',
+        'Nothing hurts like losing a perfect run to one bad crit.',
+        'Dungeon drops have been better than my last five quests.',
+        'Those stage milestone stat boosts make every push count.',
+        'I love that dungeon runs can pivot from easy to terrifying instantly.',
+        'Made it through a miniboss with one digit HP left.',
+        'The dungeon is the fastest way to learn if your build is real.'
+    ],
+    worldBoss: [
+        'World Boss alarms always drag me out of whatever I am doing.',
+        'Trying to sneak in one more hit before the boss despawns.',
+        'Damage races on the World Boss are my favorite kind of chaos.',
+        'The whole server shows up when the boss HP bar appears.',
+        'I keep a ticket ready just in case the party wants instant boss time.',
+        'World Boss rewards feel better when your name is high on the board.',
+        'The fake raiders hit harder than half the duelists in town.',
+        'I am only here to pad my damage total on the boss.',
+        'Please stop spawning the boss while I am midway through crafting.',
+        'A good World Boss pull can fix a bad gold day.',
+        'Watching the shared damage climb is weirdly satisfying.',
+        'I wish every boss had a public damage meter.'
+    ],
+    guild: [
+        'The guild board finally rolled a quest I can speed farm.',
+        'Guild quests are the cleanest way to turn enemy drops into progress.',
+        'I always grab guild work before I wander anywhere risky.',
+        'Soul Gem guild rewards are the only reason I stay disciplined.',
+        'The guild clerk keeps handing me swamp contracts and I am not ready.',
+        'Accepted two guild tasks that overlap and now I feel efficient.',
+        'Guild quests make the grind feel less random.',
+        'The best loop is guild quest, dungeon push, then auction cleanup.',
+        'I love when the guild sends me after enemies I already need for drops.',
+        'Common guild jobs are still worth it when you stack them right.',
+        'Rare guild contracts always feel like mini events.',
+        'I keep refreshing my route around whatever the guild wants dead.'
+    ],
+    wandering: [
+        'Wandering is way better once you stop panicking at every event.',
+        'The shadow merchant always appears right after I spend my gold.',
+        'Wander rewards add up fast if you survive enough encounters.',
+        'I got greedy on a wandering run and almost lost everything.',
+        'Encounter chains in wandering mode can get wild.',
+        'Nothing beats finding a merchant with exactly the gear slot you need.',
+        'Wandering taught me to keep backup potions on hand.',
+        'I only go wandering when my inventory has room for surprises.',
+        'Those random wandering choices feel harsher than boss mechanics.',
+        'The merchant vanished right when I finally decided to buy.',
+        'Wandering is secretly the best place to test a lucky build.',
+        'Escape options in wandering runs save more loot than pride.'
+    ],
+    scrolls: [
+        'Equipped scroll slots completely changed how I approach hard fights.',
+        'A good damage scroll makes mediocre gear feel heroic.',
+        'Saving my best scrolls for bosses never works because I use them early.',
+        'Defense scrolls are carrying my undergeared alt path.',
+        'Freeze scrolls buy more time than any potion ever has.',
+        'I keep one scroll slot for greed and one for survival.',
+        'Execution scrolls make low boss HP feel hilarious.',
+        'Drop boost scrolls belong in every dungeon push.',
+        'I forget scroll timers every single fight.',
+        'Scroll combos are the reason I inspect my loadout before duels.',
+        'Lifesteal scrolls turn sloppy fights into recoveries.',
+        'Invulnerability scrolls are my panic button and I am not ashamed.'
+    ],
+    crafting: [
+        'Crafting finally paid off with a clean armor upgrade.',
+        'I burned a pile of materials chasing one lucky recipe proc.',
+        'The crafting tab is where my spare monster parts go to become hope.',
+        'Dragon scales never last long once I start crafting.',
+        'I respect any build that farms its own recipes.',
+        'Crafting crit rings still feels more exciting than buying them.',
+        'One failed craft always turns into five more attempts.',
+        'I keep hoarding ore for the next weapon recipe.',
+        'Crafting makes low rarity drops feel useful again.',
+        'Sometimes the real reward is clearing bag space through crafting.',
+        'My guild route exists purely to feed the crafting bench.',
+        'The recipe odds are rude, but the result is worth it.'
+    ],
+    temple: [
+        'The temple keeps my weapon luck dreams alive.',
+        'Blessing Oil feels like gambling with better music.',
+        'I never have enough gold when the temple is calling.',
+        'One lucky oil roll can carry your gear for ages.',
+        'The temple is the first place I go after a big sale.',
+        'I should save for upgrades, but the temple keeps tempting me.',
+        'Weapon luck is the stat I trust least and chase most.',
+        'A bad temple streak makes me question everything.',
+        'The temple is expensive therapy for unlucky adventurers.',
+        'I hit a lucky oil upgrade and now I refuse to unequip this blade.',
+        'Temple runs are just shiny risk management.',
+        'I love that the temple gives gold another late-game sink.'
+    ],
+    market: [
+        'The Grand Market refresh keeps baiting me into impulse buys.',
+        'Market stock looked terrible until the last slot rolled perfect.',
+        'I check the market after every good gold streak.',
+        'The market is kinder than the auction when I need fast upgrades.',
+        'Refreshing the market manually is my favorite bad decision.',
+        'The best market finds always happen when I am almost broke.',
+        'I treat the market like a bonus loot table with prices.',
+        'Rare boots in the market saved my dungeon run tonight.',
+        'Market browsing is half shopping and half self-control.',
+        'I found a better shield in the market than any recent drop.',
+        'The market makes travel back to town worth it.',
+        'I keep telling myself the market refresh will be the last one.'
+    ],
+    merge: [
+        'Merge upgrades made one of my old drops relevant again.',
+        'I finally had enough duplicates to justify a risky merge.',
+        'The merge screen is pure greed disguised as progression.',
+        'Nothing stings like realizing you sold the perfect merge fodder.',
+        'Merged gear scales harder than people expect.',
+        'I keep every extra copy now because merge levels matter.',
+        'A clean merge line can outlast three zone unlocks.',
+        'Merge progress is why I never ignore medium rarity gear.',
+        'Old weapons become real again once the merge count climbs.',
+        'The merge system quietly became my favorite upgrade path.',
+        'I am hunting duplicates more than legendaries today.',
+        'One merge level can fix a build that felt stuck.'
+    ],
+    jobs: [
+        'Burned all my job points and bought myself a repair budget.',
+        'Jobs are my favorite low-pressure gold income between fights.',
+        'I always spend job points before logging off.',
+        'The max job point upgrade is way more useful than it looks.',
+        'A quick patrol run funded my potion stash.',
+        'Boss Hunt jobs feel like free momentum when I am already strong.',
+        'Jobs are the reason I am never totally broke.',
+        'I love instant jobs because they fit between everything else.',
+        'Guard Caravan is still one of the cleanest early gold plays.',
+        'Job rewards are humble until you chain them all day.',
+        'Spent my last soul gem on more job capacity and it paid off.',
+        'Dungeon Run jobs always make me want to do a real dungeon after.'
+    ],
+    quests: [
+        'Quest turn-ins still feel good even when the loot is average.',
+        'I love when a quest route overlaps with a guild contract.',
+        'Zone unlocks feel huge because they open new quest targets.',
+        'I keep a mental list of enemies tied to multiple quests.',
+        'Quest rewards are what got my build off the ground.',
+        'Finishing a quest and leveling at the same time is unbeatable.',
+        'The early forest quests still have elite pacing.',
+        'My favorite part of a new area is seeing the quest board catch up.',
+        'Quest progress makes farming feel honest.',
+        'I only notice how many bats I killed when the quest says complete.',
+        'The best grind is when quests, guild jobs, and drops all align.',
+        'Every new questline makes the map feel more alive.'
+    ]
+};
+
+const FAKE_CHAT_TAGLINES = [
+    'auction sniping is its own minigame',
+    'dungeon milestones feel better than job payouts',
+    'wandering rewards add up when you stay alive',
+    'scroll slots change every hard fight',
+    'crafting finally pays off when the recipe procs',
+    'world boss damage races are pure chaos',
+    'the guild board keeps my inventory moving',
+    'merge upgrades make old drops relevant again',
+    'the temple is worth every coin after a bad duel',
+    'market refreshes always tempt me into overspending',
+    'level-gated zones make each unlock feel huge',
+    'PvP scouts who inspect gear first usually win'
+];
+
+const FAKE_CHAT_PREFIXES = [
+    'Anyone else think',
+    'Hot take:',
+    'Reminder:',
+    'I swear',
+    'Honestly,',
+    'Pro tip:',
+    'Today I learned',
+    'No joke,',
+    'Best feeling:',
+    'Small warning:'
+];
+
+const FAKE_CHAT_MESSAGES = buildFakeChatMessages();
+
+function buildFakeChatMessages() {
+    const messages = Object.values(FAKE_CHAT_MESSAGE_GROUPS).flat();
+    FAKE_CHAT_TAGLINES.forEach(tagline => {
+        FAKE_CHAT_PREFIXES.forEach(prefix => {
+            messages.push(`${prefix} ${tagline}.`);
+        });
+    });
+    return Array.from(new Set(messages));
+}
+
+function fakePlayerHash(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function nextFakeSeed(seed) {
+    return (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+}
+
+function seededRange(seed, min, max) {
+    const next = nextFakeSeed(seed);
+    return {
+        seed: next,
+        value: min + (next % (max - min + 1))
+    };
+}
+
+function seededPick(seed, arr) {
+    if (!arr || arr.length === 0) return { seed, value: null };
+    const roll = seededRange(seed, 0, arr.length - 1);
+    return { seed: roll.seed, value: arr[roll.value] };
+}
+
+function getFakePlayerRegion(level) {
+    if (level >= 45) return locations.dragon_lair.name;
+    if (level >= 28) return locations.swamp.name;
+    if (level >= 16) return locations.dark_forest.name;
+    if (level >= 8) return locations.mountains.name;
+    return locations.forest.name;
+}
+
+function getFakeEquipmentPercent(item, stat) {
+    if (!item) return 0;
+    const directPercent = item[`${stat}%`] || item[`${stat}Percent`] || 0;
+    if (directPercent) return directPercent;
+    if (stat === 'maxHp') return item.hpPercent || item['hp%'] || 0;
+    if (stat === 'maxMp') return item.mpPercent || item['mp%'] || 0;
+    return 0;
+}
+
+function scoreFakePlayerItem(item, level, slot, archetype) {
+    const levelReq = item.levelReq || 1;
+    const rarityScore = FAKE_PLAYER_RARITY_SCORE[item.rarity] || 0;
+    const statValue =
+        (item.atk || 0) * 3 +
+        (item.def || 0) * 2.6 +
+        ((item.maxHp || item.hp || 0) / 12) +
+        (item.crit || 0) * 1.8 +
+        (item.dodge || 0) * 1.6 +
+        (item.luck || 0) * 0.8 +
+        (item.dmgReduction || 0) * 4 +
+        getFakeEquipmentPercent(item, 'atk') * 1.8 +
+        getFakeEquipmentPercent(item, 'def') * 1.5;
+    const closeness = 120 - Math.abs(level - levelReq) * 5;
+    const preference = archetype.preferredSlots.includes(slot) ? 20 : 0;
+    return closeness + (rarityScore * 14) + statValue + preference;
+}
+
+function buildFakePlayerEquipment(level, archetype, seed) {
+    const equipment = {};
+    let workingSeed = seed;
+
+    FAKE_PLAYER_SLOT_ORDER.forEach(slot => {
+        const candidates = Object.values(itemPool)
+            .filter(item => {
+                if (resolveEquipSlot(item) !== slot) return false;
+                if ((item.levelReq || 1) > level) return false;
+                if (item.rarity === 'uber_unique' && level < 55) return false;
+                return true;
+            })
+            .sort((a, b) => scoreFakePlayerItem(b, level, slot, archetype) - scoreFakePlayerItem(a, level, slot, archetype));
+
+        if (candidates.length === 0) return;
+
+        const shortlist = candidates.slice(0, Math.min(4, candidates.length));
+        const picked = seededPick(workingSeed, shortlist);
+        workingSeed = picked.seed;
+        equipment[slot] = cloneData(picked.value);
+    });
+
+    return { equipment, seed: workingSeed };
+}
+
+function calculateFakePlayerStats(level, equipment, archetype) {
+    const gear = Object.values(equipment || {}).filter(Boolean);
+    let maxHp = Math.floor(100 * Math.pow(1.10, level - 1));
+    let maxMp = Math.floor(50 * Math.pow(1.10, level - 1));
+    let atk = 10 + ((level - 1) * 3);
+    let def = 5 + ((level - 1) * 3);
+    let crit = Math.floor(level / 12);
+
+    gear.forEach(item => {
+        atk += item.atk || 0;
+        def += item.def || 0;
+        maxHp += item.maxHp || item.hp || 0;
+        maxMp += item.maxMp || item.mp || 0;
+        crit += item.crit || 0;
+    });
+
+    let atkMultiplier = 1;
+    let defMultiplier = 1;
+    let hpMultiplier = 1;
+    let mpMultiplier = 1;
+
+    gear.forEach(item => {
+        atkMultiplier += getFakeEquipmentPercent(item, 'atk') / 100;
+        defMultiplier += getFakeEquipmentPercent(item, 'def') / 100;
+        hpMultiplier += getFakeEquipmentPercent(item, 'maxHp') / 100;
+        mpMultiplier += getFakeEquipmentPercent(item, 'maxMp') / 100;
+    });
+
+    atk = Math.floor(atk * atkMultiplier * archetype.bias.atk);
+    def = Math.floor(def * defMultiplier * archetype.bias.def);
+    maxHp = Math.floor(maxHp * hpMultiplier * archetype.bias.maxHp);
+    maxMp = Math.floor(maxMp * mpMultiplier);
+    crit = clamp(crit + (archetype.critBonus || 0), 0, 75);
+
+    return { hp: maxHp, maxHp, mp: maxMp, maxMp, atk, def, crit };
+}
+
+function summarizeFakePlayerEquipment(equipment) {
+    const highlights = [
+        equipment.weapon?.name,
+        equipment.armor?.name,
+        equipment.ring?.name || equipment.amulet?.name
+    ].filter(Boolean);
+    return highlights.join(' • ');
+}
+
+function buildFakePlayerRoster(count = 80) {
+    return FAKE_PLAYER_NAMES.slice(0, count).map((name, idx) => {
+        let seed = fakePlayerHash(`${name}:${idx}`);
+        const levelFloor = Math.max(1, Math.floor((idx / count) * 60) + 1);
+        const levelRoll = seededRange(seed, levelFloor, Math.min(60, levelFloor + 7));
+        seed = levelRoll.seed;
+
+        const archetypeRoll = seededPick(seed, FAKE_PLAYER_ARCHETYPES);
+        seed = archetypeRoll.seed;
+        const archetype = archetypeRoll.value || FAKE_PLAYER_ARCHETYPES[0];
+
+        const equipped = buildFakePlayerEquipment(levelRoll.value, archetype, seed);
+        const stats = calculateFakePlayerStats(levelRoll.value, equipped.equipment, archetype);
+        const goldReward = Math.max(25, Math.floor(levelRoll.value * 22 + ((stats.atk + stats.def) * 0.2)));
+
+        return {
+            name,
+            title: archetype.title,
+            region: getFakePlayerRegion(levelRoll.value),
+            level: levelRoll.value,
+            ...stats,
+            gold: goldReward,
+            xp: Math.max(120, Math.floor(levelRoll.value * 95)),
+            tier: Math.max(1, Math.ceil(levelRoll.value / 10)),
+            equipment: equipped.equipment,
+            gearSummary: summarizeFakePlayerEquipment(equipped.equipment)
+        };
+    });
+}
+
+function ensureFakePlayerRoster() {
+    if (!Array.isArray(pvpEnemies) || pvpEnemies.length !== 80) {
+        pvpEnemies = buildFakePlayerRoster(80);
+    }
+    return pvpEnemies;
+}
+
+function renderFakePlayerCard(enemy, idx, isOnCooldown) {
+    const isHigherLevel = enemy.level > gameState.player.level;
+    const gearText = enemy.gearSummary || 'Travel gear';
+    return `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
+        <div>
+            <div>
+                <span class="player-name">${enemy.name}</span>
+                <span class="player-level">[Lvl ${enemy.level} ${enemy.title}]</span>
+            </div>
+            <div style="color:#888;font-size:0.8em">${enemy.region} | ATK: ${enemy.atk} DEF: ${enemy.def} CRIT: ${enemy.crit}% | Gold: ${enemy.gold}</div>
+            <div style="color:#666;font-size:0.75em">Gear: ${gearText}</div>
+        </div>
+        <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
+    </div>`;
+}
+
     function getTotalStat(stat) {
         const p = gameState.player;
         let base = p[stat] || 0;
@@ -930,13 +1352,11 @@ function addChatMessage(name, msg, isSystem = false, isFake = false) {
 }
 
 function generateFakeChat() {
-    const fakeNames = ['DragonSlayer', 'ShadowMage', 'IronFist', 'MysticWolf', 'DarkKnight', 'FireStorm', 'IceQueen', 'ThunderBolt', 'NightBlade', 'StormBreaker'];
-    const fakeMessages = ['Anyone want to team up?', 'Just got a legendary drop!', 'Looking for guild members', 'Tips for dragon lair?', 'This game is awesome!', 'LF healer for dungeon', 'Selling rare items, check auction', 'Watch out for bosses!', 'Just hit level 50!', 'Need help with quests'];
-    
+    const roster = ensureFakePlayerRoster();
     if (Math.random() < 0.3) {
-        const name = pick(fakeNames);
-        const msg = pick(fakeMessages);
-        addChatMessage(name, msg, false, true);
+        const speaker = pick(roster);
+        const msg = pick(FAKE_CHAT_MESSAGES);
+        addChatMessage(speaker.name, msg, false, true);
     }
 }
 
@@ -4861,22 +5281,11 @@ function dungeonUseItem(idx) {
 
 // PVP SYSTEM - Fight against fake players
 function initPvp() {
-    pvpEnemies = [
-        { name: 'DragonSlayer99', level: rand(1, 50), hp: 100, maxHp: 100, atk: 15, def: 5 },
-        { name: 'ShadowMage', level: rand(5, 55), hp: 150, maxHp: 150, atk: 20, def: 8 },
-        { name: 'IronFist', level: rand(10, 60), hp: 200, maxHp: 200, atk: 25, def: 12 },
-        { name: 'MysticWolf', level: rand(15, 65), hp: 250, maxHp: 250, atk: 30, def: 15 },
-        { name: 'DarkKnight', level: rand(20, 70), hp: 300, maxHp: 300, atk: 40, def: 20 },
-        { name: 'FireStorm42', level: rand(25, 75), hp: 350, maxHp: 350, atk: 45, def: 25 },
-        { name: 'IceQueen', level: rand(30, 80), hp: 400, maxHp: 400, atk: 50, def: 30 },
-        { name: 'ThunderBolt', level: rand(35, 85), hp: 500, maxHp: 500, atk: 60, def: 35 },
-        { name: 'NightBlade', level: rand(40, 90), hp: 600, maxHp: 600, atk: 70, def: 40 },
-        { name: 'StormBreaker', level: rand(45, 100), hp: 700, maxHp: 700, atk: 80, def: 50 }
-    ];
+    pvpEnemies = buildFakePlayerRoster(80);
 }
 
 function startPvp(idx) {
-    const enemy = pvpEnemies[idx];
+    const enemy = ensureFakePlayerRoster()[idx];
     if (!enemy) return;
 
     const remainingCooldown = getPvpCooldownRemainingMs();
@@ -4890,21 +5299,22 @@ function startPvp(idx) {
     
     pvpActive = true;
     currentPvpEnemy = {
-        ...enemy,
-        hp: enemy.level * 10,
-        maxHp: enemy.level * 10,
-        atk: Math.floor(enemy.level * 1.5),
-        def: Math.floor(enemy.level * 0.8),
-        xp: 100 * enemy.level,
-        gold: Math.floor((100 * enemy.level) / 2),
-        tier: Math.floor(enemy.level / 6),
+        ...cloneData(enemy),
+        hp: enemy.maxHp,
+        maxHp: enemy.maxHp,
+        xp: enemy.xp,
+        gold: enemy.gold,
+        tier: enemy.tier,
         isPvp: true
     };
     
     gameState.inBattle = true;
     gameState.currentEnemy = currentPvpEnemy;
     gameState.battleLog = [];
-    addBattleMsg(`You challenge ${enemy.name} to a duel!`, 'info');
+    addBattleMsg(`You challenge ${enemy.name} the ${enemy.title} to a duel!`, 'info');
+    if (enemy.gearSummary) {
+        addBattleMsg(`${enemy.name} enters wearing ${enemy.gearSummary}.`, 'info');
+    }
     
     showScreen('battle');
 }
@@ -4913,21 +5323,14 @@ function renderPvp() {
     const container = document.getElementById('players-screen-content');
     const remainingCooldown = getPvpCooldownRemainingMs();
     const isOnCooldown = remainingCooldown > 0;
+    const roster = ensureFakePlayerRoster();
     
     let html = `<div class="section-title">PvP Arena</div>`;
-    html += `<div class="description">Challenge other warriors to test your skills! (Fake players)</div>`;
+    html += `<div class="description">Challenge other warriors to test your skills! 80 fake adventurers now roam the realm with gear matched to their level.</div>`;
     html += `<div class="description" style="color:${isOnCooldown ? '#ff4444' : '#44ff44'}">${isOnCooldown ? `Next PvP duel available in ${formatPvpCooldown(remainingCooldown)}` : 'PvP ready - rewards now grant half gold.'}</div>`;
     
-    pvpEnemies.forEach((enemy, idx) => {
-        const isHigherLevel = enemy.level > gameState.player.level;
-        html += `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
-            <div>
-                <span class="player-name">${enemy.name}</span> 
-                <span class="player-level">[Lvl ${enemy.level}]</span>
-                <span style="color:#888;font-size:0.8em"> | ATK: ${Math.floor(enemy.level * 1.5)} DEF: ${Math.floor(enemy.level * 0.8)} GOLD: ${Math.floor((100 * enemy.level) / 2)}</span>
-            </div>
-            <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
-        </div>`;
+    roster.forEach((enemy, idx) => {
+        html += renderFakePlayerCard(enemy, idx, isOnCooldown);
     });
     
     container.innerHTML = html;
@@ -4938,41 +5341,25 @@ function renderPlayers() {
     const container = document.getElementById('players-screen-content');
     const remainingCooldown = getPvpCooldownRemainingMs();
     const isOnCooldown = remainingCooldown > 0;
+    const roster = ensureFakePlayerRoster();
     
     let html = `<div class="section-title">Nearby Players</div>`;
     
     // Add PvP section
     html += `<div class="section-title" style="color:#ff4444">PvP Challenges</div>`;
-    html += `<div class="description">Challenge other warriors in combat!</div>`;
+    html += `<div class="description">${roster.length} fake players are active in the realm. Their names, levels, and equipment are now varied so the roster feels more alive.</div>`;
     html += `<div class="description" style="color:${isOnCooldown ? '#ff4444' : '#44ff44'}">${isOnCooldown ? `Next PvP duel available in ${formatPvpCooldown(remainingCooldown)}` : 'PvP ready - rewards now grant half gold.'}</div>`;
     
     if (pvpEnemies.length === 0) {
         initPvp();
     }
     
-    pvpEnemies.slice(0, 6).forEach((enemy, idx) => {
-        const isHigherLevel = enemy.level > gameState.player.level;
-        html += `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
-            <div>
-                <span class="player-name">${enemy.name}</span> 
-                <span class="player-level">[Lvl ${enemy.level}]</span>
-                <span style="color:#888;font-size:0.8em"> | Gold: ${Math.floor((100 * enemy.level) / 2)}</span>
-            </div>
-            <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
-        </div>`;
+    roster.forEach((enemy, idx) => {
+        html += renderFakePlayerCard(enemy, idx, isOnCooldown);
     });
     
-    // Original display
-    html += `<div class="section-title" style="color:#888">Other Players (Social)</div>`;
-    const fakeNames = ['DragonSlayer99', 'ShadowMage', 'IronFist', 'MysticWolf', 'DarkKnight', 'FireStorm42', 'IceQueen', 'ThunderBolt', 'NightBlade', 'StormBreaker'];
-    
-    fakeNames.slice(0, 5).forEach(name => {
-        const lvl = rand(1, 50);
-        html += `<div class="player-card">
-            <div><span class="player-name">${name}</span> <span class="player-level">[Lvl ${lvl}]</span></div>
-            <button class="action-btn" style="font-size:0.7em">Trade</button>
-        </div>`;
-    });
+    html += `<div class="section-title" style="color:#888">Realm Chatter</div>`;
+    html += `<div class="description">Chat now pulls from ${FAKE_CHAT_MESSAGES.length} fake dialogue lines covering auctions, jobs, wandering, crafting, scrolls, merges, the temple, the dungeon, and world boss events.</div>`;
     
     container.innerHTML = html;
 }
@@ -6225,7 +6612,7 @@ function attackWorldBoss() {
 }
 
 function startFakePlayerBossAttacks() {
-    const fakePlayerNames = ['DragonSlayer', 'ShadowMage', 'IronFist', 'MysticWolf', 'DarkKnight', 'FireStorm', 'IceQueen', 'ThunderBolt', 'NightBlade', 'StormBreaker', 'GoldHunter', 'TreasureSeeker', 'ItemCollector', 'LegendFinder', 'EpicHunter'];
+    const fakeRoster = ensureFakePlayerRoster();
     
     const attackInterval = setInterval(() => {
         if (!gameState.worldBossActive) {
@@ -6238,22 +6625,25 @@ function startFakePlayerBossAttacks() {
         const attackers = [];
         
         for (let i = 0; i < numAttackers; i++) {
-            const attacker = pick(fakePlayerNames.filter(n => !attackers.includes(n)));
+            const attacker = pick(fakeRoster.filter(player => !attackers.includes(player.name)));
             if (!attacker) continue;
-            attackers.push(attacker);
+            attackers.push(attacker.name);
             
-            const dmg = rand(20, 150 + gameState.player.level * 5);
+            const minDmg = Math.max(20, Math.floor(attacker.atk * 0.45));
+            const maxDmg = Math.max(minDmg + 10, Math.floor(attacker.atk * 1.05));
+            const dmg = rand(minDmg, maxDmg);
             gameState.currentWorldBoss.hp = Math.max(0, gameState.currentWorldBoss.hp - dmg);
             
-            if (!gameState.worldBossDamage[attacker]) {
-                gameState.worldBossDamage[attacker] = 0;
+            if (!gameState.worldBossDamage[attacker.name]) {
+                gameState.worldBossDamage[attacker.name] = 0;
             }
-            gameState.worldBossDamage[attacker] += dmg;
+            gameState.worldBossDamage[attacker.name] += dmg;
             gameState.worldBossTotalDamage += dmg;
             
             // Show some attacks in chat
             if (Math.random() < 0.2) {
-                addChatMessage(attacker, `attacked the World Boss for ${dmg} damage!`, false, true);
+                const weaponName = attacker.equipment?.weapon?.name || 'their weapon';
+                addChatMessage(attacker.name, `struck the World Boss with ${weaponName} for ${dmg} damage!`, false, true);
             }
         }
         
