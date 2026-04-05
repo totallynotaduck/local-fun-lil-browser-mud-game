@@ -4381,7 +4381,8 @@ function renderSave() {
 
 function exportSavefile() {
     try {
-        const encrypted = encryptData(gameState);
+        const cleanState = getCleanGameState();
+        const encrypted = encryptData(cleanState);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `realm-of-shadows-save-${timestamp}.ros`;
         
@@ -4444,17 +4445,45 @@ function importSavefile(event) {
     event.target.value = '';
 }
 
+// Create a clean copy of gameState for saving (excludes non-essential logs and temp data)
+function getCleanGameState() {
+    const clean = JSON.parse(JSON.stringify(gameState));
+    // Remove non-essential data that accumulates and bloats storage
+    clean.battleLog = [];
+    clean.itemLog = [];
+    clean.chatMessages = [];
+    clean.fakePlayers = [];
+    clean.auctionItems = [];
+    clean.wandering.log = [];
+    clean.worldBossDamage = {};
+    clean.worldBossTotalDamage = 0;
+    // Keep essential game state: player, equipment, inventory, quests, dungeons, etc.
+    return clean;
+}
+
 function saveGame() {
     try {
-        const json = JSON.stringify(gameState);
+        const cleanState = getCleanGameState();
+        const json = JSON.stringify(cleanState);
         const size = new Blob([json]).size;
-        console.log(`Save size: ${size} bytes`);
+        console.log(`Save size: ${size} bytes (cleaned)`);
         localStorage.setItem('realmOfShadows', json);
         addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
     } catch (e) {
         console.log('Save failed', e);
         if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-            addChatMessage('SYSTEM', '❌ Save failed: Storage quota exceeded. Try clearing browser data or reducing inventory.', true);
+            addChatMessage('SYSTEM', '❌ Save failed: Storage quota exceeded. Cleared logs and retrying...', true);
+            try {
+                // Force aggressive cleanup and retry
+                const cleanState = getCleanGameState();
+                cleanState.inventory = cleanState.inventory.slice(0, 50); // Cap inventory at 50 items
+                const json = JSON.stringify(cleanState);
+                localStorage.setItem('realmOfShadows', json);
+                addChatMessage('SYSTEM', '✅ Game saved with reduced inventory!', true);
+            } catch (e2) {
+                addChatMessage('SYSTEM', '❌ Save still failed. Please reduce inventory and try again.', true);
+                console.error('Save failed even after cleanup:', e2);
+            }
         } else {
             addChatMessage('SYSTEM', `❌ Failed to save game: ${e.message}`, true);
         }
