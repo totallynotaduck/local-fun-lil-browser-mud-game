@@ -432,6 +432,262 @@ function getTotalMaxMp() { return getTotalStat('maxMp'); }
 function getTotalBlock() { return getTotalStat('block'); }
 function getTotalReflect() { return getTotalStat('reflect'); }
 
+function hasEquippedSpecialAbility(abilityName) {
+    return ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'].some(slot => {
+        const eq = gameState.equipment[slot];
+        return eq && eq.specialAbility === abilityName;
+    });
+}
+
+function getScrollEffectsByType(type) {
+    return (gameState.activeScrollEffects || []).filter(effect => effect && effect.effect === type && effect.remainingTurns > 0);
+}
+
+function getScrollDefenseMultiplier() {
+    let multiplier = 1;
+    getScrollEffectsByType('defense_boost').forEach(effect => {
+        multiplier *= effect.value;
+    });
+    getScrollEffectsByType('berserker').forEach(() => {
+        multiplier *= 0.7;
+    });
+    return Math.max(0.1, multiplier);
+}
+
+function getScrollDodgeBonusPercent() {
+    return getScrollEffectsByType('dodge_boost').reduce((bonus, effect) => bonus + ((effect.value || 0) * 100), 0);
+}
+
+function getScrollEnemyDamageMultiplier() {
+    let multiplier = 1;
+    getScrollEffectsByType('slow').forEach(effect => {
+        multiplier *= Math.max(0, 1 - (effect.value || 0));
+    });
+    return Math.max(0, multiplier);
+}
+
+function getScrollLifestealPercent() {
+    return getScrollEffectsByType('lifesteal').reduce((bonus, effect) => bonus + ((effect.value || 0) * 100), 0);
+}
+
+function getScrollThornsDamage() {
+    return getScrollEffectsByType('thorns').reduce((total, effect) => total + (effect.value || 0), 0);
+}
+
+function getScrollDropBoost() {
+    return getScrollEffectsByType('drop_boost').reduce((bonus, effect) => bonus + (effect.value || 0), 0);
+}
+
+function isEnemyFrozenByScroll() {
+    return getScrollEffectsByType('freeze').length > 0;
+}
+
+function getEffectivePlayerDefense() {
+    return Math.max(0, Math.floor(getTotalDef() * getScrollDefenseMultiplier()));
+}
+
+function getEffectivePlayerDodgeChance() {
+    const dodgePercent = (gameState.player.dodge || 0) + getScrollDodgeBonusPercent();
+    return Math.min(95, dodgePercent) / 100;
+}
+
+function calculateDamageBasedHealing(damageDealt) {
+    let healAmt = 0;
+
+    if (hasEquippedSpecialAbility('full_lifesteal')) {
+        healAmt += damageDealt;
+    }
+
+    const lifestealPercent = Math.min(100, (gameState.player.lifesteal || 0) + getScrollLifestealPercent());
+    if (lifestealPercent > 0) {
+        healAmt += Math.floor(damageDealt * lifestealPercent / 100);
+    }
+
+    return healAmt;
+}
+
+function recordWorldBossPlayerDamage(dmg) {
+    if (!gameState.worldBossActive || !gameState.currentWorldBoss || dmg <= 0) return;
+
+    const playerName = gameState.player.name;
+    if (!gameState.worldBossDamage[playerName]) {
+        gameState.worldBossDamage[playerName] = 0;
+    }
+
+    gameState.worldBossDamage[playerName] += dmg;
+    gameState.worldBossTotalDamage += dmg;
+}
+
+function tryConsumeReviveScroll(playerObj, logCallback = addBattleMsg) {
+    const reviveIndex = (gameState.activeScrollEffects || []).findIndex(effect => effect && effect.effect === 'revive');
+    if (reviveIndex === -1) return false;
+
+    const reviveEffect = gameState.activeScrollEffects[reviveIndex];
+    gameState.activeScrollEffects.splice(reviveIndex, 1);
+
+    const reviveHp = Math.max(1, Math.floor(getTotalMaxHp() * (reviveEffect.value || 0.5)));
+    playerObj.hp = reviveHp;
+    logCallback(`🔥 ${reviveEffect.name} revives you with ${reviveHp} HP!`, 'heal');
+    return true;
+}
+
+function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleMsg, healCallback, options = {}) {
+    let enemyDied = false;
+    const invulnerable = !!options.invulnerable;
+    const totalDef = options.totalDef === undefined ? getEffectivePlayerDefense() : options.totalDef;
+    const defenseMitigationFactor = options.defenseMitigationFactor === undefined ? 1 : options.defenseMitigationFactor;
+
+    if (invulnerable) {
+        logCallback(`${enemyObj.name} attacks, but you are invulnerable!`, 'info');
+        return { enemyDied, damageTaken: 0 };
+    }
+
+    if (isEnemyFrozenByScroll()) {
+        logCallback(`❄️ ${enemyObj.name} is frozen and cannot act!`, 'reward');
+        return { enemyDied, damageTaken: 0, skipped: true };
+    }
+
+    const playerDodgeChance = getEffectivePlayerDodgeChance();
+    if (Math.random() < playerDodgeChance) {
+        logCallback(`You DODGED the attack! (Dodge: ${(playerDodgeChance * 100).toFixed(1)}%)`, 'heal');
+        return { enemyDied, damageTaken: 0, dodged: true };
+    }
+
+    const blockChance = Math.min(getTotalBlock(), 95);
+    if (Math.random() * 100 < blockChance) {
+        logCallback(`🛡️ You BLOCKED the attack! (Block: ${blockChance.toFixed(1)}%)`, 'heal');
+
+        if (hasEquippedSpecialAbility('heal_on_block')) {
+            const healAmt = enemyObj.atk;
+            playerObj.hp = Math.min(getTotalMaxHp(), playerObj.hp + healAmt);
+            logCallback(`💚 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
+            if (healCallback) healCallback(healAmt);
+        }
+
+        return { enemyDied, damageTaken: 0, blocked: true };
+    }
+
+    let enemyDmg = Math.max(1, enemyObj.atk - Math.floor(totalDef * defenseMitigationFactor) + rand(-2, 2));
+    enemyDmg = Math.ceil(enemyDmg * getScrollEnemyDamageMultiplier());
+
+    const drPercent = Math.min(gameState.player.dmgReduction || gameState.player.damageReduction || 0, 95) / 100;
+    if (gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75')) {
+        enemyDmg = Math.ceil(enemyDmg * 0.25);
+        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (75% DR ACTIVE)`, 'damage');
+    } else {
+        enemyDmg = Math.ceil(enemyDmg * (1 - drPercent));
+        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (DR: ${(drPercent * 100).toFixed(1)}%)`, 'damage');
+    }
+
+    const reflectChance = Math.min(getTotalReflect(), 95);
+    if (reflectChance > 0 && Math.random() * 100 < reflectChance) {
+        const reflectDamage = enemyDmg;
+        enemyObj.hp = Math.max(0, enemyObj.hp - reflectDamage);
+        if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(reflectDamage);
+        logCallback(`⚡ DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
+
+        if (enemyObj.hp <= 0) {
+            logCallback(`${enemyObj.name} was killed by reflected damage!`, 'reward');
+            enemyDied = true;
+        }
+    }
+
+    const thornsDamage = getScrollThornsDamage();
+    if (thornsDamage > 0 && enemyObj.hp > 0) {
+        enemyObj.hp = Math.max(0, enemyObj.hp - thornsDamage);
+        if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(thornsDamage);
+        logCallback(`🌵 THORNS! ${enemyObj.name} takes ${thornsDamage} damage!`, 'reward');
+
+        if (enemyObj.hp <= 0) {
+            logCallback(`${enemyObj.name} was slain by thorns damage!`, 'reward');
+            enemyDied = true;
+        }
+    }
+
+    playerObj.hp = Math.max(0, playerObj.hp - enemyDmg);
+    if (playerObj.hp <= 0 && tryConsumeReviveScroll(playerObj, logCallback)) {
+        return { enemyDied, damageTaken: enemyDmg, revived: true };
+    }
+
+    return { enemyDied, damageTaken: enemyDmg };
+}
+
+function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattleMsg) {
+    let enemyDied = false;
+
+    getScrollEffectsByType('regen').forEach(effect => {
+        const healAmt = Math.min(effect.value || 0, getTotalMaxHp() - playerObj.hp);
+        if (healAmt > 0) {
+            playerObj.hp += healAmt;
+            logCallback(`✨ ${effect.name} restores ${healAmt} HP!`, 'heal');
+        }
+    });
+
+    ['burn', 'poison'].forEach(type => {
+        getScrollEffectsByType(type).forEach(effect => {
+            if (!enemyObj || enemyObj.hp <= 0) return;
+
+            const dmg = Math.max(1, Math.floor(effect.value || 0));
+            enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
+            if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(dmg);
+
+            const icon = type === 'burn' ? '🔥' : '☠️';
+            logCallback(`${icon} ${effect.name} deals ${dmg} ${type} damage to ${enemyObj.name}!`, 'damage');
+
+            if (enemyObj.hp <= 0) {
+                logCallback(`${enemyObj.name} succumbs to ${type}!`, 'reward');
+                enemyDied = true;
+            }
+        });
+    });
+
+    return { enemyDied };
+}
+
+function getCurrentCombatContext() {
+    if (gameState.worldBossActive && gameState.currentWorldBoss) return 'worldboss';
+    if (dungeonState.active && dungeonState.inBattle && dungeonState.currentEnemy) return 'dungeon';
+    if (gameState.wandering && gameState.wandering.active && gameState.wandering.inBattle && gameState.wandering.currentEnemy) return 'wandering';
+    if (gameState.inBattle && gameState.currentEnemy) return 'battle';
+    return null;
+}
+
+function getCurrentCombatEnemy(context = getCurrentCombatContext()) {
+    if (context === 'worldboss') return gameState.currentWorldBoss;
+    if (context === 'dungeon') return dungeonState.currentEnemy;
+    if (context === 'wandering') return gameState.wandering.currentEnemy;
+    if (context === 'battle') return gameState.currentEnemy;
+    return null;
+}
+
+function getCombatLogCallback(context = getCurrentCombatContext()) {
+    if (context === 'dungeon') return addDungeonLog;
+    if (context === 'wandering') return addWanderingLog;
+    return addBattleMsg;
+}
+
+function rerenderCombatContext(context = getCurrentCombatContext()) {
+    if (context === 'dungeon') {
+        renderDungeon();
+    } else if (context === 'wandering') {
+        renderWandering();
+    } else {
+        renderBattle();
+    }
+}
+
+function handleCombatVictoryByContext(context = getCurrentCombatContext()) {
+    if (context === 'dungeon') {
+        dungeonEnemyDefeated();
+    } else if (context === 'wandering') {
+        wanderingEnemyDefeated();
+    } else if (context === 'worldboss') {
+        despawnWorldBoss(true);
+    } else {
+        enemyDefeated();
+    }
+}
+
 function updateStats() {
     const p = gameState.player;
     const hpEl = document.getElementById('stat-hp');
@@ -645,7 +901,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
             item.type !== 'material' && 
             item.type !== 'currency' &&
             item.type !== 'consumable' &&
-            (!item.levelReq || item.levelReq <= maxLevel)
+            (!item.levelReq || item.levelReq <= maxItemLevel)
         );
         
         if (fallbackItems.length > 0) {
@@ -659,7 +915,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
         item.type !== 'material' && 
         item.type !== 'currency' &&
         item.type !== 'consumable' &&
-        (!item.levelReq || item.levelReq <= maxLevel)
+        (!item.levelReq || item.levelReq <= maxItemLevel)
     );
     
     if (anyLevelItems.length > 0) {
@@ -733,42 +989,82 @@ function addBattleMsg(msg, type = 'info') {
 
 // Use a scroll from equipped scrolls
 function useScroll(slotIndex) {
-    if (!gameState.inBattle || !gameState.currentEnemy) return;
+    const context = getCurrentCombatContext();
+    if (!context) return;
     if (slotIndex < 0 || slotIndex >= gameState.unlockedScrollSlots) return;
     
     const scroll = gameState.equippedScrolls[slotIndex];
     if (!scroll) {
-        addBattleMsg('No scroll equipped in this slot!', 'info');
+        getCombatLogCallback(context)('No scroll equipped in this slot!', 'info');
         return;
     }
+
+    const logCallback = getCombatLogCallback(context);
+    const target = getCurrentCombatEnemy(context);
+    const isImmediateEffect = scroll.effect === 'heal' || scroll.effect === 'nuke';
     
-    // Add scroll effect to active effects
-    gameState.activeScrollEffects.push({
-        name: scroll.name,
-        effect: scroll.effect,
-        value: scroll.value,
-        duration: scroll.duration,
-        remainingTurns: scroll.duration
-    });
+    if (!isImmediateEffect) {
+        gameState.activeScrollEffects.push({
+            name: scroll.name,
+            effect: scroll.effect,
+            value: scroll.value,
+            duration: scroll.duration,
+            remainingTurns: scroll.duration
+        });
+    }
     
     // Immediate effects
     if (scroll.effect === 'heal') {
-        gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + scroll.value);
-        addBattleMsg(`Used ${scroll.name}: Healed ${scroll.value} HP!`, 'heal');
+        gameState.player.hp = Math.min(getTotalMaxHp(), gameState.player.hp + scroll.value);
+        logCallback(`Used ${scroll.name}: Healed ${scroll.value} HP!`, 'heal');
+    } else if (scroll.effect === 'nuke') {
+        if (!target) {
+            logCallback(`${scroll.name} fizzles with no target.`, 'damage');
+        } else {
+            const actualDamage = Math.min(scroll.value, target.hp);
+            target.hp = Math.max(0, target.hp - scroll.value);
+            if (context === 'worldboss') recordWorldBossPlayerDamage(actualDamage);
+            logCallback(`💥 Used ${scroll.name}: Dealt ${actualDamage} damage instantly!`, 'reward');
+        }
     } else if (scroll.effect === 'invulnerable') {
-        addBattleMsg(`Used ${scroll.name}: Invulnerable for ${scroll.duration} turn!`, 'reward');
-    } else if (scroll.effect === 'damage_boost') {
-        addBattleMsg(`Used ${scroll.name}: ${scroll.value}x damage for ${scroll.duration} turns!`, 'reward');
+        logCallback(`Used ${scroll.name}: Invulnerable for ${scroll.duration} turn${scroll.duration > 1 ? 's' : ''}!`, 'reward');
     } else if (scroll.effect === 'crit_chance') {
-        addBattleMsg(`Used ${scroll.name}: ${(scroll.value * 100).toFixed(0)}% crit for ${scroll.duration} turns!`, 'reward');
+        logCallback(`Used ${scroll.name}: ${(scroll.value * 100).toFixed(0)}% crit for ${scroll.duration} turns!`, 'reward');
     } else if (scroll.effect === 'execute') {
-        addBattleMsg(`Used ${scroll.name}: Execute enemies under ${(scroll.value * 100).toFixed(0)}% HP for ${scroll.duration} turn!`, 'reward');
+        logCallback(`Used ${scroll.name}: Execute enemies under ${(scroll.value * 100).toFixed(0)}% HP for ${scroll.duration} turn${scroll.duration > 1 ? 's' : ''}!`, 'reward');
+    } else if (scroll.effect === 'damage_boost' || scroll.effect === 'berserker') {
+        logCallback(`Used ${scroll.name}: Offensive power surges for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'defense_boost') {
+        logCallback(`Used ${scroll.name}: Defense increased for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'dodge_boost') {
+        logCallback(`Used ${scroll.name}: Dodge increased for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'burn' || scroll.effect === 'poison') {
+        logCallback(`Used ${scroll.name}: ${target ? target.name : 'The enemy'} is afflicted for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'slow') {
+        logCallback(`Used ${scroll.name}: ${target ? target.name : 'The enemy'} deals reduced damage for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'regen') {
+        logCallback(`Used ${scroll.name}: Regenerating health for ${scroll.duration} turns!`, 'heal');
+    } else if (scroll.effect === 'thorns') {
+        logCallback(`Used ${scroll.name}: Thorns active for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'lifesteal') {
+        logCallback(`Used ${scroll.name}: ${(scroll.value * 100).toFixed(0)}% lifesteal for ${scroll.duration} turns!`, 'reward');
+    } else if (scroll.effect === 'freeze') {
+        logCallback(`Used ${scroll.name}: ${target ? target.name : 'The enemy'} is frozen for ${scroll.duration} turn${scroll.duration > 1 ? 's' : ''}!`, 'reward');
+    } else if (scroll.effect === 'revive') {
+        logCallback(`Used ${scroll.name}: You will revive at ${(scroll.value * 100).toFixed(0)}% HP if defeated!`, 'reward');
+    } else if (scroll.effect === 'drop_boost') {
+        logCallback(`Used ${scroll.name}: Drop rate increased for ${scroll.duration} turns!`, 'reward');
     }
     
-    // Remove scroll from slot
-    gameState.equippedScrolls[slotIndex] = null;
+    // Scrolls are infinite-use, so they remain equipped after activation.
+
+    if (target && target.hp <= 0) {
+        handleCombatVictoryByContext(context);
+        updateStats();
+        return;
+    }
     
-    renderBattle();
+    rerenderCombatContext(context);
     updateStats();
 }
 
@@ -785,7 +1081,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     if (!logCallback) logCallback = addBattleMsg;
     
     const totalAtk = getTotalAtk();
-    const totalDef = getTotalDef();
+    const totalDef = getEffectivePlayerDefense();
     const totalCrit = getTotalCrit();
     const totalCritDmg = getTotalCritDmg();
     
@@ -851,7 +1147,6 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             // ✅ UBER UNIQUE SPECIAL ABILITIES SYSTEM - ATTACK SPECIFIC
             let bonusDmg = 0;
             let specialMsg = '';
-            let healAmt = 0;
             let attackCount = 1;
             let trueDamage = false;
             let guaranteedCrit = false;
@@ -870,9 +1165,6 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                     case 'half_current_hp':
                         bonusDmg += Math.floor(enemyObj.hp * 0.5);
                         specialMsg += ' (Reaper Scythe)';
-                        break;
-                    case 'full_lifesteal':
-                        healAmt = dmg;
                         break;
                     case 'crit_guaranteed':
                         guaranteedCrit = true;
@@ -922,8 +1214,9 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}!`, crit ? 'reward' : 'info');
             
             // Apply lifesteal healing
+            const healAmt = calculateDamageBasedHealing(totalDamageDealt);
             if (healAmt > 0) {
-                const actualHeal = Math.min(healAmt * attackCount, getTotalMaxHp() - playerObj.hp);
+                const actualHeal = Math.min(healAmt, getTotalMaxHp() - playerObj.hp);
                 playerObj.hp += actualHeal;
                 if (actualHeal > 0) {
                     logCallback(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
@@ -961,80 +1254,29 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     }
     
     if (!fled && !enemyDied) {
-        // Enemy turn
-        if (invulnerable) {
-            logCallback(`${enemyObj.name} attacks, but you are invulnerable!`, 'info');
-        } else {
-            // ✅ PLAYER DODGE CHANCE CHECK (95% HARD CAP)
-            const playerDodge = gameState.player.dodge || 0;
-            const cappedPlayerDodge = Math.min(playerDodge, 0.95);
-            if (Math.random() < cappedPlayerDodge) {
-                logCallback(`You DODGED the attack! (Dodge: ${(cappedPlayerDodge*100).toFixed(1)}%)`, 'heal');
-            } else {
-                // ✅ PLAYER BLOCK CHANCE CHECK
-                const blockChance = getTotalBlock();
-                const cappedBlock = Math.min(blockChance, 95); // HARD CAP 95% MAX BLOCK
-                const roll = Math.random() * 100;
-                if (roll < cappedBlock) {
-                    logCallback(`🛡️ You BLOCKED the attack! (Block: ${cappedBlock.toFixed(1)}%)`, 'heal');
-                    // ✅ UBER UNIQUE SPECIAL ABILITY: HEAL ON BLOCK
-                    eqSlots.forEach(slot => {
-                        const eq = gameState.equipment[slot];
-                        if (eq && eq.specialAbility === 'heal_on_block') {
-                            const healAmt = enemyObj.atk;
-                            playerObj.hp = Math.min(getTotalMaxHp(), playerObj.hp + healAmt);
-                            logCallback(`💚 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
-                            if (healCallback) healCallback(healAmt);
-                        }
-                    });
-                    // Block reduces damage to 0 completely
-                } else {
-                    // Calculate enemy damage when block fails
-                    let enemyDmg = Math.max(1, enemyObj.atk - totalDef + rand(-2, 2));
-                
-                    // ✅ PLAYER DAMAGE REDUCTION CAP AT 95% MAXIMUM
-                    const dr = gameState.player.damageReduction || 0;
-                    let cappedDR = Math.min(dr, 0.95); // HARD CAP 95% MAX DAMAGE REDUCTION
-                    
-                    // ✅ Apply 75% damage reduction special ability (after all other calculations)
-                    if (gameState.has75DamageReduction) {
-                        enemyDmg = Math.ceil(enemyDmg * 0.25);
-                        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (75% DR ACTIVE)`, 'damage');
-                    } else {
-                        enemyDmg = Math.ceil(enemyDmg * (1 - cappedDR));
-                        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (DR: ${(cappedDR*100).toFixed(1)}%)`, 'damage');
-                    }
-                    
-                    // ✅ DAMAGE REFLECT MECHANIC
-                    const reflectChance = getTotalReflect();
-                    if (reflectChance > 0) {
-                        const cappedReflect = Math.min(reflectChance, 95); // HARD CAP 95% MAX REFLECT CHANCE
-                        if (Math.random() * 100 < cappedReflect) {
-                            // Reflect 100% of the actual damage taken back to enemy
-                            const reflectDamage = enemyDmg;
-                            enemyObj.hp = Math.max(0, enemyObj.hp - reflectDamage);
-                            logCallback(`⚡ DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
-                            
-                            if (enemyObj.hp <= 0) {
-                                logCallback(`${enemyObj.name} was killed by reflected damage!`, 'reward');
-                                enemyDied = true;
-                            }
-                        }
-                    }
-                    
-                    playerObj.hp = Math.max(0, playerObj.hp - enemyDmg);
-                }
-            }
+        const enemyTurnResult = resolveEnemyCounterAttack(playerObj, enemyObj, logCallback, healCallback, {
+            invulnerable,
+            totalDef
+        });
+        if (enemyTurnResult.enemyDied) {
+            enemyDied = true;
         }
+    }
+
+    const endOfTurnResult = applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback);
+    if (endOfTurnResult.enemyDied) {
+        enemyDied = true;
     }
     
     if (playerObj.hp <= 0) {
-        playerDied = true;
-        logCallback('You have been defeated!', 'damage');
+        if (!tryConsumeReviveScroll(playerObj, logCallback)) {
+            playerDied = true;
+            logCallback('You have been defeated!', 'damage');
+        }
     }
     
     // Decrement scroll effects at end of turn
-    decrementScrollEffects();
+    decrementScrollEffects(logCallback);
     
     // Mana regeneration: 5% of max MP every turn
     const maxMp = getTotalMaxMp();
@@ -1051,7 +1293,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
 function getScrollDamageMultiplier() {
     let multiplier = 1;
     gameState.activeScrollEffects.forEach(effect => {
-        if (effect.effect === 'damage_boost') {
+        if (effect.effect === 'damage_boost' || effect.effect === 'berserker') {
             multiplier *= effect.value;
         }
     });
@@ -1083,11 +1325,11 @@ function getExecuteThreshold() {
 }
 
 // Decrement scroll effects at end of turn
-function decrementScrollEffects() {
+function decrementScrollEffects(logCallback = addBattleMsg) {
     gameState.activeScrollEffects = gameState.activeScrollEffects.filter(effect => {
         effect.remainingTurns--;
         if (effect.remainingTurns <= 0) {
-            addBattleMsg(`${effect.name} effect wore off.`, 'info');
+            logCallback(`${effect.name} effect wore off.`, 'info');
             return false;
         }
         return true;
@@ -1112,14 +1354,14 @@ function battleAction(action) {
         const critBonus = getScrollCritBonus() * 2;
         const invulnerable = isInvulnerable();
         const executeThreshold = getExecuteThreshold();
+        const totalDef = getEffectivePlayerDefense();
         
         // Calculate spell damage multiplier between 0.5x and 3x
         const spellMultiplier = 0.5 + Math.random() * 2.5;
         const totalAtk = getTotalAtk();
-        const totalDef = getTotalDef();
         const totalCrit = getTotalCrit();
         
-        let dmg = Math.max(1, totalAtk - totalDef + rand(-3, 3));
+        let dmg = Math.max(1, totalAtk - gameState.currentEnemy.def + rand(-3, 3));
         let crit = Math.random() * 100 < (totalCrit + critBonus);
         if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
         
@@ -1129,6 +1371,15 @@ function battleAction(action) {
         gameState.currentEnemy.hp = Math.max(0, gameState.currentEnemy.hp - dmg);
         
         addBattleMsg(`You cast a spell for ${dmg} damage! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+
+        const spellHeal = calculateDamageBasedHealing(dmg);
+        if (spellHeal > 0) {
+            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - gameState.player.hp);
+            if (actualHeal > 0) {
+                gameState.player.hp += actualHeal;
+                addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+            }
+        }
         
         // Check for execute effect
         if (executeThreshold > 0 && gameState.currentEnemy.hp > 0 && gameState.currentEnemy.hp <= Math.floor(gameState.currentEnemy.maxHp * executeThreshold)) {
@@ -1141,13 +1392,19 @@ function battleAction(action) {
             return;
         }
         
-        // Enemy turn
-        if (invulnerable) {
-            addBattleMsg(`${gameState.currentEnemy.name} attacks, but you are invulnerable!`, 'info');
-        } else {
-            let enemyDmg = Math.max(1, gameState.currentEnemy.atk - totalDef + rand(-2, 2));
-            gameState.player.hp = Math.max(0, gameState.player.hp - enemyDmg);
-            addBattleMsg(`${gameState.currentEnemy.name} hits you for ${enemyDmg} damage!`, 'damage');
+        const counterResult = resolveEnemyCounterAttack(gameState.player, gameState.currentEnemy, addBattleMsg, null, {
+            invulnerable,
+            totalDef
+        });
+        if (counterResult.enemyDied) {
+            enemyDefeated();
+            return;
+        }
+
+        const endOfTurnResult = applyEndOfTurnScrollEffects(gameState.player, gameState.currentEnemy, addBattleMsg);
+        if (endOfTurnResult.enemyDied) {
+            enemyDefeated();
+            return;
         }
         
         if (gameState.player.hp <= 0) {
@@ -1162,7 +1419,7 @@ function battleAction(action) {
         }
         
         // Decrement scroll effects at end of turn
-        decrementScrollEffects();
+        decrementScrollEffects(addBattleMsg);
         
         // Mana regeneration: 5% of max MP every turn
         const maxMp = getTotalMaxMp();
@@ -1225,7 +1482,7 @@ function enemyDefeated() {
     
     // Drop system with new rarity rates
     // 35% base chance to drop something
-    const dropChance = 0.35 + getTotalLuck() * 0.01;
+    const dropChance = Math.min(1, (0.35 + getTotalLuck() * 0.01) * (1 + getScrollDropBoost()));
     
     if (Math.random() < dropChance) {
         // 60% chance for material/consumable drop (from enemy's loot table)
@@ -2209,49 +2466,22 @@ function wanderingBattle(action) {
     
     const p = gameState.player;
     const e = w.currentEnemy;
-    const totalAtk = getTotalAtk();
-    const totalDef = getTotalDef();
-    const totalCrit = getTotalCrit();
-    
-    switch (action) {
-        case 'attack': {
-            const totalLuck = getTotalLuck();
-            const cappedLuck = Math.min(totalLuck, 9);
-            const minRoll = Math.min(-3 + cappedLuck, 3);
-            let dmg = Math.max(1, totalAtk - e.def + rand(minRoll, 3));
-            let crit = Math.random() * 100 < totalCrit;
-            if (crit) dmg = Math.floor(dmg * 1.5);
-            e.hp = Math.max(0, e.hp - dmg);
-            addWanderingLog(`You hit ${e.name} for ${dmg} damage${crit ? ' (CRIT!)' : ''}!`, crit ? 'reward' : 'info');
-            
-            if (e.hp <= 0) {
-                wanderingEnemyDefeated();
-                return;
-            }
-            break;
-        }
-        case 'flee': {
-            if (Math.random() < 0.5 + getTotalLuck() * 0.02) {
-                addWanderingLog('You fled from the battle!', 'info');
-                w.inBattle = false;
-                w.currentEnemy = null;
-                renderWandering();
-                return;
-            } else {
-                addWanderingLog('Failed to flee!', 'damage');
-            }
-            break;
-        }
+    const result = runUniversalCombatTurn(action, p, e, addWanderingLog);
+
+    if (result.enemyDied) {
+        wanderingEnemyDefeated();
+        return;
     }
-    
-    // Enemy turn
-    let enemyDmg = Math.max(1, e.atk - totalDef + rand(-2, 2));
-    p.hp = Math.max(0, p.hp - enemyDmg);
-    addWanderingLog(`${e.name} hits you for ${enemyDmg} damage!`, 'damage');
-    
-    // Check for death
-    if (p.hp <= 0) {
+
+    if (result.playerDied) {
         wanderingPlayerDeath();
+        return;
+    }
+
+    if (result.fled) {
+        w.inBattle = false;
+        w.currentEnemy = null;
+        renderWandering();
         return;
     }
     
@@ -2279,7 +2509,7 @@ function wanderingEnemyDefeated() {
     
     // Drop system with new rarity rates
     // 35% base chance to drop something
-    const dropChance = 0.35 + getTotalLuck() * 0.01;
+    const dropChance = Math.min(1, (0.35 + getTotalLuck() * 0.01) * (1 + getScrollDropBoost()));
     
     if (Math.random() < dropChance) {
         // 60% chance for material/consumable drop (from enemy's loot table)
@@ -2486,6 +2716,16 @@ function renderWandering() {
         html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;">⚔️ Attack</button>`;
         html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;">🏃 Flee</button>`;
         html += `</div>`;
+
+        const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
+        if (hasScrolls) {
+            html += `<div class="section-title">Scrolls</div>`;
+            gameState.equippedScrolls.forEach((scroll, idx) => {
+                if (scroll) {
+                    html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
+                }
+            });
+        }
         
         // Show usable items
         const potions = gameState.inventory.filter(i => i.type === 'consumable');
@@ -4050,14 +4290,14 @@ function dungeonAction(action) {
         const critBonus = getScrollCritBonus() * 2;
         const invulnerable = isInvulnerable();
         const executeThreshold = getExecuteThreshold();
+        const totalDef = getEffectivePlayerDefense();
         
         // Calculate spell damage multiplier between 0.5x and 3x
         const spellMultiplier = 0.5 + Math.random() * 2.5;
         const totalAtk = getTotalAtk();
-        const totalDef = getTotalDef();
         const totalCrit = getTotalCrit();
         
-        let dmg = Math.max(1, totalAtk - totalDef + rand(-3, 3));
+        let dmg = Math.max(1, totalAtk - e.def + rand(-3, 3));
         let crit = Math.random() * 100 < (totalCrit + critBonus);
         if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
         
@@ -4067,6 +4307,16 @@ function dungeonAction(action) {
         e.hp = Math.max(0, e.hp - dmg);
         
         addDungeonLog(`You cast a spell for ${dmg} damage! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+
+        const spellHeal = calculateDamageBasedHealing(dmg);
+        if (spellHeal > 0) {
+            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - p.hp);
+            if (actualHeal > 0) {
+                p.hp += actualHeal;
+                dungeonState.hp = p.hp;
+                addDungeonLog(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+            }
+        }
         
         // Check for execute effect
         if (executeThreshold > 0 && e.hp > 0 && e.hp <= Math.floor(e.maxHp * executeThreshold)) {
@@ -4079,14 +4329,24 @@ function dungeonAction(action) {
             return;
         }
         
-        // Enemy turn
-        if (invulnerable) {
-            addDungeonLog(`${e.name} attacks, but you are invulnerable!`, 'info');
-        } else {
-            let enemyDmg = Math.max(1, e.atk - totalDef + rand(-2, 2));
-            dungeonState.hp = Math.max(0, dungeonState.hp - enemyDmg);
-            p.hp = dungeonState.hp;
-            addDungeonLog(`${e.name} hits you for ${enemyDmg} damage!`, 'damage');
+        const counterResult = resolveEnemyCounterAttack(p, e, addDungeonLog, (healAmt) => {
+            dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
+        }, {
+            invulnerable,
+            totalDef
+        });
+        dungeonState.hp = p.hp;
+
+        if (counterResult.enemyDied) {
+            dungeonEnemyDefeated();
+            return;
+        }
+
+        const endOfTurnResult = applyEndOfTurnScrollEffects(p, e, addDungeonLog);
+        dungeonState.hp = p.hp;
+        if (endOfTurnResult.enemyDied) {
+            dungeonEnemyDefeated();
+            return;
         }
         
         if (p.hp <= 0) {
@@ -4097,7 +4357,7 @@ function dungeonAction(action) {
         }
         
         // Decrement scroll effects at end of turn
-        decrementScrollEffects();
+        decrementScrollEffects(addDungeonLog);
         
         // Mana regeneration: 5% of max MP every turn
         const maxMp = getTotalMaxMp();
@@ -4164,7 +4424,7 @@ function dungeonEnemyDefeated() {
 
     // Drop system with new rarity rates
     // 35% base chance to drop something (tripled for miniboss = 3 rolls)
-    const dropChance = 0.35 + getTotalLuck() * 0.01;
+    const dropChance = Math.min(1, (0.35 + getTotalLuck() * 0.01) * (1 + getScrollDropBoost()));
     const numDropRolls = isMiniboss ? 3 : 1;
 
     for (let roll = 0; roll < numDropRolls; roll++) {
@@ -4304,6 +4564,16 @@ function renderDungeon() {
     html += `<button class="action-btn" onclick="dungeonAction('attack')">Attack</button>`;
     html += `<button class="action-btn" onclick="dungeonAction('spell')" ${gameState.player.mp < 15 ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
     html += `<button class="action-btn danger" onclick="dungeonAction('flee')">Leave Dungeon</button>`;
+
+    const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
+    if (hasScrolls) {
+        html += `<div class="section-title">Scrolls</div>`;
+        gameState.equippedScrolls.forEach((scroll, idx) => {
+            if (scroll) {
+                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
+            }
+        });
+    }
     
     // Show usable items
     const potions = gameState.inventory.filter(i => i.type === 'consumable');
@@ -5609,11 +5879,16 @@ function attackWorldBoss() {
     const boss = gameState.currentWorldBoss;
     const totalAtk = getTotalAtk();
     const totalCrit = getTotalCrit();
+    const damageMult = getScrollDamageMultiplier();
+    const critBonus = getScrollCritBonus();
+    const invulnerable = isInvulnerable();
+    const totalDef = getEffectivePlayerDefense();
     
     // Calculate damage
     let dmg = Math.max(5, totalAtk - Math.floor(boss.def * 0.3) + rand(-5, 10));
-    let crit = Math.random() * 100 < totalCrit;
+    let crit = Math.random() * 100 < (totalCrit + critBonus);
     if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
+    dmg = Math.floor(dmg * damageMult);
 
     // Apply special ability bonus damage
     let bonusDmg = 0;
@@ -5633,25 +5908,12 @@ function attackWorldBoss() {
     boss.hp = Math.max(0, boss.hp - dmg);
 
     // Record player damage
-    const playerName = gameState.player.name;
-    if (!gameState.worldBossDamage[playerName]) {
-        gameState.worldBossDamage[playerName] = 0;
-    }
-    gameState.worldBossDamage[playerName] += dmg;
-    gameState.worldBossTotalDamage += dmg;
+    recordWorldBossPlayerDamage(dmg);
     
     addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}!`, crit ? 'reward' : 'info');
 
-    // Apply special ability lifesteal
-    let healAmt = 0;
-    eqSlots.forEach(slot => {
-        const eq = gameState.equipment[slot];
-        if (eq) {
-            if (eq.specialAbility === 'full_lifesteal') {
-                healAmt += dmg;
-            }
-        }
-    });
+    // Apply lifesteal
+    let healAmt = calculateDamageBasedHealing(dmg);
     if (healAmt > 0) {
         const p = gameState.player;
         const actualHeal = Math.min(healAmt, getTotalMaxHp() - p.hp);
@@ -5667,12 +5929,25 @@ function attackWorldBoss() {
         return;
     }
     
-    // Boss counter attack
     const p = gameState.player;
-    const totalDef = getTotalDef();
-    let bossDmg = Math.max(1, boss.atk - Math.floor(totalDef * 0.4) + rand(-3, 8));
-    p.hp = Math.max(0, p.hp - bossDmg);
-    addBattleMsg(`${boss.name} hits you for ${bossDmg} damage!`, 'damage');
+    const counterResult = resolveEnemyCounterAttack(p, boss, addBattleMsg, null, {
+        invulnerable,
+        totalDef,
+        defenseMitigationFactor: 0.4
+    });
+
+    if (counterResult.enemyDied) {
+        despawnWorldBoss(true);
+        return;
+    }
+
+    const endOfTurnResult = applyEndOfTurnScrollEffects(p, boss, addBattleMsg);
+    if (endOfTurnResult.enemyDied) {
+        despawnWorldBoss(true);
+        return;
+    }
+
+    decrementScrollEffects(addBattleMsg);
     
     if (p.hp <= 0) {
         addBattleMsg('You have been defeated by the World Boss!', 'damage');
@@ -5746,7 +6021,7 @@ function distributeWorldBossRewards() {
     addBattleMsg(`World Boss Rewards: ${baseXp} XP, ${baseGold} Gold!`, 'reward');
     
     // Item drops - higher damage = higher rarity chance
-    const dropChance = 0.3 + damagePercent * 0.5;
+    const dropChance = Math.min(1, (0.3 + damagePercent * 0.5) * (1 + getScrollDropBoost()));
     if (Math.random() < dropChance) {
         // 10x drop rate for epic and above
         const luck = getTotalLuck();
@@ -5803,6 +6078,16 @@ renderBattle = function() {
             <div style="color:#ff6600;margin:5px 0">HP: ${boss.hp.toLocaleString()} / ${boss.maxHp.toLocaleString()} (${hpPct}%)</div>
             <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;">⚔️ ATTACK WORLD BOSS</button>
         </div>`;
+
+        const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
+        if (hasScrolls) {
+            html += `<div class="section-title">Scrolls</div>`;
+            gameState.equippedScrolls.forEach((scroll, idx) => {
+                if (scroll) {
+                    html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
+                }
+            });
+        }
         
         // Show player's damage rank
         const damageSorted = Object.entries(gameState.worldBossDamage)
