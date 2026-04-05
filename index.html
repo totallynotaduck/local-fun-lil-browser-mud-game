@@ -120,6 +120,11 @@
         .equip-slot-card.empty { border-color: #555; }
         .equip-slot-title { color: #ff44ff; font-weight: bold; font-size: 1em; margin-bottom: 8px; }
         .equip-slot-stats { color: #00ff00; font-size: 0.9em; margin-bottom: 10px; }
+        .item-compare-header { color: #666; font-size: 0.75em; margin: 6px 0 2px 0; }
+        .item-stat-comparison { font-size: 0.8em; margin: 2px 0; }
+        .item-stat-better { color: #44ff44; }
+        .item-stat-worse { color: #ff4444; }
+        .item-stat-equal { color: #aaa; }
         .progress-bar { width: 150px; height: 15px; background-color: #333; overflow: hidden; }
         .progress-fill { height: 100%; background-color: #4444ff; }
         .log-entry { padding: 4px 0; border-bottom: 1px solid #222; font-size: 0.8em; color: #aaa; }
@@ -2871,6 +2876,109 @@ function renderJobs() {
     container.innerHTML = html;
 }
 
+const ITEM_STAT_DISPLAY_ORDER = [
+    'atk', 'def', 'maxHp', 'maxMp', 'crit', 'critDmg', 'luck', 'dodge', 'block',
+    'lifesteal', 'dmgReduction', 'armorPen', 'magicPen', 'attackSpeed', 'cdr', 'moveSpeed'
+];
+
+const ITEM_STAT_LABELS = {
+    atk: 'ATK',
+    def: 'DEF',
+    maxHp: 'MAX HP',
+    maxMp: 'MAX MP',
+    crit: 'CRIT',
+    critDmg: 'CRIT DMG',
+    luck: 'LUCK',
+    dodge: 'DODGE',
+    block: 'BLOCK',
+    lifesteal: 'LIFESTEAL',
+    dmgReduction: 'DMG REDUCTION',
+    armorPen: 'ARMOR PEN',
+    magicPen: 'MAGIC PEN',
+    attackSpeed: 'ATTACK SPEED',
+    cdr: 'COOLDOWN REDUCTION',
+    moveSpeed: 'MOVE SPEED'
+};
+
+function isComparableItemStatKey(statKey, value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return false;
+    return ITEM_STAT_DISPLAY_ORDER.includes(statKey) || statKey.endsWith('Percent') || statKey.endsWith('%');
+}
+
+function getComparableItemStatKeys(item, equippedItem) {
+    const keys = new Set();
+
+    [item, equippedItem].forEach(source => {
+        if (!source) return;
+        Object.entries(source).forEach(([statKey, value]) => {
+            if (isComparableItemStatKey(statKey, value)) {
+                keys.add(statKey);
+            }
+        });
+    });
+
+    return Array.from(keys).sort((a, b) => {
+        const aIndex = ITEM_STAT_DISPLAY_ORDER.indexOf(a);
+        const bIndex = ITEM_STAT_DISPLAY_ORDER.indexOf(b);
+        const normalizedA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
+        const normalizedB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
+        if (normalizedA !== normalizedB) return normalizedA - normalizedB;
+        return a.localeCompare(b);
+    });
+}
+
+function formatItemStatLabel(statKey) {
+    if (ITEM_STAT_LABELS[statKey]) return ITEM_STAT_LABELS[statKey];
+
+    if (statKey.endsWith('Percent')) {
+        return `${formatItemStatLabel(statKey.slice(0, -7))} %`;
+    }
+
+    if (statKey.endsWith('%')) {
+        return `${formatItemStatLabel(statKey.slice(0, -1))} %`;
+    }
+
+    return statKey
+        .replace(/([A-Z])/g, ' $1')
+        .trim()
+        .toUpperCase();
+}
+
+function formatItemStatValue(statKey, value, isDelta = false) {
+    const percentStats = new Set(['crit', 'critDmg', 'dodge', 'block', 'lifesteal', 'dmgReduction', 'attackSpeed', 'cdr', 'moveSpeed']);
+    const isPercent = percentStats.has(statKey) || statKey.endsWith('Percent') || statKey.endsWith('%');
+    const roundedValue = Number.isInteger(value) ? value : Number(value.toFixed(1));
+
+    if (isDelta) {
+        const sign = roundedValue > 0 ? '+' : '';
+        return `${sign}${roundedValue}${isPercent ? '%' : ''}`;
+    }
+
+    return `${roundedValue}${isPercent ? '%' : ''}`;
+}
+
+function renderInventoryItemComparison(item, equippedItem) {
+    const statKeys = getComparableItemStatKeys(item, equippedItem);
+    if (statKeys.length === 0) return '';
+
+    let html = `<div class="item-compare-header">Compared to: ${equippedItem && equippedItem.name ? equippedItem.name : 'Empty slot'}</div>`;
+
+    statKeys.forEach(statKey => {
+        const itemValue = typeof item[statKey] === 'number' ? item[statKey] : 0;
+        const equippedValue = equippedItem && typeof equippedItem[statKey] === 'number' ? equippedItem[statKey] : 0;
+        const diff = itemValue - equippedValue;
+
+        let comparisonClass = 'item-stat-equal';
+        if (diff > 0) comparisonClass = 'item-stat-better';
+        if (diff < 0) comparisonClass = 'item-stat-worse';
+
+        const deltaText = diff === 0 ? '' : ` (${formatItemStatValue(statKey, diff, true)})`;
+        html += `<div class="item-stat-comparison ${comparisonClass}">${formatItemStatLabel(statKey)}: ${formatItemStatValue(statKey, itemValue)}${deltaText}</div>`;
+    });
+
+    return html;
+}
+
 // INVENTORY RENDER
 function renderInventory() {
     const container = document.getElementById('inventory-screen-content');
@@ -2883,8 +2991,10 @@ function renderInventory() {
     
     gameState.inventory.forEach((item, idx) => {
         const slot = resolveEquipSlot(item);
+        const equippedItem = slot ? gameState.equipment[slot] : null;
         const canEquip = slot && (!item.levelReq || gameState.player.level >= item.levelReq);
         const canUse = item.type === 'consumable';
+        const comparisonHtml = slot ? renderInventoryItemComparison(item, equippedItem) : '';
         
         html += `<div class="inv-item">
             <div>
@@ -2893,6 +3003,7 @@ function renderInventory() {
                 ${item.type ? `<span style="color:#666; font-size:0.8em; margin-left:8px;">[${item.type.charAt(0).toUpperCase() + item.type.slice(1)}]</span>` : ''}
                 ${item.levelReq ? `<span style="color:${gameState.player.level >= item.levelReq ? '#ffd700' : '#ff4444'}; font-size:0.8em; margin-left:8px;">[Level ${item.levelReq}]</span>` : ''}
                 <div class="description" style="font-size:0.8em">${item.desc || ''}</div>
+                ${comparisonHtml}
             </div>
             <div>
                 ${canEquip ? `<button class="action-btn equip-btn" onclick="equipItem(${idx})">Equip</button>` : ''}
