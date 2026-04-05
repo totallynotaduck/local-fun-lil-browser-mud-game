@@ -8,10 +8,163 @@ const STORAGE_VERSION = '1.0';
 const MAX_INVENTORY_ITEMS = 50;
 
 /**
+ * ITEM COMPRESSION SYSTEM
+ * Stores items by reference instead of full objects to drastically reduce save size
+ * Items are looked up from the itemPool (defined in items.js) during decompression
+ */
+
+/**
+ * Compresses inventory items into minimal format: [name, qty, overrides]
+ * Most item properties come from itemPool, only store name + qty + level-based stat overrides
+ */
+function compressInventory(inventory) {
+    if (!inventory || !Array.isArray(inventory)) return [];
+    
+    return inventory.filter(item => !!item).map(item => {
+        // Store only: name, quantity, and any overrides (stats that differ from base)
+        const compressed = [item.name || '', item.qty || 1];
+        
+        // Only store luck/stat overrides if they exist
+        const overrides = {};
+        if (item.luck !== undefined && item.luck !== 0) overrides.l = item.luck;
+        if (item.ml !== undefined && item.ml !== 0) overrides.m = item.ml;
+        if (item.atk !== undefined) overrides.a = item.atk;
+        if (item.def !== undefined) overrides.d = item.def;
+        if (item.hp !== undefined) overrides.h = item.hp;
+        if (item.mp !== undefined) overrides.p = item.mp;
+        
+        if (Object.keys(overrides).length > 0) {
+            compressed.push(overrides);
+        }
+        
+        return compressed;
+    });
+}
+
+/**
+ * Decompresses inventory back into full item objects
+ * Looks up item definitions from itemPool
+ */
+function decompressInventory(compressed) {
+    if (!compressed || !Array.isArray(compressed)) return [];
+    if (typeof itemPool === 'undefined') {
+        console.warn('⚠️ itemPool not available, cannot decompress inventory');
+        return [];
+    }
+    
+    return compressed.filter(item => !!item && item[0]).map(item => {
+        const [name, qty, overrides] = item;
+        const baseItem = itemPool[name];
+        
+        if (!baseItem) {
+            console.warn(`⚠️ Item not found in pool: ${name}`);
+            return { name, qty, type: 'error' };
+        }
+        
+        // Reconstruct full item from base definition + overrides
+        const full = { ...baseItem, qty };
+        
+        if (overrides) {
+            if (overrides.l !== undefined) full.luck = overrides.l;
+            if (overrides.m !== undefined) full.ml = overrides.m;
+            if (overrides.a !== undefined) full.atk = overrides.a;
+            if (overrides.d !== undefined) full.def = overrides.d;
+            if (overrides.h !== undefined) full.hp = overrides.h;
+            if (overrides.p !== undefined) full.mp = overrides.p;
+        }
+        
+        return full;
+    });
+}
+
+/**
+ * Compresses equipment into minimal format
+ * Equipment keys are standardized, store as [itemName, ml, luck]
+ */
+function compressEquipment(equipment) {
+    if (!equipment || typeof equipment !== 'object') return {};
+    
+    const compressed = {};
+    Object.entries(equipment).forEach(([slot, item]) => {
+        if (item && item.name) {
+            // Store as [name, magicLevel, luck] for equipment
+            const data = [item.name];
+            if (item.ml !== undefined && item.ml !== 0) data.push(item.ml);
+            if (item.luck !== undefined && item.luck !== 0) {
+                if (data.length === 1) data.push(0); // ml placeholder
+                data.push(item.luck);
+            }
+            compressed[slot] = data;
+        } else {
+            compressed[slot] = null;
+        }
+    });
+    
+    return compressed;
+}
+
+/**
+ * Decompresses equipment back into full item objects
+ */
+function decompressEquipment(compressed) {
+    if (!compressed || typeof itemPool === 'undefined') return compressed;
+    
+    const decompressed = {};
+    Object.entries(compressed).forEach(([slot, data]) => {
+        if (!data) {
+            decompressed[slot] = null;
+        } else if (Array.isArray(data)) {
+            const [name, ml, luck] = data;
+            const baseItem = itemPool[name];
+            if (baseItem) {
+                decompressed[slot] = { 
+                    ...baseItem, 
+                    ml: ml || 0,
+                    luck: luck || 0
+                };
+            } else {
+                decompressed[slot] = null;
+            }
+        } else {
+            decompressed[slot] = data;
+        }
+    });
+    
+    return decompressed;
+}
+
+/**
+ * Compresses scrolls array
+ */
+function compressScrolls(scrolls) {
+    if (!scrolls || !Array.isArray(scrolls)) return [];
+    
+    return scrolls.filter(s => !!s).map(s => {
+        // Store scroll as [name, level]
+        return [s.name || '', s.level || 1];
+    });
+}
+
+/**
+ * Decompresses scrolls back into full objects
+ */
+function decompressScrolls(compressed) {
+    if (!compressed || !Array.isArray(compressed)) return [];
+    
+    return compressed.filter(s => !!s).map(s => {
+        if (Array.isArray(s) && s[0]) {
+            const [name, level] = s;
+            return { name, level, effect: 'scroll' };
+        }
+        return s;
+    });
+}
+
+/**
  * Creates a clean copy of gameState for saving (excludes non-essential logs and temp data)
  * This reduces storage size and prevents quota exceeded errors
  */
-function getCleanGameState(gameState) {
+function getCleanGameState(gameState, compress = true) {
     const clean = JSON.parse(JSON.stringify(gameState));
     
     // Remove ALL non-essential data
@@ -23,17 +176,6 @@ function getCleanGameState(gameState) {
     clean.wandering.log = [];
     clean.worldBossDamage = {};
     clean.worldBossTotalDamage = 0;
-    
-    // Aggressively cap large arrays to prevent quota issues
-    // Cap inventory to 30 items max
-    if (clean.inventory && clean.inventory.length > 30) {
-        clean.inventory = clean.inventory.slice(0, 30);
-    }
-    
-    // Cap scrolls to 10 max
-    if (clean.scrolls && clean.scrolls.length > 10) {
-        clean.scrolls = clean.scrolls.slice(0, 10);
-    }
     
     // Remove all descriptions and flavor text from equipment and items to save space
     if (clean.inventory) {
@@ -63,22 +205,45 @@ function getCleanGameState(gameState) {
     clean.guildQuests = [];
     clean.guildQuestProgress = {};
     
+    // COMPRESSION: Convert items to compressed format
+    if (compress) {
+        clean.inventory = compressInventory(clean.inventory);
+        clean.equipment = compressEquipment(clean.equipment);
+        clean.scrolls = compressScrolls(clean.scrolls);
+        clean._compressed = true; // Flag indicating data is compressed
+    }
+    
+    return clean;
+}
+    
     return clean;
 }
 
 /**
  * Gets detailed size breakdown of gameState by section
  */
-function getStateSize(gameState, label = 'gameState') {
+function getStateSize(gameState, label = 'gameState', compressed = false) {
+    let toAnalyze = gameState;
+    
+    if (compressed) {
+        // For compressed state, temporarily decompress for analysis
+        toAnalyze = {
+            ...gameState,
+            inventory: decompressInventory(gameState.inventory),
+            equipment: decompressEquipment(gameState.equipment),
+            scrolls: decompressScrolls(gameState.scrolls)
+        };
+    }
+    
     const sections = {
-        player: gameState.player,
-        equipment: gameState.equipment,
-        inventory: gameState.inventory,
-        quests: gameState.quests,
-        scrolls: gameState.scrolls,
-        wandering: gameState.wandering,
+        player: toAnalyze.player,
+        equipment: toAnalyze.equipment,
+        inventory: toAnalyze.inventory,
+        quests: toAnalyze.quests,
+        scrolls: toAnalyze.scrolls,
+        wandering: toAnalyze.wandering,
         other: Object.fromEntries(
-            Object.entries(gameState).filter(([k]) => 
+            Object.entries(toAnalyze).filter(([k]) => 
                 !['player', 'equipment', 'inventory', 'quests', 'scrolls', 'wandering'].includes(k)
             )
         )
@@ -146,15 +311,15 @@ function saveToLocalStorage(gameState, onSuccess, onError) {
     try {
         console.log('🔄 Attempting to save game...');
         
-        // LEVEL 1: Normal save with cleaned data
-        const cleanState = getCleanGameState(gameState);
+        // LEVEL 1: Normal save with compression
+        const cleanState = getCleanGameState(gameState, true); // Enable compression
         let json = JSON.stringify(cleanState);
         let size = new Blob([json]).size;
-        console.log(`Level 1 - Save size: ${size} bytes (cleaned)`);
+        console.log(`Level 1 - Save size: ${size} bytes (compressed)`);
         
         try {
             localStorage.setItem(STORAGE_KEY, json);
-            console.log(`✅ Game saved successfully (${size} bytes)`);
+            console.log(`✅ Game saved successfully (${size} bytes - ${((size/1024).toFixed(2))} KB)`);
             if (onSuccess) onSuccess('✅ Game saved successfully!');
             return;
         } catch (e) {
@@ -163,21 +328,19 @@ function saveToLocalStorage(gameState, onSuccess, onError) {
             }
         }
         
-        // LEVEL 2: Aggressive cleanup - reduce inventory and scrolls
-        console.warn('⚠️ Level 1 failed, attempting Level 2 cleanup (reduce items)...');
-        const level2 = getCleanGameState(gameState);
-        level2.inventory = level2.inventory.slice(0, 15);
-        level2.scrolls = level2.scrolls.slice(0, 5);
-        level2.quests = [];
+        // LEVEL 2: Already compressed, reduce quest history
+        console.warn('⚠️ Level 1 failed, attempting Level 2 cleanup (reduce history)...');
+        const level2 = getCleanGameState(gameState, true);
         level2.completedQuests = level2.completedQuests.slice(0, 20);
+        level2.quests = [];
         json = JSON.stringify(level2);
         size = new Blob([json]).size;
         console.log(`Level 2 - Save size: ${size} bytes`);
         
         try {
             localStorage.setItem(STORAGE_KEY, json);
-            console.log(`✅ Game saved with aggressive cleanup (${size} bytes)`);
-            if (onSuccess) onSuccess('✅ Game saved (inventory reduced to fit storage)!');
+            console.log(`✅ Game saved (${size} bytes)`);
+            if (onSuccess) onSuccess('✅ Game saved with reduced history!');
             return;
         } catch (e) {
             if (!(e instanceof DOMException && e.name === 'QuotaExceededError')) {
@@ -185,62 +348,30 @@ function saveToLocalStorage(gameState, onSuccess, onError) {
             }
         }
         
-        // LEVEL 3: Extreme cleanup - save only essentials
-        console.warn('⚠️ Level 2 failed, attempting Level 3 cleanup (minimal data)...');
-        const level3 = {
-            player: gameState.player,
-            equipment: gameState.equipment,
-            inventory: gameState.inventory.slice(0, 5),
-            scrolls: gameState.scrolls.slice(0, 2),
-            soulGems: gameState.soulGems,
-            dungeonStage: gameState.dungeonStage,
-            highestDungeonStage: gameState.highestDungeonStage,
-            quests: [],
-            completedQuests: [],
-            jobsCompleted: gameState.jobsCompleted,
-            premiumMultiplier: gameState.premiumMultiplier,
-            soulGems: gameState.soulGems,
-            bossActive: false,
-            worldBossActive: false
-        };
-        json = JSON.stringify(level3);
-        size = new Blob([json]).size;
-        console.log(`Level 3 - Save size: ${size} bytes`);
-        
+        // LEVEL 3: Clear old storage and retry
+        console.warn('⚠️ Level 2 failed, clearing other storage...');
         try {
-            localStorage.setItem(STORAGE_KEY, json);
-            console.log(`✅ Game saved with minimal data (${size} bytes)`);
-            if (onSuccess) onSuccess('✅ Game saved (minimal mode - clear browser cache to restore full saves)!');
-            return;
-        } catch (e) {
-            if (!(e instanceof DOMException && e.name === 'QuotaExceededError')) {
-                throw e;
-            }
-        }
-        
-        // LEVEL 4: Clear old storage and try again
-        console.warn('⚠️ Level 3 failed, clearing old storage and retrying...');
-        try {
-            // Try to free up space by removing other data
             const keysToCheck = Object.keys(localStorage);
             let freedSpace = 0;
             keysToCheck.forEach(key => {
-                if (key !== STORAGE_KEY && key.includes('auth') === false) {
+                if (key !== STORAGE_KEY) {
                     freedSpace += localStorage[key].length;
                     localStorage.removeItem(key);
                 }
             });
             console.log(`Freed ${freedSpace} bytes`);
             
-            // Try saving again with level 3 data
+            // Try Level 1 data again
+            const retryData = getCleanGameState(gameState, true);
+            json = JSON.stringify(retryData);
             localStorage.setItem(STORAGE_KEY, json);
             console.log(`✅ Game saved after clearing other data (${size} bytes)`);
-            if (onSuccess) onSuccess('✅ Game saved after cleanup!');
+            if (onSuccess) onSuccess('✅ Game saved!');
             return;
         } catch (e) {
             // Final failure
             console.error('❌ All save attempts failed:', e);
-            if (onError) onError('❌ Save failed: Storage quota exceeded. Clear browser data (Settings > Clear browsing data > Cookies and cached images)');
+            if (onError) onError('❌ Save failed: Storage full. Clear browser data (DevTools > Application > Clear Site Data)');
         }
     } catch (e) {
         console.error('Save error:', e);
@@ -255,7 +386,17 @@ function loadFromLocalStorage(onSuccess, onError) {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-            const parsed = JSON.parse(saved);
+            let parsed = JSON.parse(saved);
+            
+            // DECOMPRESSION: If data was compressed, decompress it
+            if (parsed._compressed) {
+                console.log('🔄 Decompressing saved game state...');
+                parsed.inventory = decompressInventory(parsed.inventory);
+                parsed.equipment = decompressEquipment(parsed.equipment);
+                parsed.scrolls = decompressScrolls(parsed.scrolls);
+                delete parsed._compressed; // Remove compression flag
+            }
+            
             console.log(`✅ Game loaded from localStorage`);
             if (onSuccess) onSuccess(parsed);
             return parsed;

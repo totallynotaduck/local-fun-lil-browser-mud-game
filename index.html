@@ -4381,7 +4381,17 @@ function renderSave() {
 
 function exportSavefile() {
     try {
-        const cleanState = getCleanGameState(gameState);
+        // Note: Keep export uncompressed so it's human-readable and fully portable
+        const cleanState = JSON.parse(JSON.stringify(gameState));
+        cleanState.battleLog = [];
+        cleanState.itemLog = [];
+        cleanState.chatMessages = [];
+        cleanState.fakePlayers = [];
+        cleanState.auctionItems = [];
+        cleanState.wandering.log = [];
+        cleanState.worldBossDamage = {};
+        cleanState.worldBossTotalDamage = 0;
+        
         const encrypted = encryptData(cleanState);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `realm-of-shadows-save-${timestamp}.ros`;
