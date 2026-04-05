@@ -512,6 +512,14 @@ const FAKE_PLAYER_NAMES = [
     'HexHarvester', 'IronComet', 'Kingshade', 'LumenCrow', 'MoonSpur', 'NettleVow', 'OnyxPilgrim', 'PrismHowler'
 ];
 
+function getExpandedFakePlayerName(index) {
+    const safeIndex = Math.max(0, Number(index) || 0);
+    const poolSize = FAKE_PLAYER_NAMES.length || 1;
+    const baseName = FAKE_PLAYER_NAMES[safeIndex % poolSize] || `RealmWanderer${safeIndex + 1}`;
+    const cycle = Math.floor(safeIndex / poolSize);
+    return cycle === 0 ? baseName : `${baseName}_${cycle + 1}`;
+}
+
 const FAKE_PLAYER_ARCHETYPES = [
     { title: 'Vanguard', bias: { atk: 0.95, def: 1.20, maxHp: 1.15 }, critBonus: 0, preferredSlots: ['armor', 'shield', 'helmet', 'amulet'] },
     { title: 'Duelist', bias: { atk: 1.18, def: 0.95, maxHp: 1.00 }, critBonus: 8, preferredSlots: ['weapon', 'gloves', 'ring'] },
@@ -869,9 +877,11 @@ function summarizeFakePlayerEquipment(equipment) {
 }
 
 function buildFakePlayerRoster(count = 80) {
-    return FAKE_PLAYER_NAMES.slice(0, count).map((name, idx) => {
+    const targetCount = Math.max(1, Number(count) || 80);
+    return Array.from({ length: targetCount }, (_, idx) => {
+        const name = getExpandedFakePlayerName(idx);
         let seed = fakePlayerHash(`${name}:${idx}`);
-        const levelFloor = Math.max(1, Math.floor((idx / count) * 60) + 1);
+        const levelFloor = Math.max(1, Math.floor((idx / targetCount) * 60) + 1);
         const levelRoll = seededRange(seed, levelFloor, Math.min(60, levelFloor + 7));
         seed = levelRoll.seed;
 
@@ -898,9 +908,10 @@ function buildFakePlayerRoster(count = 80) {
     });
 }
 
-function ensureFakePlayerRoster() {
-    if (!Array.isArray(pvpEnemies) || pvpEnemies.length !== 80) {
-        pvpEnemies = buildFakePlayerRoster(80);
+function ensureFakePlayerRoster(minCount = 80) {
+    const targetCount = Math.max(80, Number(minCount) || 80);
+    if (!Array.isArray(pvpEnemies) || pvpEnemies.length < targetCount) {
+        pvpEnemies = buildFakePlayerRoster(targetCount);
     }
     return pvpEnemies;
 }
@@ -4673,6 +4684,21 @@ function getAuctionDurationForRarity(rarity) {
     }
 }
 
+function getInitialAuctionBidderCountForRarity(rarity) {
+    switch (rarity) {
+        case 'epic':
+            return 20;
+        case 'legendary':
+            return 50;
+        case 'unique':
+            return 80;
+        case 'uber_unique':
+            return 200;
+        default:
+            return 20;
+    }
+}
+
 function formatAuctionRarityLabel(rarity) {
     switch (rarity) {
         case 'uber_unique':
@@ -4727,6 +4753,8 @@ function startNewAuction() {
     const item = pick(matchingItems);
     const basePrice = getBasePriceForRarity(rarity);
     const auctionDuration = getAuctionDurationForRarity(rarity);
+    const initialBidderCount = getInitialAuctionBidderCountForRarity(rarity);
+    const bidderRoster = ensureFakePlayerRoster(initialBidderCount).slice(0, initialBidderCount);
     
     clearAuctionTimers();
     auctionState = {
@@ -4745,18 +4773,14 @@ function startNewAuction() {
     };
     
     // Add initial bidders
-    const bidderCount = rand(2, 6);
-    for (let i = 0; i < bidderCount; i++) {
-        const bidderName = pick(AUCTION_BIDDER_NAMES.filter(n => !auctionState.bidders.find(b => b.name === n)));
-        if (bidderName) {
-            auctionState.bidders.push({
-                name: bidderName,
-                active: true,
-                maxBid: auctionState.maxPrice * (0.7 + Math.random() * 0.3),
-                bidDelay: rand(3000, 10000)
-            });
-        }
-    }
+    bidderRoster.forEach(fakePlayer => {
+        auctionState.bidders.push({
+            name: fakePlayer.name,
+            active: true,
+            maxBid: auctionState.maxPrice * (0.7 + Math.random() * 0.3),
+            bidDelay: rand(3000, 10000)
+        });
+    });
     
     // Highlight auction tab
     setAuctionTabAlert(true);
@@ -4940,8 +4964,8 @@ function renderAuction() {
     
     html += `<div class="section-title">Bid Rules</div>`;
     html += `<ul style="color:#aaa;font-size:0.85em;margin-left:20px;">
-        <li>Fake players bid normally during the auction</li>
-        <li>Fake players stop bidding during the final 2 minutes</li>
+        <li>Players bid normally during the auction</li>
+        <li>Players stop bidding during the final 2 minutes</li>
         <li>Any time you place a bid, there is still a chance to be instantly outbid</li>
         <li>Highest bidder when the timer ends wins the item</li>
         <li>If you bid and lose, your gold will be automatically refunded</li>
