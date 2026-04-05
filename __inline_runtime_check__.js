@@ -3241,6 +3241,8 @@ function isUberUnique(item) {
 function sellItem(idx) {
     const item = gameState.inventory[idx];
     if (!item) return;
+
+    const soldItemWasScroll = item.type === 'scroll' || !!scrollPool[item.name];
     
     const raritySell = SELL_VALUES[item.rarity];
     if (!raritySell) return;
@@ -3254,6 +3256,7 @@ function sellItem(idx) {
     removeFromInventory(idx);
     updateStats();
     renderInventory();
+    if (soldItemWasScroll) renderScrolls();
 }
 
 // EQUIPMENT RENDER
@@ -6136,6 +6139,7 @@ initAuctionSystem();
 
 // Start the game
 init();
+
 
 
 
