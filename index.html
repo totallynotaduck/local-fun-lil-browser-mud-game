@@ -125,6 +125,17 @@
         .item-stat-better { color: #44ff44; }
         .item-stat-worse { color: #ff4444; }
         .item-stat-equal { color: #aaa; }
+        .quicksell-panel { background-color: #1a1a1a; border: 1px solid #444; padding: 12px; margin: 10px 0 15px 0; border-radius: 6px; }
+        .quicksell-title { color: #ffd700; font-weight: bold; margin-bottom: 6px; }
+        .quicksell-description { color: #aaa; font-size: 0.85em; margin-bottom: 10px; }
+        .quicksell-options { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+        .quicksell-option { display: flex; align-items: center; gap: 6px; background-color: #111; border: 1px solid #333; padding: 6px 8px; border-radius: 4px; font-size: 0.85em; cursor: pointer; }
+        .quicksell-option.disabled { opacity: 0.55; }
+        .quicksell-option input { cursor: pointer; }
+        .quicksell-level-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+        .quicksell-level-field { display: flex; flex-direction: column; gap: 4px; color: #aaa; font-size: 0.8em; }
+        .quicksell-level-field input { width: 100px; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 6px 8px; font-family: 'Courier New', monospace; }
+        .quicksell-summary { color: #888; font-size: 0.85em; margin-bottom: 8px; }
         .progress-bar { width: 150px; height: 15px; background-color: #333; overflow: hidden; }
         .progress-fill { height: 100%; background-color: #4444ff; }
         .log-entry { padding: 4px 0; border-bottom: 1px solid #222; font-size: 0.8em; color: #aaa; }
@@ -348,6 +359,10 @@ let combatScrollState = {
     activatedEffects: {}
 };
 
+const INVENTORY_QUICKSELL_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique'];
+let inventoryQuicksellFilters = {};
+let inventoryQuicksellLevelFilter = { min: '', max: '' };
+
 function getPvpCooldownRemainingMs() {
     return Math.max(0, (gameState.pvpCooldownUntil || 0) - Date.now());
 }
@@ -393,14 +408,61 @@ function isLocationUnlocked(locKey) {
 }
 
 // QUESTS
+function roundQuestReward(value, step = 25) {
+    return Math.max(step, Math.round(value / step) * step);
+}
+
+function getEnemyQuestData(enemyKey) {
+    const enemy = enemies[enemyKey];
+    return {
+        tier: enemy?.tier ?? 0,
+        xp: enemy?.xp ?? 15,
+        gold: enemy?.gold ?? 5
+    };
+}
+
+function createFixedQuestReward(target, count, bonusMultiplier = 1) {
+    const enemyData = getEnemyQuestData(target);
+    const tierScale = Math.pow(enemyData.tier + 1, 1.3);
+    const xpReward = enemyData.xp * count * tierScale * (1.6 + enemyData.tier * 0.35) * bonusMultiplier;
+    const goldReward = enemyData.gold * count * tierScale * (1.8 + enemyData.tier * 0.25) * bonusMultiplier;
+
+    return {
+        xp: roundQuestReward(xpReward, 25),
+        gold: roundQuestReward(goldReward, 25)
+    };
+}
+
+function createGuildQuestReward(template, rarity, count, playerLevel) {
+    const rarityScale = {
+        common: 1.25,
+        uncommon: 1.8,
+        rare: 2.8,
+        epic: 4.5,
+        legendary: 8
+    };
+
+    const enemyData = getEnemyQuestData(template.target);
+    const levelScale = 1 + Math.floor(playerLevel / 10) * 0.35;
+    const tierScale = Math.pow(enemyData.tier + 1, 1.15);
+    const countScale = 1 + Math.max(0, count - template.baseCount) * 0.12;
+    const rewardScale = (rarityScale[rarity] || 1.25) * levelScale * tierScale * countScale;
+
+    return {
+        xp: roundQuestReward(template.baseXP * rewardScale, 25),
+        gold: roundQuestReward(template.baseGold * rewardScale, 25),
+        soulGem: template.soulGem || false
+    };
+}
+
 const questDefs = [
-    { id: 'q1', name: 'Rat Menace', desc: 'Defeat 3 rats in the forest', target: 'rat', count: 3, reward: { xp: 50, gold: 30 }, location: 'town' },
-    { id: 'q2', name: 'Wolf Hunt', desc: 'Defeat 5 wolves', target: 'wolf', count: 5, reward: { xp: 150, gold: 80 }, location: 'town' },
-    { id: 'q3', name: 'Goblin Problem', desc: 'Defeat 8 goblins', target: 'goblin', count: 8, reward: { xp: 300, gold: 150 }, location: 'town' },
-    { id: 'q4', name: 'Dark Wolves', desc: 'Defeat 5 dark wolves', target: 'dark_wolf', count: 5, reward: { xp: 500, gold: 300 }, location: 'guild' },
-    { id: 'q5', name: 'Wraith Hunter', desc: 'Defeat 5 wraiths', target: 'wraith', count: 5, reward: { xp: 800, gold: 500 }, location: 'guild' },
-    { id: 'q6', name: 'Dragon Slayer', desc: 'Defeat 3 young dragons', target: 'young_dragon', count: 3, reward: { xp: 1500, gold: 1000 }, location: 'guild' },
-    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: { xp: 2000, gold: 1200 }, location: 'guild' }
+    { id: 'q1', name: 'Rat Menace', desc: 'Defeat 3 rats in the forest', target: 'rat', count: 3, reward: createFixedQuestReward('rat', 3, 1), location: 'town' },
+    { id: 'q2', name: 'Wolf Hunt', desc: 'Defeat 5 wolves', target: 'wolf', count: 5, reward: createFixedQuestReward('wolf', 5, 1), location: 'town' },
+    { id: 'q3', name: 'Goblin Problem', desc: 'Defeat 8 goblins', target: 'goblin', count: 8, reward: createFixedQuestReward('goblin', 8, 1.1), location: 'town' },
+    { id: 'q4', name: 'Dark Wolves', desc: 'Defeat 5 dark wolves', target: 'dark_wolf', count: 5, reward: createFixedQuestReward('dark_wolf', 5, 1.15), location: 'guild' },
+    { id: 'q5', name: 'Wraith Hunter', desc: 'Defeat 5 wraiths', target: 'wraith', count: 5, reward: createFixedQuestReward('wraith', 5, 1.35), location: 'guild' },
+    { id: 'q6', name: 'Dragon Slayer', desc: 'Defeat 3 young dragons', target: 'young_dragon', count: 3, reward: createFixedQuestReward('young_dragon', 3, 1.5), location: 'guild' },
+    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: createFixedQuestReward('skeleton_knight', 5, 1.45), location: 'guild' }
 ];
 
 // JOBS - INSTANT COMPLETION (no wait time)
@@ -1343,6 +1405,207 @@ function getItemSellValueText(item) {
     }
 
     return '';
+}
+
+function getInventoryQuicksellRarities() {
+    if (typeof SELL_VALUES === 'undefined') return [];
+
+    const availableRarities = Object.keys(SELL_VALUES);
+    const orderedRarities = INVENTORY_QUICKSELL_RARITY_ORDER.filter(rarity => availableRarities.includes(rarity));
+    const extraRarities = availableRarities.filter(rarity => !orderedRarities.includes(rarity));
+    return [...orderedRarities, ...extraRarities];
+}
+
+function normalizeInventoryQuicksellFilters() {
+    const nextFilters = {};
+    getInventoryQuicksellRarities().forEach(rarity => {
+        nextFilters[rarity] = !!inventoryQuicksellFilters[rarity];
+    });
+    inventoryQuicksellFilters = nextFilters;
+    return inventoryQuicksellFilters;
+}
+
+function getSelectedInventoryQuicksellRarities() {
+    const filters = normalizeInventoryQuicksellFilters();
+    return Object.keys(filters).filter(rarity => filters[rarity]);
+}
+
+function normalizeInventoryQuicksellLevelFilter() {
+    const normalizeBound = value => {
+        if (value === '' || value === null || value === undefined) return '';
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return '';
+        return Math.max(0, parsed);
+    };
+
+    inventoryQuicksellLevelFilter = {
+        min: normalizeBound(inventoryQuicksellLevelFilter.min),
+        max: normalizeBound(inventoryQuicksellLevelFilter.max)
+    };
+
+    return inventoryQuicksellLevelFilter;
+}
+
+function getInventoryQuicksellItemLevel(item) {
+    if (!item) return 1;
+    return Number.isFinite(item.levelReq) ? item.levelReq : 1;
+}
+
+function doesInventoryQuicksellItemMatchLevelFilter(item) {
+    const levelFilter = normalizeInventoryQuicksellLevelFilter();
+    const itemLevel = getInventoryQuicksellItemLevel(item);
+
+    if (levelFilter.min !== '' && itemLevel < levelFilter.min) return false;
+    if (levelFilter.max !== '' && itemLevel > levelFilter.max) return false;
+    return true;
+}
+
+function isInventoryQuicksellEligibleItem(item) {
+    if (!item || item.equipped) return false;
+
+    const slot = resolveEquipSlot(item);
+    if (!slot) return false;
+
+    return item.type !== 'material' &&
+        item.type !== 'currency' &&
+        item.type !== 'consumable' &&
+        item.type !== 'scroll' &&
+        !!(typeof SELL_VALUES !== 'undefined' && SELL_VALUES[item.rarity]);
+}
+
+function getInventoryQuicksellAvailability() {
+    const availability = {};
+    getInventoryQuicksellRarities().forEach(rarity => {
+        availability[rarity] = { items: 0, stacks: 0 };
+    });
+
+    gameState.inventory.forEach(item => {
+        if (!isInventoryQuicksellEligibleItem(item) || !doesInventoryQuicksellItemMatchLevelFilter(item) || !availability[item.rarity]) return;
+
+        const qty = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : 1;
+        availability[item.rarity].items += qty;
+        availability[item.rarity].stacks += 1;
+    });
+
+    return availability;
+}
+
+function getInventoryQuicksellCandidates(selectedRarities = getSelectedInventoryQuicksellRarities()) {
+    const selectedSet = new Set(selectedRarities);
+
+    return gameState.inventory
+        .map((item, idx) => ({
+            item,
+            idx,
+            qty: Number.isFinite(item && item.qty) && item.qty > 0 ? item.qty : 1
+        }))
+        .filter(({ item }) => isInventoryQuicksellEligibleItem(item) && doesInventoryQuicksellItemMatchLevelFilter(item) && selectedSet.has(item.rarity));
+}
+
+function getInventoryQuicksellSummary(selectedRarities = getSelectedInventoryQuicksellRarities()) {
+    const summary = { items: 0, stacks: 0, gold: 0, soulGems: 0 };
+
+    getInventoryQuicksellCandidates(selectedRarities).forEach(({ item, qty }) => {
+        const sellValue = SELL_VALUES[item.rarity] || {};
+        summary.items += qty;
+        summary.stacks += 1;
+        summary.gold += (sellValue.gold || 0) * qty;
+        summary.soulGems += (sellValue.soulGems || 0) * qty;
+    });
+
+    return summary;
+}
+
+function formatInventoryQuicksellRewardText(summary) {
+    const rewardParts = [];
+    if (summary.gold > 0) rewardParts.push(`${summary.gold} Gold`);
+    if (summary.soulGems > 0) rewardParts.push(`${summary.soulGems} Soul Gem${summary.soulGems === 1 ? '' : 's'}`);
+    return rewardParts.join(' and ');
+}
+
+function formatRarityLabel(rarity) {
+    return String(rarity || '')
+        .split('_')
+        .map(part => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
+        .join(' ');
+}
+
+function formatInventoryQuicksellLevelFilterText() {
+    const levelFilter = normalizeInventoryQuicksellLevelFilter();
+
+    if (levelFilter.min !== '' && levelFilter.max !== '') {
+        return ` | Level ${levelFilter.min}-${levelFilter.max}`;
+    }
+
+    if (levelFilter.min !== '') {
+        return ` | Level ${levelFilter.min}+`;
+    }
+
+    if (levelFilter.max !== '') {
+        return ` | Level ≤ ${levelFilter.max}`;
+    }
+
+    return '';
+}
+
+function setInventoryQuicksellRarity(rarity, checked) {
+    const filters = normalizeInventoryQuicksellFilters();
+    if (!(rarity in filters)) return;
+
+    filters[rarity] = !!checked;
+
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) {
+        renderInventory();
+    }
+}
+
+function setInventoryQuicksellLevelFilter(bound, value) {
+    if (bound !== 'min' && bound !== 'max') return;
+
+    inventoryQuicksellLevelFilter[bound] = value;
+    normalizeInventoryQuicksellLevelFilter();
+
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) {
+        renderInventory();
+    }
+}
+
+function quicksellSelectedInventoryEquipment() {
+    const selectedRarities = getSelectedInventoryQuicksellRarities();
+    if (selectedRarities.length === 0) {
+        addChatMessage('SYSTEM', 'Select at least one rarity before using Quick Sell.', true);
+        return;
+    }
+
+    const candidates = getInventoryQuicksellCandidates(selectedRarities);
+    if (candidates.length === 0) {
+        addChatMessage('SYSTEM', 'No unequipped equipment matching the selected rarities was found.', true);
+        if (document.getElementById('inventory-screen')?.classList.contains('active')) {
+            renderInventory();
+        }
+        return;
+    }
+
+    const summary = getInventoryQuicksellSummary(selectedRarities);
+
+    candidates
+        .sort((a, b) => b.idx - a.idx)
+        .forEach(({ idx, qty }) => removeFromInventory(idx, qty));
+
+    gameState.player.gold += summary.gold;
+    gameState.soulGems += summary.soulGems;
+
+    const rewardText = formatInventoryQuicksellRewardText(summary);
+    addChatMessage(
+        'SYSTEM',
+        `Quicksold ${summary.items} unequipped equipment item${summary.items === 1 ? '' : 's'} for ${rewardText}.`,
+        true
+    );
+
+    updateStats();
+    renderInventory();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 function updateStats() {
@@ -2661,8 +2924,7 @@ function generateGuildQuest(rarity) {
     // Scale count and rewards based on player level
     const levelScale = 1 + Math.floor(playerLevel / 10) * 0.2;
     const count = Math.max(1, Math.floor(template.baseCount * levelScale));
-    const xp = Math.floor(template.baseXP * levelScale);
-    const gold = Math.floor(template.baseGold * levelScale);
+    const reward = createGuildQuestReward(template, rarity, count, playerLevel);
     
     return {
         id: `guild_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -2670,7 +2932,7 @@ function generateGuildQuest(rarity) {
         desc: template.desc.replace('{count}', count),
         target: template.target,
         count: count,
-        reward: { xp, gold, soulGem: template.soulGem || false },
+        reward,
         rarity: rarity,
         progress: 0
     };
@@ -3969,8 +4231,52 @@ function renderPurchasableItemComparison(item) {
 // INVENTORY RENDER
 function renderInventory() {
     const container = document.getElementById('inventory-screen-content');
+    const quicksellRarities = getInventoryQuicksellRarities();
+    const quicksellAvailability = getInventoryQuicksellAvailability();
+    const quicksellSummary = getInventoryQuicksellSummary();
     
     let html = `<div class="section-title">Inventory (${gameState.inventory.length} items)</div>`;
+
+    if (quicksellRarities.length > 0) {
+        normalizeInventoryQuicksellFilters();
+        const quicksellLevelFilter = normalizeInventoryQuicksellLevelFilter();
+        const rewardText = formatInventoryQuicksellRewardText(quicksellSummary);
+        const quicksellSummaryText = quicksellSummary.items > 0
+            ? `Selected: ${quicksellSummary.items} item${quicksellSummary.items === 1 ? '' : 's'} across ${quicksellSummary.stacks} stack${quicksellSummary.stacks === 1 ? '' : 's'}${formatInventoryQuicksellLevelFilterText()} → ${rewardText}`
+            : 'Selected: no matching unequipped equipment';
+
+        html += `<div class="quicksell-panel">
+            <div class="quicksell-title">Quick Sell Unequipped Equipment</div>
+            <div class="quicksell-description">Check the rarities you want to sell, then sell all matching unequipped equipment in one batch.</div>
+            <div class="quicksell-level-filters">
+                <label class="quicksell-level-field">
+                    <span>Min Level</span>
+                    <input type="number" min="0" step="1" value="${quicksellLevelFilter.min}" oninput="setInventoryQuicksellLevelFilter('min', this.value)" placeholder="Any">
+                </label>
+                <label class="quicksell-level-field">
+                    <span>Max Level</span>
+                    <input type="number" min="0" step="1" value="${quicksellLevelFilter.max}" oninput="setInventoryQuicksellLevelFilter('max', this.value)" placeholder="Any">
+                </label>
+            </div>
+            <div class="quicksell-options">`;
+
+        quicksellRarities.forEach(rarity => {
+            const count = quicksellAvailability[rarity]?.items || 0;
+            const checked = inventoryQuicksellFilters[rarity] ? 'checked' : '';
+            const rarityColor = getRarityColor(rarity);
+
+            html += `<label class="quicksell-option${count === 0 ? ' disabled' : ''}" style="border-color:${rarityColor};color:${rarityColor}">
+                <input type="checkbox" onchange="setInventoryQuicksellRarity('${rarity}', this.checked)" ${checked}>
+                <span>${formatRarityLabel(rarity)}</span>
+                <span style="color:#888">(${count})</span>
+            </label>`;
+        });
+
+        html += `</div>
+            <div class="quicksell-summary">${quicksellSummaryText}</div>
+            <button class="action-btn gold-btn" onclick="quicksellSelectedInventoryEquipment()" ${quicksellSummary.items > 0 ? '' : 'disabled'}>Quick Sell Selected</button>
+        </div>`;
+    }
     
     if (gameState.inventory.length === 0) {
         html += `<div class="msg">Inventory is empty</div>`;
@@ -4041,6 +4347,8 @@ function sellItem(idx) {
     updateStats();
     renderInventory();
     if (soldItemWasScroll) renderScrolls();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 // EQUIPMENT RENDER
