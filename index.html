@@ -4446,11 +4446,18 @@ function importSavefile(event) {
 
 function saveGame() {
     try {
-        localStorage.setItem('realmOfShadows', JSON.stringify(gameState));
+        const json = JSON.stringify(gameState);
+        const size = new Blob([json]).size;
+        console.log(`Save size: ${size} bytes`);
+        localStorage.setItem('realmOfShadows', json);
         addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
     } catch (e) {
         console.log('Save failed', e);
-        addChatMessage('SYSTEM', '❌ Failed to save game!', true);
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+            addChatMessage('SYSTEM', '❌ Save failed: Storage quota exceeded. Try clearing browser data or reducing inventory.', true);
+        } else {
+            addChatMessage('SYSTEM', `❌ Failed to save game: ${e.message}`, true);
+        }
     }
 }
 
