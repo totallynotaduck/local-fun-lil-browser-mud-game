@@ -4366,6 +4366,10 @@ function decryptData(encryptedBase64) {
 
 // COMPACT SAVE UTILITIES
 const SAVE_SCHEMA_VERSION = 2;
+const SAVE_STORAGE_KEY = 'realmOfShadows';
+const SAVE_DB_NAME = 'realmOfShadowsStorage';
+const SAVE_DB_VERSION = 1;
+const SAVE_DB_STORE = 'saves';
 const SAVE_ITEM_NAME_PATTERN = /\(\d+-\d+\)( \d+)?$/;
 const SAVE_PLAYER_KEY_ALIASES = {
     name: 'n', hp: 'h', maxHp: 'H', mp: 'm', maxMp: 'M', atk: 'a', def: 'd', level: 'l',
@@ -4801,9 +4805,188 @@ function pruneTransientState(state) {
     state.wandering = cloneData(INITIAL_GAME_STATE_SNAPSHOT.wandering);
 }
 
+function isQuotaExceededError(error) {
+    return !!error && (
+        error.name === 'QuotaExceededError' ||
+        error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        error.code === 22 ||
+        error.code === 1014
+    );
+}
+
+function openSaveDatabase() {
+    return new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') {
+            resolve(null);
+            return;
+        }
+
+        const request = indexedDB.open(SAVE_DB_NAME, SAVE_DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(SAVE_DB_STORE)) {
+                db.createObjectStore(SAVE_DB_STORE);
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function saveStringToIndexedDB(key, value) {
+    const db = await openSaveDatabase();
+    if (!db) return false;
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(SAVE_DB_STORE, 'readwrite');
+        const store = tx.objectStore(SAVE_DB_STORE);
+        store.put(value, key);
+        tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+        };
+        tx.onerror = () => {
+            db.close();
+            reject(tx.error);
+        };
+        tx.onabort = () => {
+            db.close();
+            reject(tx.error);
+        };
+    });
+}
+
+async function loadStringFromIndexedDB(key) {
+    const db = await openSaveDatabase();
+    if (!db) return null;
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(SAVE_DB_STORE, 'readonly');
+        const store = tx.objectStore(SAVE_DB_STORE);
+        const request = store.get(key);
+        request.onsuccess = () => {
+            db.close();
+            resolve(request.result || null);
+        };
+        request.onerror = () => {
+            db.close();
+            reject(request.error);
+        };
+    });
+}
+
+async function removeStringFromIndexedDB(key) {
+    const db = await openSaveDatabase();
+    if (!db) return false;
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(SAVE_DB_STORE, 'readwrite');
+        const store = tx.objectStore(SAVE_DB_STORE);
+        store.delete(key);
+        tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+        };
+        tx.onerror = () => {
+            db.close();
+            reject(tx.error);
+        };
+        tx.onabort = () => {
+            db.close();
+            reject(tx.error);
+        };
+    });
+}
+
+function parsePersistedSaveCandidate(raw, source) {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        return {
+            raw,
+            parsed,
+            source,
+            timestamp: parsed && typeof parsed === 'object' && parsed.t ? parsed.t : 0
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+async function getPersistedSaveCandidates() {
+    const candidates = [];
+
+    const localCandidate = parsePersistedSaveCandidate(localStorage.getItem(SAVE_STORAGE_KEY), 'localStorage');
+    if (localCandidate) candidates.push(localCandidate);
+
+    try {
+        const idbRaw = await loadStringFromIndexedDB(SAVE_STORAGE_KEY);
+        const idbCandidate = parsePersistedSaveCandidate(idbRaw, 'indexedDB');
+        if (idbCandidate) candidates.push(idbCandidate);
+    } catch (e) {
+        console.warn('IndexedDB load unavailable', e);
+    }
+
+    candidates.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // Deduplicate identical payloads if both storage backends contain the same save.
+    return candidates.filter((candidate, index, arr) => index === 0 || candidate.raw !== arr[index - 1].raw);
+}
+
+async function persistCurrentGameState() {
+    const payload = JSON.stringify(buildCompactSaveData());
+    let localSaved = false;
+    let indexedDbSaved = false;
+    let localError = null;
+    let indexedDbError = null;
+
+    try {
+        localStorage.setItem(SAVE_STORAGE_KEY, payload);
+        localSaved = true;
+    } catch (e) {
+        localError = e;
+    }
+
+    try {
+        indexedDbSaved = await saveStringToIndexedDB(SAVE_STORAGE_KEY, payload);
+    } catch (e) {
+        indexedDbError = e;
+    }
+
+    if (!localSaved && !indexedDbSaved) {
+        throw localError || indexedDbError || new Error('Unable to persist save data');
+    }
+
+    return {
+        payloadLength: payload.length,
+        localSaved,
+        indexedDbSaved,
+        usedIndexedDbFallback: !localSaved && indexedDbSaved,
+        localError,
+        indexedDbError
+    };
+}
+
+async function restorePersistedGameState() {
+    const candidates = await getPersistedSaveCandidates();
+
+    for (const candidate of candidates) {
+        try {
+            if (restoreGameStateFromSaveData(candidate.raw)) {
+                return candidate;
+            }
+        } catch (e) {
+            console.warn(`Failed restoring save from ${candidate.source}`, e);
+        }
+    }
+
+    return null;
+}
+
 function buildCompactSaveData() {
     const save = {
         v: SAVE_SCHEMA_VERSION,
+        t: Date.now(),
         p: encodeAliasedDiffObject(gameState.player, INITIAL_GAME_STATE_SNAPSHOT.player, SAVE_PLAYER_KEY_ALIASES),
         i: (gameState.inventory || []).map(encodeItemForSave)
     };
@@ -5022,7 +5205,7 @@ function importSavefile(event) {
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const encryptedData = e.target.result;
             const decrypted = decryptData(encryptedData);
@@ -5043,6 +5226,7 @@ function importSavefile(event) {
                 if (!restoreGameStateFromSaveData(decrypted)) {
                     throw new Error('Unable to restore imported save');
                 }
+                await persistCurrentGameState();
                 updateStats();
                 showScreen('travel');
                 updateSidePanels();
@@ -5060,28 +5244,38 @@ function importSavefile(event) {
     event.target.value = '';
 }
 
-function saveGame() {
+async function saveGame() {
     try {
-        localStorage.setItem('realmOfShadows', JSON.stringify(buildCompactSaveData()));
-        addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
+        const result = await persistCurrentGameState();
+
+        if (result.usedIndexedDbFallback) {
+            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage (localStorage quota workaround)!', true);
+            console.warn('localStorage quota exceeded, save stored in IndexedDB instead', result.localError);
+        } else if (result.localSaved && result.indexedDbSaved) {
+            addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
+        } else if (result.localSaved) {
+            addChatMessage('SYSTEM', '✅ Game saved locally!', true);
+        } else {
+            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage!', true);
+        }
     } catch (e) {
         console.log('Save failed', e);
-        addChatMessage('SYSTEM', '❌ Failed to save game!', true);
+        addChatMessage('SYSTEM', isQuotaExceededError(e)
+            ? '❌ Browser storage quota exceeded and fallback save also failed!'
+            : '❌ Failed to save game!', true);
     }
 }
 
-function loadGame() {
+async function loadGame() {
     try {
-        const saved = localStorage.getItem('realmOfShadows');
-        if (saved) {
-            if (!restoreGameStateFromSaveData(saved)) {
-                throw new Error('Unable to restore local save');
-            }
-            
+        const restored = await restorePersistedGameState();
+        if (restored) {
             updateStats();
             showScreen('travel');
             updateSidePanels();
-            addChatMessage('SYSTEM', '✅ Game loaded successfully!', true);
+            addChatMessage('SYSTEM', restored.source === 'indexedDB'
+                ? '✅ Game loaded from extended browser storage!'
+                : '✅ Game loaded successfully!', true);
         } else {
             addChatMessage('SYSTEM', '⚠️ No save file found!', true);
         }
@@ -5091,16 +5285,14 @@ function loadGame() {
     }
 }
 
-function resetGame() {
+async function resetGame() {
     if (confirm('Are you sure you want to reset all progress?')) {
-        localStorage.removeItem('realmOfShadows');
-        location.reload();
-    }
-}
-
-function resetGame() {
-    if (confirm('Are you sure you want to reset all progress?')) {
-        localStorage.removeItem('realmOfShadows');
+        localStorage.removeItem(SAVE_STORAGE_KEY);
+        try {
+            await removeStringFromIndexedDB(SAVE_STORAGE_KEY);
+        } catch (e) {
+            console.warn('Failed to clear IndexedDB save', e);
+        }
         location.reload();
     }
 }
@@ -5183,17 +5375,12 @@ function autoRegen() {
         }
     }
 }
-
-// INITIALIZATION
-function init() {
-    // Try to load saved game
-    const saved = localStorage.getItem('realmOfShadows');
-    if (saved) {
-        try {
-            restoreGameStateFromSaveData(saved);
-        } catch (e) {
-            console.log('Failed to load save, starting new game');
-        }
+async function init() {
+    // Try to load saved game from localStorage or IndexedDB fallback.
+    try {
+        await restorePersistedGameState();
+    } catch (e) {
+        console.log('Failed to load save, starting new game');
     }
     
     updateStats();
