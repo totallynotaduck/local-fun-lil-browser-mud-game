@@ -4351,23 +4351,51 @@ function scheduleNextAuction() {
     scheduleAuctionStartAt(Date.now() + delay);
 }
 
+function getAuctionDurationForRarity(rarity) {
+    switch (rarity) {
+        case 'epic':
+            return 20 * 60 * 1000;
+        case 'legendary':
+            return 40 * 60 * 1000;
+        case 'unique':
+        case 'uber_unique':
+            return 60 * 60 * 1000;
+        default:
+            return 20 * 60 * 1000;
+    }
+}
+
+function formatAuctionRarityLabel(rarity) {
+    switch (rarity) {
+        case 'uber_unique':
+            return 'UberUnique';
+        case 'unique':
+            return 'Unique';
+        case 'legendary':
+            return 'Legendary';
+        case 'epic':
+            return 'Epic';
+        default:
+            return String(rarity || '').replace(/_/g, ' ');
+    }
+}
+
 function selectAuctionItemRarity() {
     const roll = Math.random() * 100;
-    if (roll < 0.5) return 'uber unique';
+    if (roll < 0.5) return 'uber_unique';
     if (roll < 5.0) return 'unique';
     if (roll < 30.0) return 'legendary';
     return 'epic';
 }
 
-function getBasePriceForRarity(rarity, itemLevel) {
+function getBasePriceForRarity(rarity) {
     const basePrices = {
-        'epic': 500,
-        'legendary': 2500,
-        'unique': 10000,
-        'uber unique': 50000
+        'epic': 2000,
+        'legendary': 3000,
+        'unique': 80000,
+        'uber_unique': 1000000
     };
-    const levelMultiplier = 1 + (itemLevel * 0.1);
-    return Math.floor(basePrices[rarity] * levelMultiplier);
+    return basePrices[rarity] || 2000;
 }
 
 function startNewAuction() {
@@ -4389,8 +4417,8 @@ function startNewAuction() {
     }
     
     const item = pick(matchingItems);
-    const itemLevel = item.levelReq || Math.max(1, gameState.player.level);
-    const basePrice = getBasePriceForRarity(rarity, itemLevel);
+    const basePrice = getBasePriceForRarity(rarity);
+    const auctionDuration = getAuctionDurationForRarity(rarity);
     
     clearAuctionTimers();
     auctionState = {
@@ -4400,7 +4428,7 @@ function startNewAuction() {
         currentPrice: Math.floor(basePrice * 0.7),
         minimumBid: Math.floor(basePrice * 0.7 * 1.05),
         bidders: [],
-        endTime: Date.now() + 30 * 60 * 1000,
+        endTime: Date.now() + auctionDuration,
         highestBidder: null,
         lastBidTime: Date.now(),
         playerHasBid: false,
@@ -4425,7 +4453,7 @@ function startNewAuction() {
     // Highlight auction tab
     setAuctionTabAlert(true);
     
-    addChatMessage('SYSTEM', `⚠️ NEW AUCTION STARTED: ${item.name} (${rarity})! Click Auction tab to view.`, true);
+    addChatMessage('SYSTEM', `⚠️ NEW AUCTION STARTED: ${item.name} (${formatAuctionRarityLabel(rarity)})! Click Auction tab to view.`, true);
     
     scheduleAuctionEndAt(auctionState.endTime);
     scheduleSilentPersist();
@@ -4438,26 +4466,27 @@ function processAuctionTick() {
     if (!auctionState.active) return;
     
     const now = Date.now();
-    
-    // Check if any bidders want to bid
+    const timeRemaining = auctionState.endTime - now;
+
     auctionState.bidders.forEach(bidder => {
         if (!bidder.active) return;
         if (auctionState.currentPrice >= bidder.maxBid) {
             bidder.active = false;
-            return;
-        }
-        
-        if (now - auctionState.lastBidTime > bidder.bidDelay) {
-            if (Math.random() < 0.7) {
-                placeFakeBid(bidder);
-            }
         }
     });
-    
-    // Check if auction should end early
-    const activeBidders = auctionState.bidders.filter(b => b.active);
-    if (activeBidders.length === 0 && !auctionState.playerHasBid) {
-        endAuction();
+
+    // Fake players bid normally, but stop bidding during the final 2 minutes.
+    if (timeRemaining > 2 * 60 * 1000) {
+        const eligibleBidders = auctionState.bidders.filter(bidder =>
+            bidder.active &&
+            auctionState.currentPrice < bidder.maxBid &&
+            now - auctionState.lastBidTime > bidder.bidDelay
+        );
+
+        const activeBidder = pick(eligibleBidders);
+        if (activeBidder && Math.random() < 0.7) {
+            placeFakeBid(activeBidder);
+        }
     }
 }
 
@@ -4485,22 +4514,6 @@ function placePlayerBid() {
         return;
     }
     
-    // 20% chance to be immediately outbid
-    if (Math.random() < 0.20) {
-        const activeBidder = pick(auctionState.bidders.filter(b => b.active));
-        if (activeBidder) {
-            placeFakeBid(activeBidder);
-            addChatMessage('SYSTEM', 'You were immediately outbid!', true);
-            return;
-        }
-    }
-    
-    // 5% chance all other bidders quit
-    if (Math.random() < 0.05) {
-        auctionState.bidders.forEach(b => b.active = false);
-        addChatMessage('SYSTEM', 'All other bidders have quit! You are winning!', true);
-    }
-    
     // Place player bid
     gameState.player.gold -= auctionState.minimumBid;
     if (auctionState.highestBidder === 'You') {
@@ -4514,6 +4527,15 @@ function placePlayerBid() {
     auctionState.playerHasBid = true;
     
     addChatMessage('You', `placed a bid of ${auctionState.currentPrice} gold!`);
+
+    const instantOutbidCandidates = auctionState.bidders.filter(bidder =>
+        bidder.active && auctionState.currentPrice < bidder.maxBid
+    );
+    const instantOutbidBidder = pick(instantOutbidCandidates);
+    if (instantOutbidBidder && Math.random() < 0.20) {
+        placeFakeBid(instantOutbidBidder);
+        addChatMessage('SYSTEM', 'You were immediately outbid!', true);
+    }
     
     updateStats();
     scheduleSilentPersist();
@@ -4610,8 +4632,9 @@ function renderAuction() {
     
     html += `<div class="section-title">Bid Rules</div>`;
     html += `<ul style="color:#aaa;font-size:0.85em;margin-left:20px;">
-        <li>When you place a bid, there is a 20% chance you will be immediately outbid</li>
-        <li>There is a 5% chance all other bidders will quit when you bid</li>
+        <li>Fake players bid normally during the auction</li>
+        <li>Fake players stop bidding during the final 2 minutes</li>
+        <li>Any time you place a bid, there is still a chance to be instantly outbid</li>
         <li>Highest bidder when the timer ends wins the item</li>
         <li>If you bid and lose, your gold will be automatically refunded</li>
     </ul>`;
