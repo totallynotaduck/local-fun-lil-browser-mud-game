@@ -254,6 +254,7 @@
 <script src="enemies.js"></script>
 <script src="uberUniqueMergeSystem.js"></script>
 <script>
+
 // GAME STATE
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0 },
@@ -332,6 +333,15 @@ let pvpEnemies = [];
 let pvpActive = false;
 let currentPvpEnemy = null;
 const PVP_COOLDOWN_MS = 15 * 60 * 1000;
+
+// Transient per-battle scroll usage state
+let combatScrollState = {
+    active: false,
+    context: null,
+    sessionId: null,
+    usedSlots: [],
+    activatedEffects: {}
+};
 
 function getPvpCooldownRemainingMs() {
     return Math.max(0, (gameState.pvpCooldownUntil || 0) - Date.now());
@@ -723,6 +733,99 @@ function handleCombatVictoryByContext(context = getCurrentCombatContext()) {
     }
 }
 
+function ensureCombatScrollStateSlots() {
+    if (!Array.isArray(combatScrollState.usedSlots) || combatScrollState.usedSlots.length !== gameState.scrollSlots) {
+        combatScrollState.usedSlots = Array(gameState.scrollSlots).fill(false);
+    }
+}
+
+function resetCombatScrollSession(clearEffects = true) {
+    combatScrollState.active = false;
+    combatScrollState.context = null;
+    combatScrollState.sessionId = null;
+    combatScrollState.activatedEffects = {};
+    combatScrollState.usedSlots = Array(gameState.scrollSlots).fill(false);
+    if (clearEffects) {
+        gameState.activeScrollEffects = [];
+    }
+}
+
+function isCombatScrollSlotUsed(slotIndex) {
+    ensureCombatScrollStateSlots();
+    return !!combatScrollState.usedSlots[slotIndex];
+}
+
+function markCombatScrollSlotUsed(slotIndex) {
+    ensureCombatScrollStateSlots();
+    combatScrollState.usedSlots[slotIndex] = true;
+}
+
+function ensureCombatSessionId(target, context = 'battle') {
+    if (!target) return null;
+    if (!target._combatSessionId) {
+        target._combatSessionId = `${context}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
+    return target._combatSessionId;
+}
+
+function getVisibleCombatScrolls() {
+    const visible = [];
+    for (let i = 0; i < gameState.unlockedScrollSlots; i++) {
+        const scroll = gameState.equippedScrolls[i];
+        if (scroll && !isCombatScrollSlotUsed(i)) {
+            visible.push({ scroll, idx: i });
+        }
+    }
+    return visible;
+}
+
+function activateCombatScrollsForCurrentBattle(context = getCurrentCombatContext()) {
+    if (!context) return;
+
+    const target = context === 'worldboss'
+        ? gameState.currentWorldBoss
+        : getCurrentCombatEnemy(context);
+    if (!target) return;
+
+    const sessionId = ensureCombatSessionId(target, context);
+    if (combatScrollState.active && combatScrollState.sessionId === sessionId) return;
+
+    combatScrollState.active = true;
+    combatScrollState.context = context;
+    combatScrollState.sessionId = sessionId;
+    combatScrollState.activatedEffects = {};
+    combatScrollState.usedSlots = Array(gameState.scrollSlots).fill(false);
+    gameState.activeScrollEffects = [];
+
+    for (let i = 0; i < gameState.unlockedScrollSlots; i++) {
+        if (!gameState.equippedScrolls[i]) continue;
+        useScroll(i, { auto: true, suppressRerender: true, context });
+
+        const enemyStillExists = context === 'worldboss'
+            ? !!gameState.currentWorldBoss
+            : !!getCurrentCombatEnemy(context);
+        if (!enemyStillExists) {
+            break;
+        }
+    }
+}
+
+function getItemSellValueText(item) {
+    if (typeof SELL_VALUES === 'undefined' || !item) return '';
+    const sellValue = SELL_VALUES[item.rarity];
+    if (!sellValue) return '';
+
+    if (sellValue.soulGems) {
+        return `${sellValue.soulGems} Soul Gem${sellValue.soulGems === 1 ? '' : 's'}`;
+    }
+
+    if (sellValue.gold) {
+        return `${sellValue.gold} Gold`;
+    }
+
+    return '';
+}
+
 function updateStats() {
     const p = gameState.player;
     const hpEl = document.getElementById('stat-hp');
@@ -1023,8 +1126,8 @@ function addBattleMsg(msg, type = 'info') {
 }
 
 // Use a scroll from equipped scrolls
-function useScroll(slotIndex) {
-    const context = getCurrentCombatContext();
+function useScroll(slotIndex, options = {}) {
+    const context = options.context || getCurrentCombatContext();
     if (!context) return;
     if (slotIndex < 0 || slotIndex >= gameState.unlockedScrollSlots) return;
     
@@ -1037,6 +1140,26 @@ function useScroll(slotIndex) {
     const logCallback = getCombatLogCallback(context);
     const target = getCurrentCombatEnemy(context);
     const isImmediateEffect = scroll.effect === 'heal' || scroll.effect === 'nuke';
+
+    if (isCombatScrollSlotUsed(slotIndex)) {
+        if (!options.auto) {
+            logCallback(`${scroll.name} has already been used this battle.`, 'info');
+        }
+        return;
+    }
+
+    markCombatScrollSlotUsed(slotIndex);
+
+    if (combatScrollState.activatedEffects[scroll.effect]) {
+        logCallback(`${scroll.name} does not activate because ${scroll.effect.replace(/_/g, ' ')} is already active this battle.`, 'info');
+        if (!options.suppressRerender) {
+            rerenderCombatContext(context);
+            updateStats();
+        }
+        return;
+    }
+
+    combatScrollState.activatedEffects[scroll.effect] = scroll.name;
     
     if (!isImmediateEffect) {
         gameState.activeScrollEffects.push({
@@ -1099,8 +1222,10 @@ function useScroll(slotIndex) {
         return;
     }
     
-    rerenderCombatContext(context);
-    updateStats();
+    if (!options.suppressRerender) {
+        rerenderCombatContext(context);
+        updateStats();
+    }
 }
 
 // ==============================================
@@ -1373,6 +1498,7 @@ function decrementScrollEffects(logCallback = addBattleMsg) {
 
 function battleAction(action) {
     if (!gameState.inBattle || !gameState.currentEnemy) return;
+    activateCombatScrollsForCurrentBattle('battle');
     
     if (action === 'spell') {
         // Spell attack: 0.5-3x damage at cost of 15 mana
@@ -1446,7 +1572,7 @@ function battleAction(action) {
             addBattleMsg('You have been defeated!', 'damage');
             gameState.player.hp = Math.floor(gameState.player.maxHp * 0.5);
             gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
-            gameState.activeScrollEffects = []; // Clear scroll effects on death
+            resetCombatScrollSession();
             gameState.inBattle = false;
             gameState.currentEnemy = null;
             showScreen('travel');
@@ -1477,7 +1603,7 @@ function battleAction(action) {
         addBattleMsg('You have been defeated!', 'damage');
         gameState.player.hp = Math.floor(gameState.player.maxHp * 0.5);
         gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
-        gameState.activeScrollEffects = []; // Clear scroll effects on death
+        resetCombatScrollSession();
         gameState.inBattle = false;
         gameState.currentEnemy = null;
         showScreen('travel');
@@ -1485,6 +1611,7 @@ function battleAction(action) {
     }
     
     if (result.fled) {
+        resetCombatScrollSession();
         gameState.inBattle = false;
         gameState.currentEnemy = null;
         showScreen('travel');
@@ -1596,6 +1723,8 @@ function enemyDefeated() {
     
     // Check level up
     checkLevelUp();
+
+    resetCombatScrollSession();
     
     gameState.inBattle = false;
     gameState.currentEnemy = null;
@@ -1650,6 +1779,10 @@ function addToInventory(item) {
     // sanitize luck: only allow luck on weapons or explicit 'charm' types
     const allowedLuckTypes = ['weapon', 'charm'];
     const copy = { ...item };
+    delete copy.marketPrice;
+    delete copy.marketQty;
+    delete copy.marketId;
+    delete copy.merchantPrice;
     if (copy.type && typeof copy.type === 'string') copy.type = copy.type.trim().toLowerCase();
     if (copy.luck && !allowedLuckTypes.includes(copy.type)) {
         delete copy.luck;
@@ -1659,8 +1792,10 @@ function addToInventory(item) {
     if (resolved && !copy.equipSlot) copy.equipSlot = resolved;
 
     const existing = gameState.inventory.find(i => i.name === copy.name && i.type === copy.type);
-    if (existing && copy.qty) {
-        existing.qty += copy.qty;
+    if (existing) {
+        const existingQty = Number.isFinite(existing.qty) && existing.qty > 0 ? existing.qty : 1;
+        const qtyToAdd = Number.isFinite(copy.qty) && copy.qty > 0 ? copy.qty : 1;
+        existing.qty = existingQty + qtyToAdd;
     } else {
         gameState.inventory.push(copy);
     }
@@ -2493,6 +2628,7 @@ function generateWanderingEvent() {
 function wanderingBattle(action) {
     const w = gameState.wandering;
     if (!w.active || !w.inBattle || !w.currentEnemy) return;
+    activateCombatScrollsForCurrentBattle('wandering');
     
     const p = gameState.player;
     const e = w.currentEnemy;
@@ -2509,6 +2645,7 @@ function wanderingBattle(action) {
     }
 
     if (result.fled) {
+        resetCombatScrollSession();
         w.inBattle = false;
         w.currentEnemy = null;
         renderWandering();
@@ -2536,6 +2673,9 @@ function wanderingEnemyDefeated() {
     
     // Show in chat
     addChatMessage('SYSTEM', `${p.name} defeated ${e.name} while wandering and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
+
+    // Count wandering kills toward quests too
+    checkQuestProgress(e.name.replace(/ /g, '_'));
     
     // Drop system with new rarity rates
     // 35% base chance to drop something
@@ -2580,6 +2720,8 @@ function wanderingEnemyDefeated() {
         addWanderingLog(`Dropped scroll: ${scrollName}!`, 'reward');
         addChatMessage('SYSTEM', `${p.name} found a scroll while wandering: ${scrollName}!`, true);
     }
+
+    resetCombatScrollSession();
     
     w.inBattle = false;
     w.currentEnemy = null;
@@ -2605,6 +2747,7 @@ function wanderingPlayerDeath() {
     w.active = false;
     w.inBattle = false;
     w.currentEnemy = null;
+    resetCombatScrollSession();
     
     addChatMessage('SYSTEM', `${p.name} fell during a wandering expedition and lost all rewards!`, true);
     
@@ -2641,6 +2784,7 @@ function wanderingEscape() {
     
     // End wandering
     w.active = false;
+    resetCombatScrollSession();
     
     addChatMessage('SYSTEM', `${p.name} escaped a wandering expedition with partial rewards.`, true);
     
@@ -2664,6 +2808,7 @@ function completeWanderingExpedition() {
     
     // End wandering
     w.active = false;
+    resetCombatScrollSession();
     
     addChatMessage('SYSTEM', `${p.name} completed a wandering expedition and gained ${w.rewards.xp} XP!`, true);
     
@@ -2738,6 +2883,9 @@ function renderWandering() {
             <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
     } else if (w.inBattle && w.currentEnemy) {
+        activateCombatScrollsForCurrentBattle('wandering');
+        if (!w.inBattle || !w.currentEnemy) return;
+
         const e = w.currentEnemy;
         const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
         
@@ -2751,13 +2899,11 @@ function renderWandering() {
         html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;">🏃 Flee</button>`;
         html += `</div>`;
 
-        const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
-        if (hasScrolls) {
+        const visibleScrolls = getVisibleCombatScrolls();
+        if (visibleScrolls.length > 0) {
             html += `<div class="section-title">Scrolls</div>`;
-            gameState.equippedScrolls.forEach((scroll, idx) => {
-                if (scroll) {
-                    html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
-                }
+            visibleScrolls.forEach(({ scroll, idx }) => {
+                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
             });
         }
         
@@ -3033,6 +3179,9 @@ function renderBattle() {
             <button class="action-btn dungeon-btn" onclick="startDungeon()">Enter Dungeon</button>`;
         return;
     }
+
+    activateCombatScrollsForCurrentBattle('battle');
+    if (!gameState.inBattle || !gameState.currentEnemy) return;
     
     const e = gameState.currentEnemy;
     const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
@@ -3047,13 +3196,11 @@ function renderBattle() {
     html += `<button class="action-btn" onclick="battleAction('flee')">Flee</button>`;
     
     // Show equipped scrolls
-    const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
-    if (hasScrolls) {
+    const visibleScrolls = getVisibleCombatScrolls();
+    if (visibleScrolls.length > 0) {
         html += `<div class="section-title">Scrolls</div>`;
-        gameState.equippedScrolls.forEach((scroll, idx) => {
-            if (scroll) {
-                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
-            }
+        visibleScrolls.forEach(({ scroll, idx }) => {
+            html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
         });
     }
     
@@ -3286,6 +3433,7 @@ function renderInventory() {
         const canEquip = slot && (!item.levelReq || gameState.player.level >= item.levelReq);
         const canUse = item.type === 'consumable';
         const comparisonHtml = slot ? renderInventoryItemComparison(item, equippedItem) : '';
+        const sellValueText = getItemSellValueText(item);
         
         html += `<div class="inv-item">
             <div>
@@ -3294,6 +3442,7 @@ function renderInventory() {
                 ${item.type ? `<span style="color:#666; font-size:0.8em; margin-left:8px;">[${item.type.charAt(0).toUpperCase() + item.type.slice(1)}]</span>` : ''}
                 ${item.levelReq ? `<span style="color:${gameState.player.level >= item.levelReq ? '#ffd700' : '#ff4444'}; font-size:0.8em; margin-left:8px;">[Level ${item.levelReq}]</span>` : ''}
                 <div class="description" style="font-size:0.8em">${item.desc || ''}</div>
+                ${sellValueText ? `<div style="color:#ffd700;font-size:0.8em">Sell Value: ${sellValueText}${item.qty && item.qty > 1 ? ' each' : ''}</div>` : ''}
                 ${comparisonHtml}
             </div>
             <div>
@@ -4323,6 +4472,7 @@ function generateDungeonEncounter() {
 
 function dungeonAction(action) {
     if (!dungeonState.active || !dungeonState.inBattle) return;
+    activateCombatScrollsForCurrentBattle('dungeon');
 
     const p = gameState.player;
     const e = dungeonState.currentEnemy;
@@ -4529,6 +4679,8 @@ function dungeonEnemyDefeated() {
     // Check level up
     checkLevelUp();
 
+    resetCombatScrollSession();
+
     // Every 5 stages: permanent +1 ATK and +1 DEF reward (check BEFORE incrementing)
     if (dungeonState.stage > 0 && dungeonState.stage % 5 === 0) {
         p.atk += 1;
@@ -4576,6 +4728,7 @@ function endDungeon() {
     dungeonState.active = false;
     dungeonState.inBattle = false;
     dungeonState.currentEnemy = null;
+    resetCombatScrollSession();
     
     updateStats();
     showScreen('battle');
@@ -4602,6 +4755,9 @@ function renderDungeon() {
         </div>`;
         return;
     }
+
+    activateCombatScrollsForCurrentBattle('dungeon');
+    if (!dungeonState.active || !dungeonState.inBattle || !dungeonState.currentEnemy) return;
     
     const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
     
@@ -4620,13 +4776,11 @@ function renderDungeon() {
     html += `<button class="action-btn" onclick="dungeonAction('spell')" ${gameState.player.mp < 15 ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
     html += `<button class="action-btn danger" onclick="dungeonAction('flee')">Leave Dungeon</button>`;
 
-    const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
-    if (hasScrolls) {
+    const visibleScrolls = getVisibleCombatScrolls();
+    if (visibleScrolls.length > 0) {
         html += `<div class="section-title">Scrolls</div>`;
-        gameState.equippedScrolls.forEach((scroll, idx) => {
-            if (scroll) {
-                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
-            }
+        visibleScrolls.forEach(({ scroll, idx }) => {
+            html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
         });
     }
     
@@ -5920,6 +6074,7 @@ function spawnWorldBoss() {
 
 function despawnWorldBoss(defeated) {
     gameState.worldBossActive = false;
+    resetCombatScrollSession();
     
     // Reset Battle tab styling
     const battleNavBtn = Array.from(document.querySelectorAll('.nav-btn')).find(btn => btn.textContent.includes('Battle'));
@@ -5952,6 +6107,7 @@ function despawnWorldBoss(defeated) {
 
 function attackWorldBoss() {
     if (!gameState.worldBossActive || !gameState.currentWorldBoss) return;
+    activateCombatScrollsForCurrentBattle('worldboss');
     
     const boss = gameState.currentWorldBoss;
     const totalAtk = getTotalAtk();
@@ -6029,6 +6185,7 @@ function attackWorldBoss() {
     if (p.hp <= 0) {
         addBattleMsg('You have been defeated by the World Boss!', 'damage');
         p.hp = Math.floor(p.maxHp * 0.5);
+        resetCombatScrollSession();
     }
     
     renderBattle();
@@ -6140,6 +6297,12 @@ renderBattle = function() {
     
     // Show World Boss if active
     if (gameState.worldBossActive && gameState.currentWorldBoss) {
+        activateCombatScrollsForCurrentBattle('worldboss');
+        if (!gameState.worldBossActive || !gameState.currentWorldBoss) {
+            originalRenderBattle.apply(this, arguments);
+            return;
+        }
+
         const boss = gameState.currentWorldBoss;
         const hpPct = (boss.hp / boss.maxHp * 100).toFixed(0);
         const timeRemaining = Math.max(0, WORLD_BOSS_DURATION - (Date.now() - gameState.worldBossSpawnTime));
@@ -6156,13 +6319,11 @@ renderBattle = function() {
             <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;">⚔️ ATTACK WORLD BOSS</button>
         </div>`;
 
-        const hasScrolls = gameState.equippedScrolls.some(s => s !== null);
-        if (hasScrolls) {
+        const visibleScrolls = getVisibleCombatScrolls();
+        if (visibleScrolls.length > 0) {
             html += `<div class="section-title">Scrolls</div>`;
-            gameState.equippedScrolls.forEach((scroll, idx) => {
-                if (scroll) {
-                    html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
-                }
+            visibleScrolls.forEach(({ scroll, idx }) => {
+                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
             });
         }
         
@@ -6201,6 +6362,7 @@ initAuctionSystem();
 
 // Start the game
 init();
+
 </script>
 </body>
 </html>
