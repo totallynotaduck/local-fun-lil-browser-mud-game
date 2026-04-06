@@ -43,6 +43,12 @@
         .nav-btn:disabled { background-color: #222; color: #555; cursor: not-allowed; }
         @keyframes alertPulse { 0%,100% { background-color: #663300; } 50% { background-color: #996600; } }
         #status-banner { display: none; background-color: #330000; border-bottom: 1px solid #ff4444; color: #ffaaaa; padding: 8px 12px; font-size: 0.8em; text-align: center; }
+        #item-announcement { display: none; background: linear-gradient(135deg, #221100, #442200); border-bottom: 1px solid #ffaa00; color: #ffe0a3; padding: 10px 14px; text-align: center; }
+        #item-announcement-title { color: #ffd700; font-size: 0.95em; font-weight: bold; margin-bottom: 4px; }
+        #item-announcement-body { font-size: 0.85em; }
+        .profile-input { width: 100%; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 8px 10px; font-family: 'Courier New', monospace; margin-top: 6px; }
+        .profile-field { margin-bottom: 14px; }
+        .profile-label { color: #aaa; font-size: 0.85em; }
         #game-layout { display: flex; gap: 0; flex: 1; min-height: 0; overflow: hidden; }
         #left-panel { width: 200px; background-color: #0d0d0d; border-right: 1px solid #333; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
         #left-panel-content { flex: 1; overflow-y: auto; min-height: 0; }
@@ -233,6 +239,10 @@
         <button class="nav-btn" onclick="attemptShowScreen('save')">{*} Save</button>
     </div>
     <div id="status-banner"></div>
+    <div id="item-announcement">
+        <div id="item-announcement-title"></div>
+        <div id="item-announcement-body"></div>
+    </div>
     <div id="game-layout">
         <div id="left-panel">
             <div class="side-panel-header" onclick="attemptShowScreen('equipment')">[=] Equipment</div>
@@ -272,6 +282,7 @@
 // GAME STATE
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0 },
+    saveName: 'Hero Save',
     equipment: { weapon: null, weapon_ml: 0, weapon_luck: 0, armor: null, armor_ml: 0, helmet: null, helmet_ml: 0, shield: null, shield_ml: 0, ring: null, ring_ml: 0, amulet: null, amulet_ml: 0, boots: null, boots_ml: 0, gloves: null, gloves_ml: 0, cape: null, cape_ml: 0 },
     inBattle: false, currentEnemy: null, battleLog: [], quests: [], completedQuests: [], questProgress: {},
     activeScrollEffects: [], // Track active scroll effects with durations
@@ -577,6 +588,23 @@ const jobDefs = [
 function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function randFloat(min, max) { return Math.random() * (max - min) + min; }
+function sanitizeProfileText(value, fallback = '', maxLength = 24) {
+    const cleaned = String(value ?? '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[<>]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxLength);
+    return cleaned || fallback;
+}
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
 // Equip helpers - resolve equip slot from item.equipSlot or item.type
 const EQUIP_TYPES = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
@@ -829,6 +857,72 @@ const FAKE_CHAT_PREFIXES = [
 ];
 
 const FAKE_CHAT_MESSAGES = buildFakeChatMessages();
+const ANNOUNCEMENT_DURATION_MS = 15 * 1000;
+const ANNOUNCEMENT_REACTION_TEMPLATES = {
+    loot: [
+        '{player} just pulled {item}. That is absurd luck.',
+        'No way {player} got {item} right now.',
+        '{item} dropped for {player}? Congrats, I guess.',
+        '{player} found {item}. I am definitely not jealous.'
+    ],
+    auction: [
+        '{player} won {item} on auction? Huge pickup.',
+        'I was saving for {item} and {player} beat me to it.',
+        '{player} just sniped {item}. Brutal.',
+        '{item} from auction for {player}? Clean win.'
+    ],
+    dungeon: [
+        '{player} came out of the dungeon with {item}. Respect.',
+        '{item} from a dungeon run? Nice one, {player}.',
+        '{player} got {item} down there? That run paid off.',
+        'I need {player}\'s dungeon luck if {item} is dropping.'
+    ],
+    wandering: [
+        '{player} found {item} while wandering? Wild.',
+        '{item} on a wandering run is filthy luck, {player}.',
+        '{player} just turned a random expedition into {item}.',
+        'I wander for hours and {player} gets {item}.'
+    ],
+    worldboss: [
+        '{player} claimed {item} from the World Boss. Big haul.',
+        '{item} from the boss for {player}? Deserved.',
+        '{player} got {item} off the World Boss and now I am annoyed.',
+        'That boss dropping {item} for {player} is ridiculous.'
+    ],
+    market: [
+        '{player} bought {item} before I even checked the market.',
+        '{item} from the market for {player}? Nice catch.',
+        'I would have bought {item} if {player} was slower.',
+        '{player} found {item} in the market and I am salty.'
+    ],
+    merchant: [
+        '{player} talked the wandering merchant into selling {item}.',
+        '{item} from that merchant for {player}? Lucky.',
+        '{player} got {item} from the merchant before I arrived.',
+        'The merchant had {item} and {player} got it. Of course.'
+    ],
+    trade: [
+        '{player} traded into {item}. That is a sharp deal.',
+        '{item} from a trade for {player}? Well played.',
+        'I need whatever trade luck {player} has for {item}.',
+        '{player} just finished a trade and came away with {item}.'
+    ],
+    crafting: [
+        '{player} crafted {item}. That forge finally paid out.',
+        '{item} from crafting for {player}? Clean hit.',
+        '{player} made {item} while I keep failing crafts.',
+        'That {item} craft for {player} is gorgeous.'
+    ],
+    merge: [
+        '{player} merged into {item}. That is terrifying.',
+        '{item} after a merge for {player}? Huge upgrade.',
+        '{player} saved the duplicates and got {item}. Smart.',
+        'I should have merged more often if {item} is the result.'
+    ]
+};
+let itemAnnouncementTimeoutId = null;
+let itemAnnouncementChatTimeoutId = null;
+let activeItemAnnouncement = null;
 
 function buildFakeChatMessages() {
     const messages = Object.values(FAKE_CHAT_MESSAGE_GROUPS).flat();
@@ -838,6 +932,101 @@ function buildFakeChatMessages() {
         });
     });
     return Array.from(new Set(messages));
+}
+
+function clearItemAnnouncementTimers() {
+    if (itemAnnouncementTimeoutId) {
+        clearTimeout(itemAnnouncementTimeoutId);
+        itemAnnouncementTimeoutId = null;
+    }
+    if (itemAnnouncementChatTimeoutId) {
+        clearTimeout(itemAnnouncementChatTimeoutId);
+        itemAnnouncementChatTimeoutId = null;
+    }
+}
+
+function hideItemAnnouncement() {
+    clearItemAnnouncementTimers();
+    activeItemAnnouncement = null;
+
+    const container = document.getElementById('item-announcement');
+    if (container) container.style.display = 'none';
+}
+
+function renderItemAnnouncement() {
+    const container = document.getElementById('item-announcement');
+    const titleEl = document.getElementById('item-announcement-title');
+    const bodyEl = document.getElementById('item-announcement-body');
+    if (!container || !titleEl || !bodyEl) return;
+
+    if (!activeItemAnnouncement) {
+        container.style.display = 'none';
+        return;
+    }
+
+    titleEl.textContent = activeItemAnnouncement.title;
+    bodyEl.textContent = activeItemAnnouncement.body;
+    container.style.display = 'block';
+}
+
+function getAnnouncementTitle(item, context, options = {}) {
+    if (options.title) return options.title;
+    if (context === 'auction') return 'Auction Victory!';
+    if (context === 'merge') return 'Merge Complete!';
+    if (context === 'crafting') return 'Crafting Success!';
+    if (isUberUnique(item)) return 'Uber Unique Acquired!';
+    if (item?.rarity === 'unique') return 'Unique Item Acquired!';
+    return 'Rare Acquisition!';
+}
+
+function getAnnouncementBody(item, context, options = {}) {
+    if (options.body) return options.body;
+
+    const playerName = gameState.player.name;
+    if (context === 'auction') return `${playerName} won ${item.name} from the auction house.`;
+    if (context === 'merge') return `${playerName} forged ${item.name} through merging.`;
+    if (context === 'crafting') return `${playerName} crafted ${item.name}.`;
+    if (context === 'worldboss') return `${playerName} claimed ${item.name} from the World Boss.`;
+    return `${playerName} obtained ${item.name}${item?.rarity ? ` (${item.rarity})` : ''}.`;
+}
+
+function queueItemAnnouncementReaction() {
+    if (!activeItemAnnouncement) return;
+
+    itemAnnouncementChatTimeoutId = setTimeout(() => {
+        if (!activeItemAnnouncement) return;
+
+        const roster = ensureFakePlayerRoster();
+        const speaker = pick(roster);
+        const templatePool = ANNOUNCEMENT_REACTION_TEMPLATES[activeItemAnnouncement.context] || ANNOUNCEMENT_REACTION_TEMPLATES.loot;
+        const template = pick(templatePool);
+        const msg = template
+            .replace(/\{player\}/g, activeItemAnnouncement.playerName)
+            .replace(/\{item\}/g, activeItemAnnouncement.itemName);
+
+        addChatMessage(speaker.name, msg, false, true);
+        queueItemAnnouncementReaction();
+    }, rand(1000, 5000));
+}
+
+function showItemAnnouncement(item, context = 'loot', options = {}) {
+    if (!item || !item.name) return;
+
+    clearItemAnnouncementTimers();
+    activeItemAnnouncement = {
+        itemName: item.name,
+        playerName: gameState.player.name,
+        context,
+        title: getAnnouncementTitle(item, context, options),
+        body: getAnnouncementBody(item, context, options)
+    };
+
+    renderItemAnnouncement();
+    queueItemAnnouncementReaction();
+
+    itemAnnouncementTimeoutId = setTimeout(() => {
+        hideItemAnnouncement();
+    }, ANNOUNCEMENT_DURATION_MS);
 }
 
 function fakePlayerHash(text) {
@@ -1080,7 +1269,7 @@ function tradeWithPlayer(idx) {
     if (!removedItem) return;
 
     removeFromInventory(removedIndex);
-    addToInventory({ ...rewardItem, qty: 1 });
+    addToInventory({ ...rewardItem, qty: 1 }, { announcementContext: 'trade' });
     addItemLog('trade', rewardItem.name);
     gameState.tradeCooldownUntil = Date.now() + TRADE_COOLDOWN_MS;
 
@@ -1959,14 +2148,43 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
 // Get material/consumable drop (always allow, no level cap)
 function getMaterialDrop(enemyDrops) {
     if (!enemyDrops || enemyDrops.length === 0) return null;
-    
-    const dropName = pick(enemyDrops);
-    const dropItem = itemPool[dropName];
-    
-    if (dropItem) {
-        return { ...dropItem, qty: 1 };
+
+    const normalizedDrops = enemyDrops
+        .map(drop => {
+            if (!drop) return null;
+            if (typeof drop === 'string') {
+                return { name: drop, weight: 1, qty: 1 };
+            }
+            if (typeof drop === 'object' && drop.name) {
+                return {
+                    name: drop.name,
+                    weight: Math.max(1, Number(drop.weight) || 1),
+                    qty: Math.max(1, Number(drop.qty) || 1)
+                };
+            }
+            return null;
+        })
+        .filter(Boolean);
+
+    if (normalizedDrops.length === 0) return null;
+
+    const totalWeight = normalizedDrops.reduce((sum, drop) => sum + drop.weight, 0);
+    let roll = Math.random() * totalWeight;
+    let selectedDrop = normalizedDrops[normalizedDrops.length - 1];
+
+    for (const drop of normalizedDrops) {
+        roll -= drop.weight;
+        if (roll <= 0) {
+            selectedDrop = drop;
+            break;
+        }
     }
-    
+
+    const dropItem = itemPool[selectedDrop.name];
+    if (dropItem) {
+        return { ...dropItem, qty: selectedDrop.qty || 1 };
+    }
+
     return null;
 }
 
@@ -2555,14 +2773,13 @@ function enemyDefeated() {
         // 40% chance for equipment drop (using new rarity system)
         if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
             // Material/consumable drop from enemy's loot table
-            const dropName = pick(e.drops);
-            const dropItem = itemPool[dropName];
+            const dropItem = getMaterialDrop(e.drops);
             if (dropItem) {
-                addToInventory({ ...dropItem, qty: 1 });
-                addBattleMsg(`Dropped: ${dropName}!`, 'reward');
-                addItemLog('battle', dropName);
+                addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
+                addBattleMsg(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
+                addItemLog('battle', dropItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found: ${dropName}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
             }
         } else {
             // Equipment drop using new rarity system
@@ -2678,7 +2895,7 @@ function checkLevelUp() {
 }
 
 // INVENTORY
-function addToInventory(item) {
+function addToInventory(item, options = {}) {
     if (!item) return;
     // sanitize luck: only allow luck on weapons or explicit 'charm' types
     const allowedLuckTypes = ['weapon', 'charm'];
@@ -2702,6 +2919,20 @@ function addToInventory(item) {
         existing.qty = existingQty + qtyToAdd;
     } else {
         gameState.inventory.push(copy);
+    }
+
+    const shouldAnnounce = !options.suppressAnnouncement && (
+        options.forceAnnouncement ||
+        copy.rarity === 'unique' ||
+        copy.rarity === 'uber_unique' ||
+        copy.uberUnique === true
+    );
+
+    if (shouldAnnounce) {
+        showItemAnnouncement(copy, options.announcementContext || 'loot', {
+            title: options.announcementTitle,
+            body: options.announcementBody
+        });
     }
 }
 
@@ -2772,7 +3003,7 @@ function equipItem(index) {
         addToInventory({
             ...currentlyEquipped,
             qty: 1
-        });
+        }, { suppressAnnouncement: true });
     }
 
     // Remove new item from inventory
@@ -2903,7 +3134,7 @@ function unequipItem(slot) {
         ...item,
         qty: 1,
         equipped: false
-    });
+    }, { suppressAnnouncement: true });
 
     // Clear equipment slot
     gameState.equipment[slot] = null;
@@ -3305,9 +3536,20 @@ function renderTravel() {
     const loc = locations[p.location];
     const combatCooldownRemaining = getCombatCooldownRemainingMs();
     const combatLocked = combatCooldownRemaining > 0;
-    
+
+    const locationEnemyNames = Array.isArray(loc.enemies) && loc.enemies.length > 0
+        ? loc.enemies.map(enemyKey => {
+            const enemyData = enemies[enemyKey];
+            return enemyData?.name || enemyKey.replace(/_/g, ' ');
+        })
+        : [];
+
     let html = `<div class="location-header">${loc.name}</div>`;
     html += `<div class="description">${loc.desc}</div>`;
+
+    if (locationEnemyNames.length > 0) {
+        html += `<div class="description"><span style="color:#00ffff;">Enemies here:</span> ${locationEnemyNames.join(', ')}</div>`;
+    }
     
     if (loc.enemies) {
         html += `<div class="section-title">Actions</div>`;
@@ -3344,16 +3586,6 @@ function renderTravel() {
     
     html += `</div>`;
     container.innerHTML = html;
-}
-
-function travelTo(locKey) {
-    if (!isLocationUnlocked(locKey)) {
-        showLockedLocationMessage(locKey);
-        return;
-    }
-    gameState.player.location = locKey;
-    addBattleMsg(`Traveled to ${locations[locKey].name}`, 'info');
-    showScreen('travel');
 }
 
 function showLockedLocationMessage(locKey) {
@@ -3596,14 +3828,13 @@ function wanderingEnemyDefeated() {
         // 40% chance for equipment drop (using new rarity system)
         if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
             // Material/consumable drop from enemy's loot table
-            const dropName = pick(e.drops);
-            const dropItem = itemPool[dropName];
+            const dropItem = getMaterialDrop(e.drops);
             if (dropItem) {
-                w.rewards.items.push({ ...dropItem, qty: 1 });
-                addWanderingLog(`Dropped: ${dropName}!`, 'reward');
-                addItemLog('wandering', dropName);
+                w.rewards.items.push({ ...dropItem, qty: dropItem.qty || 1 });
+                addWanderingLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
+                addItemLog('wandering', dropItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found while wandering: ${dropName}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found while wandering: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
             }
         } else {
             // Equipment drop using new rarity system
@@ -4518,18 +4749,6 @@ function renderEquipment() {
     container.innerHTML = html;
 }
 
-function unequipItem(slot) {
-    const eq = gameState.equipment[slot];
-    if (!eq || !eq.name) return;
-    
-    addToInventory({ name: eq.name, type: eq.type, equipSlot: eq.equipSlot, atk: eq.atk, def: eq.def, crit: eq.crit, luck: eq.luck, desc: eq.desc, rarity: eq.rarity, levelReq: eq.levelReq, qty: 1 });
-    gameState.equipment[slot] = null;
-    
-    updateStats();
-    renderEquipment();
-    updateSidePanels();
-}
-
 // SCROLLS RENDER
 function renderScrolls() {
     const container = document.getElementById('scrolls-screen-content');
@@ -4849,6 +5068,26 @@ function getBasePriceForRarity(rarity) {
     return basePrices[rarity] || 2000;
 }
 
+function getAuctionLevelMultiplier(levelReq = 1) {
+    const clampedLevel = clamp(Number(levelReq) || 1, 1, 60);
+    const progress = (clampedLevel - 1) / 59;
+    return 0.2 + ((50 - 0.2) * progress);
+}
+
+function calculateAuctionValue(item) {
+    const rarityBaseValue = getBasePriceForRarity(item?.rarity);
+    const levelMultiplier = getAuctionLevelMultiplier(item?.levelReq || 1);
+    const varianceMultiplier = randFloat(0.8, 1.4);
+    const baseValue = Math.max(1, Math.floor(rarityBaseValue * levelMultiplier * varianceMultiplier));
+
+    return {
+        rarityBaseValue,
+        levelMultiplier,
+        varianceMultiplier,
+        baseValue
+    };
+}
+
 function startNewAuction() {
     const rarity = selectAuctionItemRarity();
     
@@ -4868,7 +5107,8 @@ function startNewAuction() {
     }
     
     const item = pick(matchingItems);
-    const basePrice = getBasePriceForRarity(rarity);
+    const auctionValue = calculateAuctionValue(item);
+    const basePrice = auctionValue.baseValue;
     const auctionDuration = getAuctionDurationForRarity(rarity);
     const initialBidderCount = getInitialAuctionBidderCountForRarity(rarity);
     const bidderRoster = ensureFakePlayerRoster(initialBidderCount).slice(0, initialBidderCount);
@@ -4877,7 +5117,12 @@ function startNewAuction() {
     auctionState = {
         ...createDefaultAuctionState(),
         active: true,
-        currentItem: { ...item },
+        currentItem: {
+            ...item,
+            auctionBaseValue: basePrice,
+            auctionLevelMultiplier: auctionValue.levelMultiplier,
+            auctionVarianceMultiplier: auctionValue.varianceMultiplier
+        },
         currentPrice: Math.floor(basePrice * 0.7),
         minimumBid: Math.floor(basePrice * 0.7 * 1.05),
         bidders: [],
@@ -5006,7 +5251,12 @@ function endAuction() {
     setAuctionTabAlert(false);
     
     if (completedAuction.highestBidder === 'You') {
-        addToInventory({ ...completedAuction.currentItem, qty: 1 });
+        addToInventory({ ...completedAuction.currentItem, qty: 1 }, {
+            forceAnnouncement: true,
+            announcementContext: 'auction',
+            announcementTitle: 'Auction Victory!',
+            announcementBody: `${gameState.player.name} won ${completedAuction.currentItem.name} from the auction house.`
+        });
         addChatMessage('SYSTEM', `🎉 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
         addItemLog('auction', completedAuction.currentItem.name);
     } else {
@@ -5766,14 +6016,13 @@ function dungeonEnemyDefeated() {
             // 40% chance for equipment drop (using new rarity system)
             if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
                 // Material/consumable drop from enemy's loot table
-                const dropName = pick(e.drops);
-                const dropItem = itemPool[dropName];
+                const dropItem = getMaterialDrop(e.drops);
                 if (dropItem) {
-                    addToInventory({ ...dropItem, qty: 1 });
-                    addDungeonLog(`Dropped: ${dropName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                    addItemLog('dungeon', dropName);
+                    addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
+                    addDungeonLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
+                    addItemLog('dungeon', dropItem.name);
                     // Show in chat
-                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${dropName}!`, true);
+                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
                 }
             } else {
                 // Equipment drop using new rarity system
@@ -6465,6 +6714,9 @@ function ensurePlayerBaseStats(player) {
 
 function sanitizeLoadedStateData(state) {
     const allowedLuckTypes = ['weapon', 'charm'];
+    if (!state.player || typeof state.player !== 'object') state.player = cloneData(INITIAL_GAME_STATE_SNAPSHOT.player);
+    state.player.name = sanitizeProfileText(state.player.name, 'Hero', 24);
+    state.saveName = sanitizeProfileText(state.saveName, 'Hero Save', 40);
     ensurePlayerBaseStats(state.player);
     state.pvpCooldownUntil = Math.max(0, Number(state.pvpCooldownUntil) || 0);
     state.tradeCooldownUntil = Math.max(0, Number(state.tradeCooldownUntil) || 0);
@@ -6778,6 +7030,8 @@ function buildCompactSaveData() {
         i: (gameState.inventory || []).map(encodeItemForSave)
     };
 
+    if (gameState.saveName !== INITIAL_GAME_STATE_SNAPSHOT.saveName) save.sn = gameState.saveName;
+
     const equipment = encodeEquipmentForSave(gameState.equipment);
     if (Object.keys(equipment).length) save.e = equipment;
 
@@ -6847,6 +7101,7 @@ function decodeCompactSaveData(data) {
         ...hydrated.player,
         ...decodeAliasedObject(data.p || {}, SAVE_PLAYER_KEY_FROM_ALIAS)
     };
+    if (data.sn !== undefined) hydrated.saveName = data.sn;
     hydrated.equipment = decodeEquipmentFromSave(data.e || {});
     hydrated.inventory = Array.isArray(data.i) ? data.i.map(decodeItemForSave).filter(Boolean) : cloneData(hydrated.inventory);
 
@@ -6919,6 +7174,7 @@ function decodeLegacySaveData(data) {
     });
 
     hydrated.player = { ...cloneData(INITIAL_GAME_STATE_SNAPSHOT.player), ...(cloneData(data.player) || {}) };
+    if (data.saveName !== undefined) hydrated.saveName = cloneData(data.saveName);
     hydrated.equipment = { ...cloneData(INITIAL_GAME_STATE_SNAPSHOT.equipment), ...(cloneData(data.equipment) || {}) };
     hydrated.inventory = Array.isArray(data.inventory) ? cloneData(data.inventory) : cloneData(hydrated.inventory);
     hydrated.equippedScrolls = Array.isArray(data.equippedScrolls)
@@ -6971,11 +7227,48 @@ function restoreGameStateFromSaveData(rawData) {
     return true;
 }
 
+function saveProfileSettings() {
+    const characterNameInput = document.getElementById('character-name-input');
+    const saveNameInput = document.getElementById('save-name-input');
+
+    const nextCharacterName = sanitizeProfileText(characterNameInput?.value, 'Hero', 24);
+    const nextSaveName = sanitizeProfileText(saveNameInput?.value, 'Hero Save', 40);
+    const previousName = gameState.player.name;
+
+    gameState.player.name = nextCharacterName;
+    gameState.saveName = nextSaveName;
+
+    if (characterNameInput) characterNameInput.value = nextCharacterName;
+    if (saveNameInput) saveNameInput.value = nextSaveName;
+
+    updateStats();
+    updateSidePanels();
+    scheduleSilentPersist();
+    addChatMessage('SYSTEM', previousName === nextCharacterName
+        ? `Save profile updated: ${gameState.saveName}.`
+        : `Profile updated. ${previousName} is now known as ${nextCharacterName}.`, true);
+
+    renderSave();
+}
+
 // SAVE RENDER
 function renderSave() {
     const container = document.getElementById('save-screen-content');
+    const currentSaveName = escapeHtml(sanitizeProfileText(gameState.saveName, 'Hero Save', 40));
+    const currentCharacterName = escapeHtml(sanitizeProfileText(gameState.player.name, 'Hero', 24));
     
     container.innerHTML = `
+        <div class="section-title">Profile</div>
+        <div class="description">Set your save name and character name here. Future announcements and system callouts will use your current character name.</div>
+        <div class="profile-field">
+            <div class="profile-label">Save Name</div>
+            <input class="profile-input" id="save-name-input" type="text" maxlength="40" value="${currentSaveName}" placeholder="Hero Save">
+        </div>
+        <div class="profile-field">
+            <div class="profile-label">Character Name</div>
+            <input class="profile-input" id="character-name-input" type="text" maxlength="24" value="${currentCharacterName}" placeholder="Hero">
+        </div>
+        <button class="action-btn" onclick="saveProfileSettings()">Apply Profile Changes</button>
         <div class="section-title">Save / Load Game</div>
         <button class="action-btn" onclick="saveGame()">Save Game (Local)</button>
         <button class="action-btn" onclick="loadGame()">Load Game (Local)</button>

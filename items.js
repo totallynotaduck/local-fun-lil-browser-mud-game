@@ -38,6 +38,14 @@ const itemPool = {
     'Mythril Ore': { name: 'Mythril Ore', type: 'material', desc: 'Rare ore', rarity: 'epic' },
     'Ancient Bone': { name: 'Ancient Bone', type: 'material', desc: 'Old bone', rarity: 'rare' },
     'Void Crystal': { name: 'Void Crystal', type: 'material', desc: 'Dark crystal', rarity: 'legendary' },
+    'Steel Ingot': { name: 'Steel Ingot', type: 'material', desc: 'Refined steel used for better weapons and armor', rarity: 'uncommon' },
+    'Silkweave': { name: 'Silkweave', type: 'material', desc: 'Fine enchanted cloth for agile gear', rarity: 'uncommon' },
+    'Moonstone': { name: 'Moonstone', type: 'material', desc: 'A pale gem humming with mana', rarity: 'rare' },
+    'Runic Thread': { name: 'Runic Thread', type: 'material', desc: 'Inscribed thread that binds magical equipment', rarity: 'rare' },
+    'Aethersteel Ingot': { name: 'Aethersteel Ingot', type: 'material', desc: 'Star-forged metal for powerful equipment', rarity: 'epic' },
+    'Abyssal Shard': { name: 'Abyssal Shard', type: 'material', desc: 'Dense shard of abyssal power', rarity: 'epic' },
+    'Celestial Core': { name: 'Celestial Core', type: 'material', desc: 'A brilliant core overflowing with divine force', rarity: 'legendary' },
+    'Starweave Fiber': { name: 'Starweave Fiber', type: 'material', desc: 'Radiant thread woven from constellations', rarity: 'legendary' },
     
     // WEAPONS - Level 1-10 (Common)
     'Rusty Sword': { name: 'Rusty Sword', type: 'weapon', equipSlot: 'weapon', atk: 3, levelReq: 1, desc: '+3 ATK', rarity: 'common' },
@@ -249,7 +257,7 @@ const scrollPool = {
 };
 
 // CRAFTING RECIPES
-const craftingRecipes = [
+const BASE_CRAFTING_RECIPES = [
     { name: 'Iron Sword', materials: { 'Iron Ore': 3 }, result: { name: 'Iron Sword', type: 'weapon', equipSlot: 'weapon', atk: 8, levelReq: 10, desc: '+8 ATK', rarity: 'uncommon' }, chance: 0.8 },
     { name: 'Health Potion', materials: { 'Sprite Dust': 1, 'Wolf Pelt': 1 }, result: { name: 'Health Potion', type: 'consumable', effect: 'heal', value: 30, desc: 'Restores 30 HP', rarity: 'common' }, chance: 0.9 },
     { name: 'Lucky Charm', materials: { 'Pixie Wings': 3, 'Magic Stone': 1 }, result: { name: 'Lucky Charm', type: 'charm', equipSlot: 'ring', luck: 3, levelReq: 15, desc: '+3 LUCK', rarity: 'uncommon' }, chance: 0.4 },
@@ -258,6 +266,216 @@ const craftingRecipes = [
     { name: 'Shadow Cloak', materials: { 'Shadow Essence': 2, 'Dark Pelt': 3 }, result: { name: 'Shadow Cloak', type: 'cape', equipSlot: 'cape', def: 12, crit: 5, levelReq: 20, desc: '+12 DEF, +5% CRIT', rarity: 'rare' }, chance: 0.35 },
     { name: 'Greater Health Potion', materials: { 'Sprite Dust': 3, 'Wolf Pelt': 3, 'Magic Stone': 1 }, result: { name: 'Greater Health Potion', type: 'consumable', effect: 'heal', value: 100, desc: 'Restores 100 HP', rarity: 'uncommon' }, chance: 0.7 }
 ];
+
+const SPECIAL_CRAFTING_RECIPES = [
+    {
+        name: 'Blessing Oil',
+        materials: { 'Moonstone': 2, 'Runic Thread': 2, 'Aethersteel Ingot': 1, 'Celestial Core': 1 },
+        result: { name: 'Blessing Oil', type: 'consumable', effect: 'blessing', value: 50, desc: 'Chance to increase Weapon Luck.', rarity: 'epic', price: 500 },
+        chance: 0.52
+    },
+    {
+        name: 'World Boss Ticket',
+        materials: { 'Abyssal Shard': 2, 'Dragon Heart': 1, 'Void Crystal': 2, 'Celestial Core': 1, 'Starweave Fiber': 1 },
+        result: { name: 'World Boss Ticket', type: 'consumable', effect: 'spawn_world_boss', value: 0, desc: 'Immediately summons a World Boss when used', rarity: 'epic', price: 15000 },
+        chance: 0.3
+    }
+];
+
+const craftingRecipes = [];
+
+const CRAFTABLE_EQUIP_TYPES = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape', 'charm'];
+const RECIPE_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique', 'uber_unique'];
+const CRAFT_SUCCESS_BY_RARITY = {
+    common: 0.97,
+    uncommon: 0.88,
+    rare: 0.74,
+    epic: 0.58,
+    legendary: 0.42,
+    unique: 0.28,
+    uber_unique: 0.16
+};
+const SLOT_PRIMARY_MATERIALS = {
+    weapon: ['Iron Ore', 'Steel Ingot', 'Dragon Claw', 'Mythril Ore', 'Dragon Heart', 'Celestial Core', 'Celestial Core'],
+    armor: ['Wolf Pelt', 'Steel Ingot', 'Dragon Scale', 'Aethersteel Ingot', 'Dragon Heart', 'Celestial Core', 'Celestial Core'],
+    helmet: ['Wolf Pelt', 'Steel Ingot', 'Dragon Scale', 'Aethersteel Ingot', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    shield: ['Iron Ore', 'Stone Core', 'Dragon Scale', 'Aethersteel Ingot', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    boots: ['Bat Wing', 'Cave Troll Hide', 'Dark Pelt', 'Shadow Essence', 'Phoenix Feather', 'Starweave Fiber', 'Starweave Fiber'],
+    gloves: ['Wolf Pelt', 'Cave Troll Hide', 'Dragon Claw', 'Demon Horn', 'Dragon Heart', 'Starweave Fiber', 'Starweave Fiber'],
+    cape: ['Harpy Feather', 'Silkweave', 'Runic Thread', 'Shadow Essence', 'Phoenix Feather', 'Starweave Fiber', 'Starweave Fiber'],
+    ring: ['Pixie Wings', 'Sprite Dust', 'Moonstone', 'Abyssal Shard', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    amulet: ['Pixie Wings', 'Stone Core', 'Magic Stone', 'Abyssal Shard', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    charm: ['Pixie Wings', 'Stone Core', 'Moonstone', 'Abyssal Shard', 'Void Crystal', 'Celestial Core', 'Celestial Core']
+};
+const SLOT_SUPPORT_MATERIALS = {
+    weapon: ['Goblin Ears', 'Sprite Dust', 'Magic Stone', 'Runic Thread', 'Abyssal Shard', 'Void Crystal', 'Void Crystal'],
+    armor: ['Wolf Pelt', 'Cave Troll Hide', 'Ancient Bone', 'Runic Thread', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    helmet: ['Goblin Ears', 'Stone Core', 'Ancient Bone', 'Runic Thread', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    shield: ['Wolf Pelt', 'Stone Core', 'Magic Stone', 'Abyssal Shard', 'Void Crystal', 'Celestial Core', 'Celestial Core'],
+    boots: ['Harpy Feather', 'Pixie Wings', 'Moonstone', 'Runic Thread', 'Starweave Fiber', 'Celestial Core', 'Celestial Core'],
+    gloves: ['Bat Wing', 'Harpy Feather', 'Moonstone', 'Abyssal Shard', 'Phoenix Feather', 'Celestial Core', 'Celestial Core'],
+    cape: ['Pixie Wings', 'Sprite Dust', 'Wraith Essence', 'Abyssal Shard', 'Starweave Fiber', 'Celestial Core', 'Celestial Core'],
+    ring: ['Goblin Ears', 'Magic Stone', 'Wraith Essence', 'Abyssal Shard', 'Dragon Heart', 'Celestial Core', 'Celestial Core'],
+    amulet: ['Wolf Pelt', 'Sprite Dust', 'Wraith Essence', 'Shadow Essence', 'Phoenix Feather', 'Celestial Core', 'Celestial Core'],
+    charm: ['Pixie Wings', 'Magic Stone', 'Moonstone', 'Abyssal Shard', 'Dragon Heart', 'Celestial Core', 'Celestial Core']
+};
+const CONSUMABLE_PRIMARY_MATERIALS = {
+    heal: ['Wolf Pelt', 'Sprite Dust', 'Stone Core', 'Moonstone', 'Abyssal Shard', 'Celestial Core', 'Celestial Core'],
+    mana: ['Pixie Wings', 'Sprite Dust', 'Magic Stone', 'Moonstone', 'Abyssal Shard', 'Celestial Core', 'Celestial Core'],
+    heal_full: ['Dragon Heart', 'Phoenix Feather', 'Void Crystal', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core'],
+    mana_full: ['Void Crystal', 'Phoenix Feather', 'Dragon Heart', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core'],
+    full_restore: ['Dragon Heart', 'Phoenix Feather', 'Void Crystal', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core'],
+    blessing: ['Moonstone', 'Abyssal Shard', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core'],
+    spawn_world_boss: ['Void Crystal', 'Dragon Heart', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core', 'Celestial Core']
+};
+const CONSUMABLE_SUPPORT_MATERIALS = {
+    heal: ['Goblin Ears', 'Steel Ingot', 'Runic Thread', 'Aethersteel Ingot', 'Phoenix Feather', 'Starweave Fiber', 'Starweave Fiber'],
+    mana: ['Bat Wing', 'Steel Ingot', 'Runic Thread', 'Aethersteel Ingot', 'Void Crystal', 'Starweave Fiber', 'Starweave Fiber'],
+    heal_full: ['Phoenix Feather', 'Celestial Core', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber'],
+    mana_full: ['Dragon Heart', 'Celestial Core', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber'],
+    full_restore: ['Phoenix Feather', 'Dragon Heart', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber'],
+    blessing: ['Runic Thread', 'Aethersteel Ingot', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber', 'Starweave Fiber'],
+    spawn_world_boss: ['Abyssal Shard', 'Starweave Fiber', 'Void Crystal', 'Void Crystal', 'Void Crystal', 'Void Crystal', 'Void Crystal']
+};
+
+function getRecipeRarityIndex(rarity) {
+    const idx = RECIPE_RARITY_ORDER.indexOf(rarity);
+    return idx === -1 ? 0 : idx;
+}
+
+function getRecipeTierMaterial(materialList, rarity) {
+    return materialList[Math.min(getRecipeRarityIndex(rarity), materialList.length - 1)];
+}
+
+function addRecipeMaterial(materials, name, qty) {
+    if (!name || qty <= 0) return;
+    materials[name] = (materials[name] || 0) + qty;
+}
+
+function isStaticCraftableItem(item) {
+    if (!item || !item.name) return false;
+    if (/\(\d+-\d+\)$/.test(item.name)) return false;
+    if (item.type === 'material' || item.type === 'currency' || item.type === 'scroll') return false;
+    if (item.type === 'consumable') return true;
+    return !!(item.equipSlot || CRAFTABLE_EQUIP_TYPES.includes(item.type));
+}
+
+function buildEquipmentRecipeMaterials(item) {
+    const slot = item.equipSlot || item.type || 'weapon';
+    const primaryList = SLOT_PRIMARY_MATERIALS[slot] || SLOT_PRIMARY_MATERIALS.weapon;
+    const supportList = SLOT_SUPPORT_MATERIALS[slot] || SLOT_SUPPORT_MATERIALS.weapon;
+    const rarityIndex = getRecipeRarityIndex(item.rarity);
+    const levelReq = item.levelReq || 1;
+    const levelFactor = Math.max(1, Math.ceil(levelReq / 15));
+    const materials = {};
+
+    addRecipeMaterial(materials, getRecipeTierMaterial(primaryList, item.rarity), 1 + levelFactor + Math.min(rarityIndex, 3));
+    addRecipeMaterial(materials, getRecipeTierMaterial(supportList, item.rarity), Math.max(1, Math.ceil(levelFactor / 2) + Math.floor(rarityIndex / 2)));
+
+    if (rarityIndex >= 2) {
+        addRecipeMaterial(materials, getRecipeTierMaterial(primaryList, RECIPE_RARITY_ORDER[rarityIndex - 1]), 1 + Math.floor(rarityIndex / 2));
+    }
+
+    if (item.atk && item.def) {
+        addRecipeMaterial(materials, rarityIndex >= 3 ? 'Aethersteel Ingot' : 'Stone Core', 1);
+    }
+    if (item.crit || item.critDmg) {
+        addRecipeMaterial(materials, rarityIndex >= 2 ? 'Moonstone' : 'Harpy Feather', 1);
+    }
+    if (item.luck || item.magicFind || item.goldFind) {
+        addRecipeMaterial(materials, rarityIndex >= 3 ? 'Abyssal Shard' : 'Pixie Wings', 1);
+    }
+    if (item.hpPercent || item.mpPercent || item.healthRegen || item.manaRegen) {
+        addRecipeMaterial(materials, rarityIndex >= 4 ? 'Celestial Core' : 'Wraith Essence', 1);
+    }
+    if (item.rarity === 'unique') {
+        addRecipeMaterial(materials, 'Celestial Core', 1);
+    }
+    if (item.rarity === 'uber_unique') {
+        addRecipeMaterial(materials, 'Celestial Core', 2);
+        addRecipeMaterial(materials, 'Void Crystal', 2);
+        addRecipeMaterial(materials, 'Starweave Fiber', 1);
+    }
+
+    return materials;
+}
+
+function buildConsumableRecipeMaterials(item) {
+    const rarityIndex = getRecipeRarityIndex(item.rarity);
+    const primaryList = CONSUMABLE_PRIMARY_MATERIALS[item.effect] || CONSUMABLE_PRIMARY_MATERIALS.heal;
+    const supportList = CONSUMABLE_SUPPORT_MATERIALS[item.effect] || CONSUMABLE_SUPPORT_MATERIALS.heal;
+    const valueFactor = Math.max(1, Math.ceil((item.value || 1) / 75));
+    const materials = {};
+
+    addRecipeMaterial(materials, getRecipeTierMaterial(primaryList, item.rarity), 1 + valueFactor + Math.min(rarityIndex, 2));
+    addRecipeMaterial(materials, getRecipeTierMaterial(supportList, item.rarity), Math.max(1, Math.ceil(valueFactor / 2) + Math.floor(rarityIndex / 2)));
+
+    if (item.effect === 'heal_full' || item.effect === 'mana_full' || item.effect === 'full_restore') {
+        addRecipeMaterial(materials, 'Phoenix Feather', 1);
+        addRecipeMaterial(materials, 'Void Crystal', 1);
+    } else if (rarityIndex >= 2) {
+        addRecipeMaterial(materials, item.effect === 'mana' ? 'Magic Stone' : 'Steel Ingot', 1);
+    }
+
+    return materials;
+}
+
+function createAutoCraftingRecipe(item) {
+    return {
+        name: item.name,
+        materials: item.type === 'consumable' ? buildConsumableRecipeMaterials(item) : buildEquipmentRecipeMaterials(item),
+        result: { ...item },
+        chance: CRAFT_SUCCESS_BY_RARITY[item.rarity] || 0.6
+    };
+}
+
+function cloneRecipe(recipe) {
+    return {
+        ...recipe,
+        materials: { ...(recipe.materials || {}) },
+        result: { ...(recipe.result || {}) }
+    };
+}
+
+function rebuildCraftingRecipes() {
+    const recipeMap = new Map();
+
+    BASE_CRAFTING_RECIPES.forEach(recipe => {
+        recipeMap.set(recipe.result.name, cloneRecipe(recipe));
+    });
+
+    Object.values(itemPool)
+        .filter(isStaticCraftableItem)
+        .forEach(item => {
+            if (!recipeMap.has(item.name)) {
+                recipeMap.set(item.name, createAutoCraftingRecipe(item));
+            }
+        });
+
+    const specialRecipes = Array.isArray(globalThis.SPECIAL_CRAFTING_RECIPES) ? globalThis.SPECIAL_CRAFTING_RECIPES : SPECIAL_CRAFTING_RECIPES;
+    specialRecipes.forEach(recipe => {
+        if (recipe && recipe.result && recipe.result.name) {
+            recipeMap.set(recipe.result.name, cloneRecipe(recipe));
+        }
+    });
+
+    const sortedRecipes = Array.from(recipeMap.values()).sort((a, b) => {
+        const aItem = a.result || {};
+        const bItem = b.result || {};
+        const aLevel = aItem.levelReq || 0;
+        const bLevel = bItem.levelReq || 0;
+        if (aLevel !== bLevel) return aLevel - bLevel;
+
+        const rarityDiff = getRecipeRarityIndex(aItem.rarity) - getRecipeRarityIndex(bItem.rarity);
+        if (rarityDiff !== 0) return rarityDiff;
+
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+    craftingRecipes.length = 0;
+    sortedRecipes.forEach(recipe => craftingRecipes.push(recipe));
+    return craftingRecipes;
+}
 
 // SELL VALUES
 const UNIQUE_ATTRIBUTE_POOL = [
@@ -469,13 +687,17 @@ const rarityMultipliers = { common: 1, uncommon: 1.5, rare: 2, epic: 3, legendar
     });
 })();
 
+rebuildCraftingRecipes();
+
 // Make available globally for browser and other non-module script environments
 globalThis.itemPool = itemPool;
 globalThis.scrollPool = scrollPool;
 globalThis.craftingRecipes = craftingRecipes;
+globalThis.SPECIAL_CRAFTING_RECIPES = SPECIAL_CRAFTING_RECIPES;
+globalThis.rebuildCraftingRecipes = rebuildCraftingRecipes;
 globalThis.UNIQUE_ATTRIBUTE_POOL = UNIQUE_ATTRIBUTE_POOL;
 globalThis.SELL_VALUES = SELL_VALUES;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { itemPool, scrollPool, craftingRecipes, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
+    module.exports = { itemPool, scrollPool, craftingRecipes, rebuildCraftingRecipes, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
 }

@@ -89,4 +89,8 @@ if (level55UberSharedItemPool) {
     });
 }
 
+if (typeof globalThis.rebuildCraftingRecipes === 'function') {
+    globalThis.rebuildCraftingRecipes();
+}
+
 globalThis.LEVEL_55_UBER_UNIQUES = LEVEL_55_UBER_UNIQUES;

@@ -90,6 +90,65 @@ const WORLD_BOSSES = [
     { name: 'Void Emperor', tier: 10, hp: 12000, atk: 120, def: 80, xp: 6000, gold: 3000, drops: ['Void Crystal', 'Soul Gem', 'Soul Gem'] }
 ];
 
+function getBaseDropWeight(dropName) {
+    const dropItem = globalThis.itemPool && globalThis.itemPool[dropName];
+    if (!dropItem) return 1;
+
+    if (dropItem.type === 'material') {
+        switch (dropItem.rarity) {
+            case 'common': return 6;
+            case 'uncommon': return 5;
+            case 'rare': return 3;
+            case 'epic': return 2;
+            case 'legendary': return 1;
+            default: return 1;
+        }
+    }
+
+    if (dropItem.type === 'consumable') return 3;
+    if (dropItem.equipSlot) return 1;
+    return 1;
+}
+
+function getTierBonusDrops(tier) {
+    const bonusDrops = [];
+
+    if (tier >= 2) bonusDrops.push({ name: 'Steel Ingot', weight: tier >= 4 ? 1 : 2 });
+    if (tier >= 3) bonusDrops.push({ name: 'Silkweave', weight: 2 });
+    if (tier >= 4) bonusDrops.push({ name: 'Moonstone', weight: tier >= 6 ? 1 : 2 });
+    if (tier >= 5) bonusDrops.push({ name: 'Runic Thread', weight: 2 });
+    if (tier >= 6) bonusDrops.push({ name: 'Aethersteel Ingot', weight: tier >= 8 ? 2 : 1 });
+    if (tier >= 6) bonusDrops.push({ name: 'Abyssal Shard', weight: 1 });
+    if (tier >= 8) bonusDrops.push({ name: 'Celestial Core', weight: tier >= 10 ? 2 : 1 });
+    if (tier >= 8) bonusDrops.push({ name: 'Starweave Fiber', weight: tier >= 9 ? 2 : 1 });
+
+    return bonusDrops;
+}
+
+(function enhanceEnemyDrops() {
+    Object.values(ENEMY_NAME_DB).forEach(enemy => {
+        const normalizedDrops = (enemy.drops || []).map(drop => {
+            if (typeof drop === 'string') {
+                return { name: drop, weight: getBaseDropWeight(drop) };
+            }
+            return drop;
+        });
+
+        enemy.drops = normalizedDrops.concat(getTierBonusDrops(enemy.tier));
+    });
+
+    WORLD_BOSSES.forEach(boss => {
+        const normalizedDrops = (boss.drops || []).map(drop => {
+            if (typeof drop === 'string') {
+                return { name: drop, weight: getBaseDropWeight(drop) };
+            }
+            return drop;
+        });
+
+        boss.drops = normalizedDrops.concat(getTierBonusDrops(boss.tier));
+    });
+})();
+
 // PROCESSED ENEMIES (generated from ENEMY_NAME_DB and ENEMY_TIERS)
 const enemies = {};
 Object.keys(ENEMY_NAME_DB).forEach(key => {
@@ -158,3 +217,12 @@ Object.keys(ENEMY_NAME_DB).forEach(key => {
         inflictDebuff: enemyDebuffMap[key] || null
     };
 });
+
+globalThis.ENEMY_TIERS = ENEMY_TIERS;
+globalThis.ENEMY_NAME_DB = ENEMY_NAME_DB;
+globalThis.WORLD_BOSSES = WORLD_BOSSES;
+globalThis.enemies = enemies;
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ENEMY_TIERS, ENEMY_NAME_DB, WORLD_BOSSES, enemies };
+}

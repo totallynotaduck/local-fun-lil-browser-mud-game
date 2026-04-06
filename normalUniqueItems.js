@@ -256,4 +256,8 @@ if (normalUniqueSharedItemPool) {
     });
 }
 
+if (typeof globalThis.rebuildCraftingRecipes === 'function') {
+    globalThis.rebuildCraftingRecipes();
+}
+
 globalThis.NORMAL_UNIQUE_ITEMS = NORMAL_UNIQUE_ITEMS;

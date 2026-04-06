@@ -92,4 +92,8 @@ if (uberUniqueSharedItemPool) {
     });
 }
 
+if (typeof globalThis.rebuildCraftingRecipes === 'function') {
+    globalThis.rebuildCraftingRecipes();
+}
+
 globalThis.UBER_UNIQUE_SET = UBER_UNIQUE_SET;
