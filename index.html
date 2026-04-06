@@ -189,6 +189,13 @@
         .craft-materials { color: #aaa; margin: 5px 0; }
         .craft-result { color: #00ff00; font-weight: bold; }
         .encounter-info { color: #888; font-size: 0.8em; margin: 5px 0; }
+        .wandering-screen-shell { position: relative; min-height: 100%; }
+        .wandering-battle-dimmed { filter: brightness(0.55); pointer-events: none; user-select: none; }
+        .wandering-battle-overlay { position: absolute; inset: 0; z-index: 25; display: flex; align-items: flex-start; justify-content: center; padding: 16px; background: rgba(5, 8, 12, 0.82); backdrop-filter: blur(2px); }
+        .wandering-battle-card { width: min(100%, 720px); background: #111; border: 2px solid #ff4444; border-radius: 8px; box-shadow: 0 0 24px rgba(255, 68, 68, 0.28); padding: 16px; }
+        .wandering-battle-card .section-title:first-child { margin-top: 0; }
+        .wandering-battle-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .wandering-battle-card .battle-log { max-height: 200px; }
         
         @media (max-width: 900px) {
             #left-panel, #right-panel { width: 150px; }
@@ -458,13 +465,23 @@ function refreshCooldownUi() {
 }
 
 function attemptShowScreen(screenName) {
+    const combatContext = getCurrentCombatContext();
+    const targetScreen = combatContext === 'wandering' && screenName === 'battle'
+        ? 'wandering'
+        : screenName;
+    const canBypassCooldown =
+        (combatContext === 'battle' && targetScreen === 'battle') ||
+        (combatContext === 'dungeon' && targetScreen === 'battle') ||
+        (combatContext === 'worldboss' && targetScreen === 'battle') ||
+        (combatContext === 'wandering' && targetScreen === 'wandering');
+
     const remaining = getNavigationCooldownRemainingMs();
-    if (remaining > 0) {
+    if (remaining > 0 && !canBypassCooldown) {
         addBattleMsg(`Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.`, 'damage');
         refreshCooldownUi();
         return;
     }
-    showScreen(screenName);
+    showScreen(targetScreen);
 }
 
 function guardCombatCooldown(logCallback = addBattleMsg, rerenderCallback = null) {
@@ -4144,7 +4161,10 @@ function renderWandering() {
         return;
     }
     
-    let html = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>`;
+    const hasBattleOverlay = !!(w.inBattle && w.currentEnemy);
+    let html = `<div class="wandering-screen-shell">`;
+    html += `<div class="${hasBattleOverlay ? 'wandering-battle-dimmed' : ''}">`;
+    html += `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>`;
     html += `<div style="margin-bottom:10px; padding:8px; background-color:#112211; border:1px solid #004400; border-radius:4px;">
         <span style="color:#888;">Current Location: </span>
         <span style="color:#00ffff; font-weight:bold;">${locations[p.location].name}</span>
@@ -4195,45 +4215,6 @@ function renderWandering() {
         html += `<div style="margin-top:15px;">
             <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
-    } else if (w.inBattle && w.currentEnemy) {
-        activateCombatScrollsForCurrentBattle('wandering');
-        if (!w.inBattle || !w.currentEnemy) return;
-
-        const e = w.currentEnemy;
-        const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
-        
-        html += `<div class="section-title" style="color:#ff4444;">⚔️ Battle - ${e.name}</div>`;
-        html += `<div class="boss-hp-bar"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>`;
-        html += `<div class="description">HP: ${e.hp}/${e.maxHp} | ATK: ${e.atk} | DEF: ${e.def}</div>`;
-        
-        html += `<div class="section-title">Battle Actions</div>`;
-        html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-        html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
-        html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
-        html += `</div>`;
-        if (combatLocked) {
-            html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
-        }
-
-        const visibleScrolls = getVisibleCombatScrolls();
-        if (visibleScrolls.length > 0) {
-            html += `<div class="section-title">Scrolls</div>`;
-            visibleScrolls.forEach(({ scroll, idx }) => {
-                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
-            });
-        }
-        
-        // Show usable items
-        const potions = gameState.inventory.filter(i => i.type === 'consumable');
-        if (potions.length > 0) {
-            html += `<div class="section-title">Use Items</div>`;
-            html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-            potions.forEach(pot => {
-                const idx = gameState.inventory.indexOf(pot);
-                html += `<button class="action-btn" onclick="wanderingUseItem(${idx})">${pot.name} (x${pot.qty || 1})</button>`;
-            });
-            html += `</div>`;
-        }
     } else {
         // Continue/Escape buttons - Make them prominent!
         html += `<div class="section-title">Continue Your Expedition</div>`;
@@ -4254,7 +4235,59 @@ function renderWandering() {
         html += `<p class="${log.type}">${log.msg}</p>`;
     });
     html += `</div>`;
-    
+    html += `</div>`;
+
+    if (hasBattleOverlay) {
+        activateCombatScrollsForCurrentBattle('wandering');
+        if (!w.inBattle || !w.currentEnemy) return;
+
+        const e = w.currentEnemy;
+        const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
+        html += `<div class="wandering-battle-overlay">`;
+        html += `<div class="wandering-battle-card">`;
+        html += `<div class="section-title" style="color:#ff4444;">⚔️ Ambushed During Wandering - ${e.name}</div>`;
+        html += `<div class="description">The expedition remains active underneath this encounter. Defeat or flee from the enemy to continue exploring.</div>`;
+        html += `<div class="boss-hp-bar"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>`;
+        html += `<div class="description">HP: ${e.hp}/${e.maxHp} | ATK: ${e.atk} | DEF: ${e.def}</div>`;
+        html += `<div class="section-title">Battle Actions</div>`;
+        html += `<div class="wandering-battle-actions">`;
+        html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
+        html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
+        html += `</div>`;
+        if (combatLocked) {
+            html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
+        }
+
+        const visibleScrolls = getVisibleCombatScrolls();
+        if (visibleScrolls.length > 0) {
+            html += `<div class="section-title">Scrolls</div>`;
+            visibleScrolls.forEach(({ scroll, idx }) => {
+                html += `<button class="action-btn scroll-btn" onclick="useScroll(${idx})">${scroll.name}</button>`;
+            });
+        }
+
+        const potions = gameState.inventory.filter(i => i.type === 'consumable');
+        if (potions.length > 0) {
+            html += `<div class="section-title">Use Items</div>`;
+            html += `<div class="wandering-battle-actions">`;
+            potions.forEach(pot => {
+                const idx = gameState.inventory.indexOf(pot);
+                html += `<button class="action-btn" onclick="wanderingUseItem(${idx})">${pot.name} (x${pot.qty || 1})</button>`;
+            });
+            html += `</div>`;
+        }
+
+        html += `<div class="section-title">Recent Expedition Log</div>`;
+        html += `<div class="battle-log" style="border-left-color:#ff4444;">`;
+        w.log.slice(0, 10).forEach(log => {
+            html += `<p class="${log.type}">${log.msg}</p>`;
+        });
+        html += `</div>`;
+        html += `</div></div>`;
+    }
+
+    html += `</div>`;
+
     container.innerHTML = html;
 }
 
@@ -6517,7 +6550,7 @@ function decryptData(encryptedBase64) {
 }
 
 // COMPACT SAVE UTILITIES
-const SAVE_SCHEMA_VERSION = 2;
+const SAVE_SCHEMA_VERSION = 3;
 const SAVE_STORAGE_KEY = 'realmOfShadows';
 const SAVE_DB_NAME = 'realmOfShadowsStorage';
 const SAVE_DB_VERSION = 1;
@@ -6594,11 +6627,9 @@ function buildStaticSaveItemCatalog() {
 
 const SAVE_ITEM_CATALOG = buildStaticSaveItemCatalog();
 const SAVE_ITEM_ID_TO_NAME = Object.create(null);
-const SAVE_ITEM_NAME_TO_ID = Object.create(null);
 SAVE_ITEM_CATALOG.forEach((name, index) => {
     const id = index + 1;
     SAVE_ITEM_ID_TO_NAME[id] = name;
-    SAVE_ITEM_NAME_TO_ID[name] = id;
 });
 
 function getCanonicalItemByName(name) {
@@ -6609,11 +6640,9 @@ function getCanonicalItemByName(name) {
 function getCatalogBaseForItem(item) {
     if (!item || !item.name) return null;
     const baseName = item.name.replace(/ \+\d+$/, '');
-    const id = SAVE_ITEM_NAME_TO_ID[baseName];
-    if (!id) return null;
     const base = getCanonicalItemByName(baseName);
     if (!base) return null;
-    return { id, baseName, base };
+    return { id: baseName, baseName, base };
 }
 
 function encodeAliasedDiffObject(source, base, aliases, options = {}) {
@@ -6758,10 +6787,14 @@ function decodeItemForSave(entry) {
         const base = getCanonicalItemByName(baseName);
         if (!base) return null;
         item = cloneData(base);
+    } else if (typeof entry === 'string') {
+        const base = getCanonicalItemByName(entry);
+        if (!base) return null;
+        item = cloneData(base);
     } else if (Array.isArray(entry) && entry[0] === 'c') {
         item = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
     } else if (Array.isArray(entry)) {
-        const baseName = SAVE_ITEM_ID_TO_NAME[entry[0]];
+        const baseName = typeof entry[0] === 'number' ? SAVE_ITEM_ID_TO_NAME[entry[0]] : entry[0];
         const base = getCanonicalItemByName(baseName);
         if (!base) return null;
         const overrides = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
@@ -7406,7 +7439,7 @@ function restoreGameStateFromSaveData(rawData) {
     }
     if (!parsed || typeof parsed !== 'object') return false;
 
-    const hydrated = parsed.v === SAVE_SCHEMA_VERSION
+    const hydrated = (typeof parsed.v === 'number' && parsed.v >= 2)
         ? decodeCompactSaveData(parsed)
         : decodeLegacySaveData(parsed);
 
