@@ -5961,7 +5961,8 @@ function getVendorPriceForRarity(rarity) {
     }
 }
 
-function refreshMarketItems() {
+function refreshMarketItems(options = {}) {
+    const { resetForceRefreshCost = true } = options;
     grandMarketItems = [];
     const allItems = Object.values(itemPool);
     const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
@@ -5993,9 +5994,11 @@ function refreshMarketItems() {
         }
     }
     lastMarketRefresh = Date.now();
-    // Reset force refresh cost on automatic refresh
-    gameState.marketForceRefreshCost = 150;
-    gameState.marketForceRefreshCount = 0;
+    if (resetForceRefreshCost) {
+        // Reset force refresh cost on automatic refresh
+        gameState.marketForceRefreshCost = 150;
+        gameState.marketForceRefreshCount = 0;
+    }
 }
 
 function forceRefreshMarketItems() {
@@ -6010,12 +6013,12 @@ function forceRefreshMarketItems() {
     // Deduct gold
     gameState.player.gold -= cost;
     
-    // Increase cost multiplicatively (x2 each time)
-    gameState.marketForceRefreshCost = gameState.marketForceRefreshCost * 2;
-    gameState.marketForceRefreshCount++;
-    
     // Generate new market items
-    refreshMarketItems();
+    refreshMarketItems({ resetForceRefreshCost: false });
+
+    // Increase cost multiplicatively (x2 each time)
+    gameState.marketForceRefreshCost = cost * 2;
+    gameState.marketForceRefreshCount++;
     
     addBattleMsg(`Force refreshed Grand Market for ${cost} gold! Next cost: ${gameState.marketForceRefreshCost} gold`, 'reward');
     updateStats();
