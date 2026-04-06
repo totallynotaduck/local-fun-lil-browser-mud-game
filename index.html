@@ -1757,6 +1757,10 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
 
     applyCombatHealthRegen(playerObj, logCallback);
 
+    if (!enemyDied && tryTriggerActiveExecute(enemyObj, logCallback)) {
+        enemyDied = true;
+    }
+
     return { enemyDied };
 }
 
@@ -2513,6 +2517,12 @@ function useScroll(slotIndex, options = {}) {
     } else if (scroll.effect === 'drop_boost') {
         logCallback(`Used ${scroll.name}: Drop rate increased for ${scroll.duration} turns!`, 'reward');
     }
+
+    if (scroll.effect === 'execute' && tryTriggerExecuteFromEffect(target, logCallback, scroll)) {
+        handleCombatVictoryByContext(context);
+        updateStats();
+        return;
+    }
     
     // Scrolls are infinite-use, so they remain equipped after activation.
 
@@ -2549,7 +2559,6 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     const damageMult = getScrollDamageMultiplier();
     const critBonus = getScrollCritBonus();
     const invulnerable = isInvulnerable();
-    const executeThreshold = getExecuteThreshold();
     
     // ✅ UBER UNIQUE SPECIAL ABILITIES CHECK - RUNS FOR ALL ACTIONS
     let has75DamageReduction = false;
@@ -2583,8 +2592,12 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     let playerDied = false;
     let enemyDied = false;
     let fled = false;
+
+    if (tryTriggerActiveExecute(enemyObj, logCallback)) {
+        enemyDied = true;
+    }
     
-    switch (action) {
+    switch (enemyDied ? 'resolved' : action) {
         case 'attack': {
             // ✅ DODGE CHANCE CHECK
             const dodgeChance = enemyObj.dodge || 0;
@@ -2687,11 +2700,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 }
             }
 
-            // Check for execute effect
-            if (executeThreshold > 0 && enemyObj.hp > 0 && enemyObj.hp <= Math.floor(enemyObj.maxHp * executeThreshold)) {
-                enemyObj.hp = 0;
-                logCallback(`Execute effect triggers! ${enemyObj.name} is instantly killed!`, 'reward');
-            }
+            tryTriggerActiveExecute(enemyObj, logCallback);
             
             if (enemyObj.hp <= 0) {
                 enemyDied = true;
@@ -2722,6 +2731,8 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             totalDef
         });
         if (enemyTurnResult.enemyDied) {
+            enemyDied = true;
+        } else if (tryTriggerActiveExecute(enemyObj, logCallback)) {
             enemyDied = true;
         }
     }
@@ -2776,14 +2787,43 @@ function isInvulnerable() {
     return gameState.activeScrollEffects.some(effect => effect.effect === 'invulnerable');
 }
 
-function getExecuteThreshold() {
-    let threshold = 0;
+function getActiveExecuteEffect() {
+    let executeEffect = null;
     gameState.activeScrollEffects.forEach(effect => {
-        if (effect.effect === 'execute') {
-            threshold = Math.max(threshold, effect.value);
+        if (effect.effect !== 'execute') return;
+        if (!executeEffect || (effect.value || 0) > (executeEffect.value || 0)) {
+            executeEffect = effect;
         }
     });
-    return threshold;
+    return executeEffect;
+}
+
+function getExecuteThreshold() {
+    return getActiveExecuteEffect()?.value || 0;
+}
+
+function tryTriggerExecuteFromEffect(enemyObj, logCallback = addBattleMsg, effect = getActiveExecuteEffect()) {
+    if (!enemyObj || enemyObj.hp <= 0 || !effect || effect.effect !== 'execute') return false;
+
+    const threshold = Math.max(0, Number(effect.value) || 0);
+    if (threshold <= 0) return false;
+
+    const maxHp = Math.max(1, Number(enemyObj.maxHp) || Number(enemyObj.hp) || 1);
+    const executeHpThreshold = Math.floor(maxHp * threshold);
+    if (enemyObj.hp > executeHpThreshold) return false;
+
+    const remainingHp = enemyObj.hp;
+    enemyObj.hp = 0;
+    if (enemyObj === gameState.currentWorldBoss && remainingHp > 0) {
+        recordWorldBossPlayerDamage(remainingHp);
+    }
+
+    logCallback(`⚔️ ${effect.name || 'Execution Scroll'} executes ${enemyObj.name} instantly!`, 'reward');
+    return true;
+}
+
+function tryTriggerActiveExecute(enemyObj, logCallback = addBattleMsg) {
+    return tryTriggerExecuteFromEffect(enemyObj, logCallback, getActiveExecuteEffect());
 }
 
 // Decrement scroll effects at end of turn
@@ -2802,6 +2842,11 @@ function battleAction(action) {
     if (!gameState.inBattle || !gameState.currentEnemy) return;
     if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
     activateCombatScrollsForCurrentBattle('battle');
+
+    if (tryTriggerActiveExecute(gameState.currentEnemy, addBattleMsg)) {
+        enemyDefeated();
+        return;
+    }
     
     if (action === 'spell') {
         // Spell attack: 0.5-3x damage at cost of 15 mana
@@ -2817,7 +2862,6 @@ function battleAction(action) {
         const damageMult = getScrollDamageMultiplier() * 2;
         const critBonus = getScrollCritBonus() * 2;
         const invulnerable = isInvulnerable();
-        const executeThreshold = getExecuteThreshold();
         const totalDef = getEffectivePlayerDefense();
         
         // Calculate spell damage multiplier between 0.5x and 3x
@@ -2848,11 +2892,7 @@ function battleAction(action) {
             }
         }
         
-        // Check for execute effect
-        if (executeThreshold > 0 && gameState.currentEnemy.hp > 0 && gameState.currentEnemy.hp <= Math.floor(gameState.currentEnemy.maxHp * executeThreshold)) {
-            gameState.currentEnemy.hp = 0;
-            addBattleMsg(`Execute effect triggers! ${gameState.currentEnemy.name} is instantly killed!`, 'reward');
-        }
+        tryTriggerActiveExecute(gameState.currentEnemy, addBattleMsg);
         
         if (gameState.currentEnemy.hp <= 0) {
             enemyDefeated();
@@ -6059,6 +6099,11 @@ function dungeonAction(action) {
 
     const p = gameState.player;
     const e = dungeonState.currentEnemy;
+
+    if (tryTriggerActiveExecute(e, addDungeonLog)) {
+        dungeonEnemyDefeated();
+        return;
+    }
     
     // Sync dungeon HP with player before combat
     p.hp = dungeonState.hp;
@@ -6077,7 +6122,6 @@ function dungeonAction(action) {
         const damageMult = getScrollDamageMultiplier() * 2;
         const critBonus = getScrollCritBonus() * 2;
         const invulnerable = isInvulnerable();
-        const executeThreshold = getExecuteThreshold();
         const totalDef = getEffectivePlayerDefense();
         
         // Calculate spell damage multiplier between 0.5x and 3x
@@ -6109,11 +6153,7 @@ function dungeonAction(action) {
             }
         }
         
-        // Check for execute effect
-        if (executeThreshold > 0 && e.hp > 0 && e.hp <= Math.floor(e.maxHp * executeThreshold)) {
-            e.hp = 0;
-            addDungeonLog(`Execute effect triggers! ${e.name} is instantly killed!`, 'reward');
-        }
+        tryTriggerActiveExecute(e, addDungeonLog);
         
         if (e.hp <= 0) {
             dungeonEnemyDefeated();
@@ -6793,7 +6833,32 @@ function decodeItemForSave(entry) {
     }
 
     if (item.qty === 1) delete item.qty;
-    return ensureItemDescription(item);
+    return normalizeScrollItemData(item);
+}
+
+function normalizeScrollItemData(item) {
+    if (!item) return null;
+
+    const scrollBase = scrollPool[item.name];
+    if (!scrollBase && item.type !== 'scroll') {
+        return ensureItemDescription(item);
+    }
+
+    if (!scrollBase) {
+        const normalized = { ...item, type: 'scroll' };
+        if (normalized.qty === 1) delete normalized.qty;
+        return ensureItemDescription(normalized);
+    }
+
+    const normalized = {
+        ...item,
+        ...cloneData(scrollBase),
+        type: 'scroll'
+    };
+
+    if (item.qty !== undefined) normalized.qty = item.qty;
+    if (normalized.qty === 1) delete normalized.qty;
+    return ensureItemDescription(normalized);
 }
 
 function encodeEquipmentForSave(equipment) {
@@ -6942,7 +7007,7 @@ function sanitizeLoadedStateData(state) {
                 if (item.luck && !allowedLuckTypes.includes(item.type)) delete item.luck;
                 const resolved = resolveEquipSlot(item);
                 if (resolved && !item.equipSlot) item.equipSlot = resolved;
-                return ensureItemDescription(item);
+                return normalizeScrollItemData(item);
             });
     }
 
@@ -6957,8 +7022,7 @@ function sanitizeLoadedStateData(state) {
     if (Array.isArray(state.equippedScrolls)) {
         state.equippedScrolls = state.equippedScrolls.map(scroll => {
             if (!scroll) return null;
-            if (!scroll.type) scroll.type = 'scroll';
-            return ensureItemDescription(scroll);
+            return normalizeScrollItemData(scroll);
         });
     }
 }
@@ -7922,6 +7986,11 @@ function attackWorldBoss() {
     if (!gameState.worldBossActive || !gameState.currentWorldBoss) return;
     if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
     activateCombatScrollsForCurrentBattle('worldboss');
+
+    if (tryTriggerActiveExecute(gameState.currentWorldBoss, addBattleMsg)) {
+        despawnWorldBoss(true);
+        return;
+    }
     
     const boss = gameState.currentWorldBoss;
     const totalAtk = getTotalAtk();
@@ -7962,6 +8031,8 @@ function attackWorldBoss() {
     scheduleSilentPersist();
     
     addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
+
+    tryTriggerActiveExecute(boss, addBattleMsg);
 
     // Apply lifesteal
     let healAmt = calculateDamageBasedHealing(dmg);

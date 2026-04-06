@@ -245,7 +245,7 @@ const scrollPool = {
     'Berserker Scroll': { name: 'Berserker Scroll', type: 'scroll', rarity: 'epic', effect: 'berserker', value: 2.5, duration: 2, desc: '2.5x ATK, -30% DEF for 2 turns' },
     'Inferno Scroll': { name: 'Inferno Scroll', type: 'scroll', rarity: 'epic', effect: 'burn', value: 60, duration: 3, desc: 'Burn 60 DMG/turn for 3 turns' },
     'Glacial Scroll': { name: 'Glacial Scroll', type: 'scroll', rarity: 'epic', effect: 'freeze', value: 1, duration: 1, desc: 'Freeze enemy 1 turn' },
-    'Greater Execution Scroll': { name: 'Greater Execution Scroll', type: 'scroll', rarity: 'epic', effect: 'execute', value: 0.5, duration: 1, desc: 'Kill under 50% HP' },
+    'Greater Execution Scroll': { name: 'Greater Execution Scroll', type: 'scroll', rarity: 'epic', effect: 'execute', value: 0.3, duration: 1, desc: 'Kill under 30% HP' },
     'Supreme Fortune Scroll': { name: 'Supreme Fortune Scroll', type: 'scroll', rarity: 'epic', effect: 'drop_boost', value: 0.6, duration: 3, desc: '+60% drop rate for 3 turns' },
 
     // NEW LEGENDARY SCROLLS (5x multiplier)
