@@ -1680,26 +1680,63 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
 
     function getTotalStat(stat) {
         const p = gameState.player;
-        let base = p[stat] || 0;
+        const baseStatKeys = {
+            atk: 'baseAtk',
+            def: 'baseDef',
+            maxHp: 'baseMaxHp',
+            maxMp: 'baseMaxMp',
+            luck: 'baseLuck',
+            crit: 'baseCrit',
+            critDmg: 'baseCritDmg',
+            dodge: 'baseDodge',
+            lifesteal: 'baseLifesteal',
+            dmgReduction: 'baseDmgReduction',
+            armorPen: 'baseArmorPen',
+            magicPen: 'baseMagicPen',
+            attackSpeed: 'baseAttackSpeed',
+            cdr: 'baseCdr',
+            moveSpeed: 'baseMoveSpeed'
+        };
+        const baseKey = baseStatKeys[stat];
+        let base = baseKey ? (p[baseKey] ?? p[stat] ?? 0) : (p[stat] || 0);
         let flatBonus = 0;
         let percentMultiplier = 1;
+        let globalMergeMultiplier = 1;
         
         const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
         eqSlots.forEach(slot => {
             const eq = gameState.equipment[slot];
             if (eq) {
+                const mergeLevel = eq.mergeLevel || 0;
+                const baseName = eq.name ? eq.name.replace(/ \+\d+$/, '') : null;
+                const canonicalBase = getCanonicalItemByName(baseName);
+                const shouldApplyGlobalMerge =
+                    mergeLevel > 0 &&
+                    (eq.rarity === 'unique' || eq.rarity === 'uber_unique' || eq.uberUnique || eq.canMerge) &&
+                    (stat === 'atk' || stat === 'def') &&
+                    canonicalBase &&
+                    typeof canonicalBase[stat] === 'number';
+
                 // Add flat stat bonus
                 if (eq[stat]) {
-                    flatBonus += eq[stat];
+                    if (shouldApplyGlobalMerge && canonicalBase && typeof canonicalBase[stat] === 'number') {
+                        flatBonus += canonicalBase[stat];
+                    } else {
+                        flatBonus += eq[stat];
+                    }
                 }
                 // Special case: items use 'hp' property for max HP bonuses
                 if (stat === 'maxHp' && eq.hp) {
                     flatBonus += eq.hp;
                 }
-                // Add percentage multiplier (supports atk%, def%, etc.)
+                // Add percentage multiplier (supports atk%, atkPercent, def%, defPercent, etc.)
                 const percentStat = stat + '%';
+                const percentStatAlt = stat + 'Percent';
                 if (eq[percentStat]) {
                     percentMultiplier += (eq[percentStat] / 100);
+                }
+                if (eq[percentStatAlt]) {
+                    percentMultiplier += (eq[percentStatAlt] / 100);
                 }
                 // Special case for HP percentage bonuses (also look for 'hp%' and 'hpPercent')
                 if (stat === 'maxHp') {
@@ -1710,11 +1747,25 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
                         percentMultiplier += (eq['hpPercent'] / 100);
                     }
                 }
+                if (stat === 'maxMp') {
+                    if (eq['mp%']) {
+                        percentMultiplier += (eq['mp%'] / 100);
+                    }
+                    if (eq['mpPercent']) {
+                        percentMultiplier += (eq['mpPercent'] / 100);
+                    }
+                }
+
+                if (shouldApplyGlobalMerge) {
+                    globalMergeMultiplier *= Math.pow(1.5, mergeLevel);
+                }
             }
         });
         
-        // Apply percentage scaling to total base + flat bonuses
-        return Math.floor((base + flatBonus) * percentMultiplier);
+        // Apply percentage scaling to total base + flat bonuses.
+        // For merged unique / uber unique items, ATK and DEF merge bonuses apply globally
+        // to the final stat total instead of only inflating the individual equipment stat line.
+        return Math.floor((base + flatBonus) * percentMultiplier * globalMergeMultiplier);
     }
 
 function getTotalAtk() { return getTotalStat('atk'); }
@@ -3618,6 +3669,7 @@ function equipItem(index) {
  */
 function recalculateAllPlayerStats() {
     const p = gameState.player;
+    ensurePlayerBaseStats(p);
     
     // Base player stats (these are permanent level up stats)
     const baseStats = {
@@ -3692,16 +3744,6 @@ function recalculateAllPlayerStats() {
     Object.keys(finalStats).forEach(stat => {
         p[stat] = finalStats[stat];
     });
-
-    // Store base stats if not already stored (first run)
-    if (!p.baseAtk) {
-        p.baseAtk = p.atk;
-        p.baseDef = p.def;
-        p.baseMaxHp = p.maxHp;
-        p.baseMaxMp = p.maxMp;
-        p.baseLuck = p.luck || 0;
-        p.baseCrit = p.crit || 0;
-    }
 
     // Ensure current HP/MP don't exceed new maximums
     p.hp = Math.min(p.hp, p.maxHp);
@@ -7152,6 +7194,13 @@ function invertAliasMap(map) {
 const SAVE_PLAYER_KEY_FROM_ALIAS = invertAliasMap(SAVE_PLAYER_KEY_ALIASES);
 const SAVE_ITEM_KEY_FROM_ALIAS = invertAliasMap(SAVE_ITEM_KEY_ALIASES);
 const SAVE_EQUIPMENT_KEY_FROM_ALIAS = invertAliasMap(SAVE_EQUIPMENT_KEY_ALIASES);
+const SAVE_EXACT_ITEM_KEY_ALIASES = {
+    ...SAVE_ITEM_KEY_ALIASES,
+    desc: 'ds',
+    equipped: 'eq',
+    equippedAt: 'ea'
+};
+const SAVE_EXACT_ITEM_KEY_FROM_ALIAS = invertAliasMap(SAVE_EXACT_ITEM_KEY_ALIASES);
 
 function cloneData(value) {
     if (value === undefined) return undefined;
@@ -7160,6 +7209,20 @@ function cloneData(value) {
 
 function valuesEqual(a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function ensureItemInstanceId(item) {
+    if (!item || typeof item !== 'object') return item;
+    if (!item.instanceId) {
+        item.instanceId = `itm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+    return item;
+}
+
+function ensureCollectionItemInstanceIds(state = gameState) {
+    (state.inventory || []).forEach(ensureItemInstanceId);
+    SAVE_EQUIPMENT_SLOT_KEYS.forEach(slot => ensureItemInstanceId(state.equipment?.[slot]));
+    (state.equippedScrolls || []).forEach(scroll => scroll && ensureItemInstanceId(scroll));
 }
 
 function isGeneratedCatalogItemName(name) {
@@ -7387,6 +7450,63 @@ function ensureItemDescription(item) {
 
     item.desc = buildFallbackItemDescription(item);
     return item;
+}
+
+function encodeExactItemForSave(item) {
+    if (!item) return 0;
+    const exactItem = cloneData(item);
+    ensureItemInstanceId(exactItem);
+    ensureItemDescription(exactItem);
+    return encodeAliasedDiffObject(exactItem, null, SAVE_EXACT_ITEM_KEY_ALIASES);
+}
+
+function decodeExactItemFromSave(entry) {
+    if (!entry) return null;
+    const item = decodeAliasedObject(entry || {}, SAVE_EXACT_ITEM_KEY_FROM_ALIAS);
+    ensureItemInstanceId(item);
+    return normalizeScrollItemData(item);
+}
+
+function encodeExactEquipmentSnapshot(equipment) {
+    const encoded = {};
+    Object.entries(equipment || {}).forEach(([key, value]) => {
+        const alias = SAVE_EQUIPMENT_KEY_ALIASES[key] || key;
+        if (SAVE_EQUIPMENT_SLOT_KEYS.includes(key)) {
+            encoded[alias] = value ? encodeExactItemForSave(value) : 0;
+            return;
+        }
+        encoded[alias] = cloneData(value);
+    });
+    return encoded;
+}
+
+function decodeExactEquipmentSnapshot(encoded) {
+    const equipment = cloneData(INITIAL_GAME_STATE_SNAPSHOT.equipment);
+    Object.entries(encoded || {}).forEach(([alias, value]) => {
+        const key = SAVE_EQUIPMENT_KEY_FROM_ALIAS[alias] || alias;
+        if (SAVE_EQUIPMENT_SLOT_KEYS.includes(key)) {
+            equipment[key] = value ? decodeExactItemFromSave(value) : null;
+        } else {
+            equipment[key] = cloneData(value);
+        }
+    });
+    return equipment;
+}
+
+function applyExactCollectionSnapshotsToHydratedState(hydrated, data) {
+    if (!hydrated || !data || typeof data !== 'object') return;
+
+    if (Array.isArray(data.ix)) {
+        hydrated.inventory = data.ix.map(entry => entry ? decodeExactItemFromSave(entry) : null).filter(Boolean);
+    }
+
+    if (data.xe && typeof data.xe === 'object') {
+        hydrated.equipment = decodeExactEquipmentSnapshot(data.xe);
+    }
+
+    if (Array.isArray(data.xes)) {
+        hydrated.equippedScrolls = data.xes.map(entry => entry ? decodeExactItemFromSave(entry) : null);
+    }
 }
 
 function encodeItemForSave(item) {
@@ -7724,9 +7844,17 @@ function sanitizeLoadedStateData(state) {
         normalizedEq.equipSlot = resolvedSlot;
         normalizedEq.equipped = true;
 
-        if (resolvedSlot === slot && !normalizedEquipment[slot]) {
+        // Preserve the originally saved slot whenever possible so equipment does not
+        // disappear or get silently moved during load reconciliation.
+        if (!normalizedEquipment[slot]) {
             ensureItemDescription(normalizedEq);
             normalizedEquipment[slot] = normalizedEq;
+            return;
+        }
+
+        if (!normalizedEquipment[resolvedSlot]) {
+            ensureItemDescription(normalizedEq);
+            normalizedEquipment[resolvedSlot] = normalizedEq;
             return;
         }
 
@@ -7749,6 +7877,7 @@ function sanitizeLoadedStateData(state) {
         addSanitizedInventoryItem(state.inventory, { ...normalizedScroll, type: 'scroll', qty: 1 }, stackIndexByKey);
     });
     state.equippedScrolls = normalizedEquippedScrolls;
+    ensureCollectionItemInstanceIds(state);
 }
 
 function pruneTransientState(state) {
@@ -8021,12 +8150,17 @@ async function restorePersistedGameState() {
 }
 
 function buildCompactSaveData() {
+    ensureCollectionItemInstanceIds(gameState);
     const save = {
         v: SAVE_SCHEMA_VERSION,
         t: Date.now(),
         p: encodeAliasedDiffObject(gameState.player, INITIAL_GAME_STATE_SNAPSHOT.player, SAVE_PLAYER_KEY_ALIASES),
         i: (gameState.inventory || []).map(encodeItemForSave)
     };
+
+    save.ix = (gameState.inventory || []).map(encodeExactItemForSave);
+    save.xe = encodeExactEquipmentSnapshot(gameState.equipment);
+    save.xes = (gameState.equippedScrolls || []).map(scroll => scroll ? encodeExactItemForSave(scroll) : 0);
 
     if (gameState.saveName !== INITIAL_GAME_STATE_SNAPSHOT.saveName) save.sn = gameState.saveName;
 
@@ -8165,6 +8299,8 @@ function decodeCompactSaveData(data) {
         hydrated.marketForceRefreshCost = data.frc[2] ?? hydrated.marketForceRefreshCost;
         hydrated.marketForceRefreshCount = data.frc[3] ?? hydrated.marketForceRefreshCount;
     }
+
+    applyExactCollectionSnapshotsToHydratedState(hydrated, data);
 
     pruneTransientState(hydrated);
     sanitizeLoadedStateData(hydrated);
