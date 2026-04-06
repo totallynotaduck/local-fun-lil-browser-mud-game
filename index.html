@@ -40,7 +40,9 @@
         .nav-btn:hover { background-color: #2a2a2a; color: #00ff00; }
         .nav-btn.active { background-color: #003300; color: #00ff00; }
         .nav-btn.alert { animation: alertPulse 1s infinite; background-color: #663300; color: #ffd700; }
+        .nav-btn:disabled { background-color: #222; color: #555; cursor: not-allowed; }
         @keyframes alertPulse { 0%,100% { background-color: #663300; } 50% { background-color: #996600; } }
+        #status-banner { display: none; background-color: #330000; border-bottom: 1px solid #ff4444; color: #ffaaaa; padding: 8px 12px; font-size: 0.8em; text-align: center; }
         #game-layout { display: flex; gap: 0; flex: 1; min-height: 0; overflow: hidden; }
         #left-panel { width: 200px; background-color: #0d0d0d; border-right: 1px solid #333; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
         #left-panel-content { flex: 1; overflow-y: auto; min-height: 0; }
@@ -216,23 +218,24 @@
         <div class="stat"><span class="stat-label">SOUL GEMS:</span><span class="stat-value soul" id="stat-soul">0</span></div>
     </div>
     <div id="navigation">
-        <button class="nav-btn active" onclick="showScreen('travel')">Map Travel</button>
-        <button class="nav-btn" onclick="showScreen('battle')">[/] Battle</button>
-        <button class="nav-btn" onclick="showScreen('quest')">~ Quest</button>
-        <button class="nav-btn" onclick="showScreen('job')">$ Job</button>
-<button class="nav-btn" onclick="showScreen('wandering')" id="wander-tab">[?] Wander</button>
-        <button class="nav-btn" onclick="showScreen('inventory')">[] Inventory</button>
-        <button class="nav-btn" onclick="showScreen('equipment')">[=] Equipment</button>
-        <button class="nav-btn" onclick="showScreen('scrolls')">[*] Scrolls</button>
-        <button class="nav-btn" onclick="showScreen('crafting')">[+] Crafting</button>
-        <button class="nav-btn" onclick="showScreen('auction')" id="auction-tab">[$] Auction</button>
-        <button class="nav-btn" onclick="showScreen('players')">[@] Players</button>
-        <button class="nav-btn" onclick="showScreen('merge')">[#] Merge</button>
-        <button class="nav-btn" onclick="showScreen('save')">{*} Save</button>
+        <button class="nav-btn active" onclick="attemptShowScreen('travel')">Map Travel</button>
+        <button class="nav-btn" onclick="attemptShowScreen('battle')">[/] Battle</button>
+        <button class="nav-btn" onclick="attemptShowScreen('quest')">~ Quest</button>
+        <button class="nav-btn" onclick="attemptShowScreen('job')">$ Job</button>
+<button class="nav-btn" onclick="attemptShowScreen('wandering')" id="wander-tab">[?] Wander</button>
+        <button class="nav-btn" onclick="attemptShowScreen('inventory')">[] Inventory</button>
+        <button class="nav-btn" onclick="attemptShowScreen('equipment')">[=] Equipment</button>
+        <button class="nav-btn" onclick="attemptShowScreen('scrolls')">[*] Scrolls</button>
+        <button class="nav-btn" onclick="attemptShowScreen('crafting')">[+] Crafting</button>
+        <button class="nav-btn" onclick="attemptShowScreen('auction')" id="auction-tab">[$] Auction</button>
+        <button class="nav-btn" onclick="attemptShowScreen('players')">[@] Players</button>
+        <button class="nav-btn" onclick="attemptShowScreen('merge')">[#] Merge</button>
+        <button class="nav-btn" onclick="attemptShowScreen('save')">{*} Save</button>
     </div>
+    <div id="status-banner"></div>
     <div id="game-layout">
         <div id="left-panel">
-            <div class="side-panel-header" onclick="showScreen('equipment')">[=] Equipment</div>
+            <div class="side-panel-header" onclick="attemptShowScreen('equipment')">[=] Equipment</div>
             <div id="left-panel-content" class="side-panel-content"></div>
         </div>
         <div id="main-content">
@@ -252,7 +255,7 @@
             <div id="wandering-screen" class="screen"><div id="wandering-content"></div></div>
         </div>
         <div id="right-panel">
-            <div class="side-panel-header" onclick="showScreen('inventory')">[] Inventory</div>
+            <div class="side-panel-header" onclick="attemptShowScreen('inventory')">[] Inventory</div>
             <div id="right-panel-content" class="side-panel-content"></div>
         </div>
     </div>
@@ -280,6 +283,8 @@ const gameState = {
     jobCooldown: 0, daysPassed: 0, itemLog: [], wanderMode: false, jobsCompleted: 0,
     pvpCooldownUntil: 0,
     tradeCooldownUntil: 0,
+    combatCooldownUntil: 0,
+    navigationCooldownUntil: 0,
     soulGems: 0, premiumMultiplier: 1, premiumActionsUsed: 0,
     activeStatusEffects: [], // Active status effects (buffs/debuffs) with duration
     jobPoints: 5, maxJobPoints: 5, lastJobPointRegen: Date.now(),
@@ -346,6 +351,8 @@ let pvpActive = false;
 let currentPvpEnemy = null;
 const PVP_COOLDOWN_MS = 15 * 60 * 1000;
 const TRADE_COOLDOWN_MS = 15 * 60 * 1000;
+const DEFEAT_COMBAT_COOLDOWN_MS = 5 * 60 * 1000;
+const DEFEAT_NAVIGATION_COOLDOWN_MS = 30 * 1000;
 const WORLD_BOSS_HEALTH_MULTIPLIER = 50;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN = 500;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX = 2000;
@@ -359,6 +366,8 @@ let combatScrollState = {
     activatedEffects: {}
 };
 
+let lastCooldownUiSignature = '';
+
 const INVENTORY_QUICKSELL_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique'];
 let inventoryQuicksellFilters = {};
 let inventoryQuicksellLevelFilter = { min: '', max: '' };
@@ -371,11 +380,99 @@ function getTradeCooldownRemainingMs() {
     return Math.max(0, (gameState.tradeCooldownUntil || 0) - Date.now());
 }
 
+function getCombatCooldownRemainingMs() {
+    return Math.max(0, (gameState.combatCooldownUntil || 0) - Date.now());
+}
+
+function getNavigationCooldownRemainingMs() {
+    return Math.max(0, (gameState.navigationCooldownUntil || 0) - Date.now());
+}
+
 function formatPvpCooldown(ms) {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+function getDefeatStatusMessage() {
+    const combatRemaining = getCombatCooldownRemainingMs();
+    const navigationRemaining = getNavigationCooldownRemainingMs();
+    if (combatRemaining <= 0 && navigationRemaining <= 0) return '';
+
+    const details = [];
+    if (combatRemaining > 0) details.push(`Combat cooldown: ${formatPvpCooldown(combatRemaining)}`);
+    if (navigationRemaining > 0) details.push(`Navigation cooldown: ${formatPvpCooldown(navigationRemaining)}`);
+    return `You have been defeated. Reviving... ${details.join(' | ')}`;
+}
+
+function updateStatusBanner() {
+    const banner = document.getElementById('status-banner');
+    if (!banner) return;
+
+    const message = getDefeatStatusMessage();
+    banner.textContent = message;
+    banner.style.display = message ? 'block' : 'none';
+}
+
+function updateNavigationCooldownState() {
+    const remaining = getNavigationCooldownRemainingMs();
+    const isActive = remaining > 0;
+    document.querySelectorAll('#navigation .nav-btn').forEach(btn => {
+        btn.disabled = isActive;
+        btn.title = isActive ? `Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.` : '';
+    });
+}
+
+function refreshCooldownUi() {
+    const combatSeconds = Math.ceil(getCombatCooldownRemainingMs() / 1000);
+    const navigationSeconds = Math.ceil(getNavigationCooldownRemainingMs() / 1000);
+    const signature = `${combatSeconds}:${navigationSeconds}`;
+    if (signature === lastCooldownUiSignature) return;
+    lastCooldownUiSignature = signature;
+
+    updateNavigationCooldownState();
+    updateStatusBanner();
+
+    const activeScreen = document.querySelector('.screen.active');
+    if (!activeScreen) return;
+
+    switch (activeScreen.id) {
+        case 'travel-screen': renderTravel(); break;
+        case 'battle-screen': renderBattle(); break;
+        case 'players-screen': renderPlayers(); break;
+        case 'wandering-screen': renderWandering(); break;
+    }
+}
+
+function attemptShowScreen(screenName) {
+    const remaining = getNavigationCooldownRemainingMs();
+    if (remaining > 0) {
+        addBattleMsg(`Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.`, 'damage');
+        refreshCooldownUi();
+        return;
+    }
+    showScreen(screenName);
+}
+
+function guardCombatCooldown(logCallback = addBattleMsg, rerenderCallback = null) {
+    const remaining = getCombatCooldownRemainingMs();
+    if (remaining <= 0) return false;
+    logCallback(`Combat systems are on cooldown for ${formatPvpCooldown(remaining)}.`, 'damage');
+    if (typeof rerenderCallback === 'function') rerenderCallback();
+    refreshCooldownUi();
+    return true;
+}
+
+function triggerDefeatRecovery(logCallback = addBattleMsg) {
+    const now = Date.now();
+    gameState.player.hp = Math.max(1, Math.floor(getTotalMaxHp() * 0.5));
+    gameState.combatCooldownUntil = Math.max(gameState.combatCooldownUntil || 0, now + DEFEAT_COMBAT_COOLDOWN_MS);
+    gameState.navigationCooldownUntil = Math.max(gameState.navigationCooldownUntil || 0, now + DEFEAT_NAVIGATION_COOLDOWN_MS);
+    logCallback('You have been defeated. Reviving...', 'damage');
+    addChatMessage('SYSTEM', 'You have been defeated. Reviving...', true);
+    scheduleSilentPersist();
+    refreshCooldownUi();
 }
 
 function normalizeQuestProgressById(quests, progressMap) {
@@ -1003,6 +1100,9 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
     const gearText = enemy.gearSummary || 'Travel gear';
     const tradeCooldownRemaining = getTradeCooldownRemainingMs();
     const canTrade = getTradableInventoryEquipmentIndices().length > 0 && tradeCooldownRemaining <= 0;
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const challengeBlocked = isOnCooldown || combatCooldownRemaining > 0;
+    const challengeLabel = combatCooldownRemaining > 0 ? 'Recovering' : (isOnCooldown ? 'Cooldown' : 'Challenge');
     return `<div class="player-card ${isHigherLevel ? 'hostile' : ''}">
         <div>
             <div>
@@ -1014,7 +1114,7 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
             <button class="action-btn" onclick="tradeWithPlayer(${idx})" style="font-size:0.7em" ${canTrade ? '' : 'disabled'}>${tradeCooldownRemaining > 0 ? 'Trade Cooldown' : 'Trade'}</button>
-            <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${isOnCooldown ? 'disabled' : ''}>${isOnCooldown ? 'Cooldown' : 'Challenge'}</button>
+            <button class="action-btn danger" onclick="startPvp(${idx})" style="font-size:0.7em" ${challengeBlocked ? 'disabled' : ''}>${challengeLabel}</button>
         </div>
     </div>`;
 }
@@ -1659,6 +1759,7 @@ function updateStats() {
     if (xpEl) xpEl.textContent = `${p.xp}/${p.xpToNext}`;
     if (goldEl) goldEl.textContent = p.gold;
     if (soulEl) soulEl.textContent = gameState.soulGems;
+    refreshCooldownUi();
 }
 
 function showScreen(screenName) {
@@ -1703,6 +1804,7 @@ function showScreen(screenName) {
     }
     
     updateSidePanels();
+    refreshCooldownUi();
 }
 
 // CHAT SYSTEM
@@ -1875,6 +1977,7 @@ function startBattle(location) {
         showScreen('battle');
         return;
     }
+    if (guardCombatCooldown(addBattleMsg, renderTravel)) return;
     
     const enemy = generateEnemy(location);
     if (!enemy) {
@@ -2234,7 +2337,6 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     if (playerObj.hp <= 0) {
         if (!tryConsumeReviveScroll(playerObj, logCallback)) {
             playerDied = true;
-            logCallback('You have been defeated!', 'damage');
         }
     }
     
@@ -2301,6 +2403,7 @@ function decrementScrollEffects(logCallback = addBattleMsg) {
 
 function battleAction(action) {
     if (!gameState.inBattle || !gameState.currentEnemy) return;
+    if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
     activateCombatScrollsForCurrentBattle('battle');
     
     if (action === 'spell') {
@@ -2372,8 +2475,7 @@ function battleAction(action) {
         }
         
         if (gameState.player.hp <= 0) {
-            addBattleMsg('You have been defeated!', 'damage');
-            gameState.player.hp = Math.floor(gameState.player.maxHp * 0.5);
+            triggerDefeatRecovery(addBattleMsg);
             gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
             resetCombatScrollSession();
             gameState.inBattle = false;
@@ -2403,8 +2505,7 @@ function battleAction(action) {
     }
     
     if (result.playerDied) {
-        addBattleMsg('You have been defeated!', 'damage');
-        gameState.player.hp = Math.floor(gameState.player.maxHp * 0.5);
+        triggerDefeatRecovery(addBattleMsg);
         gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
         resetCombatScrollSession();
         gameState.inBattle = false;
@@ -3202,17 +3303,22 @@ function renderTravel() {
     const container = document.getElementById('travel-content');
     const p = gameState.player;
     const loc = locations[p.location];
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const combatLocked = combatCooldownRemaining > 0;
     
     let html = `<div class="location-header">${loc.name}</div>`;
     html += `<div class="description">${loc.desc}</div>`;
     
     if (loc.enemies) {
         html += `<div class="section-title">Actions</div>`;
-        html += `<button class="action-btn" onclick="startBattle('${p.location}')">Search for Enemies</button>`;
-        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()">${gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering'}</button>`;
+        html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Search for Enemies'}</button>`;
+        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? 'Recovery Active' : (gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering')}</button>`;
         
         if (loc.levelRange) {
             html += `<div class="encounter-info">Level Range: ${loc.levelRange[0]}-${loc.levelRange[1]}</div>`;
+        }
+        if (combatLocked) {
+            html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
         }
     }
     
@@ -3281,6 +3387,7 @@ function showLockedLocationMessage(locKey) {
 
 // WANDERING EXPEDITION SYSTEM
 function toggleWander() {
+    if (guardCombatCooldown(addBattleMsg, renderTravel)) return;
     // Start a wandering expedition and navigate to the wander screen
     startWanderingExpedition();
 }
@@ -3430,6 +3537,7 @@ function generateWanderingEvent() {
 function wanderingBattle(action) {
     const w = gameState.wandering;
     if (!w.active || !w.inBattle || !w.currentEnemy) return;
+    if (guardCombatCooldown(addWanderingLog, renderWandering)) return;
     activateCombatScrollsForCurrentBattle('wandering');
     
     const p = gameState.player;
@@ -3542,8 +3650,7 @@ function wanderingPlayerDeath() {
     // Nullify all rewards on death
     w.rewards = { xp: 0, gold: 0, items: [] };
     
-    // Revive player with half HP
-    p.hp = Math.floor(p.maxHp * 0.5);
+    triggerDefeatRecovery(addWanderingLog);
     
     // End wandering
     w.active = false;
@@ -3623,6 +3730,8 @@ function renderWandering() {
     const container = document.getElementById('wandering-content');
     const w = gameState.wandering;
     const p = gameState.player;
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const combatLocked = combatCooldownRemaining > 0;
     
     if (!w.active) {
         container.innerHTML = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>
@@ -3697,9 +3806,12 @@ function renderWandering() {
         
         html += `<div class="section-title">Battle Actions</div>`;
         html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-        html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;">⚔️ Attack</button>`;
-        html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;">🏃 Flee</button>`;
+        html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
+        html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
         html += `</div>`;
+        if (combatLocked) {
+            html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
+        }
 
         const visibleScrolls = getVisibleCombatScrolls();
         if (visibleScrolls.length > 0) {
@@ -3971,6 +4083,8 @@ function travelTo(locKey) {
 // BATTLE RENDER
 function renderBattle() {
     const container = document.getElementById('battle-content');
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const combatLocked = combatCooldownRemaining > 0;
     
     // Check if we're showing Temple
     if (gameState.player.location === 'temple' && !gameState.inBattle) {
@@ -3998,7 +4112,7 @@ function renderBattle() {
     
     if (!gameState.inBattle || !gameState.currentEnemy) {
         container.innerHTML = `<div class="msg">No active battle. Search for enemies from the map!</div>
-            <button class="action-btn dungeon-btn" onclick="startDungeon()">Enter Dungeon</button>`;
+            <button class="action-btn dungeon-btn" onclick="startDungeon()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Enter Dungeon'}</button>`;
         return;
     }
 
@@ -4013,9 +4127,12 @@ function renderBattle() {
     html += `<div class="description">HP: ${e.hp}/${e.maxHp} | ATK: ${e.atk} | DEF: ${e.def}</div>`;
     
     html += `<div class="section-title">Actions</div>`;
-    html += `<button class="action-btn" onclick="battleAction('attack')">Attack</button>`;
-    html += `<button class="action-btn" onclick="battleAction('spell')" ${gameState.player.mp < 15 ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
-    html += `<button class="action-btn" onclick="battleAction('flee')">Flee</button>`;
+    html += `<button class="action-btn" onclick="battleAction('attack')" ${combatLocked ? 'disabled' : ''}>Attack</button>`;
+    html += `<button class="action-btn" onclick="battleAction('spell')" ${(gameState.player.mp < 15 || combatLocked) ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
+    html += `<button class="action-btn" onclick="battleAction('flee')" ${combatLocked ? 'disabled' : ''}>Flee</button>`;
+    if (combatLocked) {
+        html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
+    }
     
     // Show equipped scrolls
     const visibleScrolls = getVisibleCombatScrolls();
@@ -5397,6 +5514,7 @@ function refreshMarketManually() {
 // DUNGEON INFINITE CRAWLER
 function startDungeon() {
     if (dungeonState.active) return;
+    if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
 
     dungeonState.active = true;
     // Start from highest stage reached, but track highest stage across runs
@@ -5481,6 +5599,7 @@ function generateDungeonEncounter() {
 
 function dungeonAction(action) {
     if (!dungeonState.active || !dungeonState.inBattle) return;
+    if (guardCombatCooldown(addDungeonLog, renderDungeon)) return;
     activateCombatScrollsForCurrentBattle('dungeon');
 
     const p = gameState.player;
@@ -5565,7 +5684,7 @@ function dungeonAction(action) {
         
         if (p.hp <= 0) {
             addDungeonLog('You have fallen in the dungeon!', 'damage');
-            p.hp = Math.floor(p.maxHp * 0.5);
+            triggerDefeatRecovery(addDungeonLog);
             endDungeon();
             return;
         }
@@ -5598,7 +5717,7 @@ function dungeonAction(action) {
     
     if (result.playerDied) {
         addDungeonLog('You have fallen in the dungeon!', 'damage');
-        p.hp = Math.floor(p.maxHp * 0.5);
+        triggerDefeatRecovery(addDungeonLog);
         endDungeon();
         return;
     }
@@ -5750,10 +5869,12 @@ function addDungeonLog(msg, type = 'info') {
 
 function renderDungeon() {
     const container = document.getElementById('battle-content');
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const combatLocked = combatCooldownRemaining > 0;
     
     if (!dungeonState.active) {
         container.innerHTML = `<div class="msg">No active dungeon. Click below to enter!</div>
-            <button class="action-btn dungeon-btn" onclick="startDungeon()">Enter Dungeon</button>`;
+            <button class="action-btn dungeon-btn" onclick="startDungeon()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Enter Dungeon'}</button>`;
         return;
     }
     
@@ -5781,9 +5902,12 @@ function renderDungeon() {
     html += `<div class="description">HP: ${e.hp}/${e.maxHp} | ATK: ${e.atk} | DEF: ${e.def}</div>`;
     
     html += `<div class="section-title">Actions</div>`;
-    html += `<button class="action-btn" onclick="dungeonAction('attack')">Attack</button>`;
-    html += `<button class="action-btn" onclick="dungeonAction('spell')" ${gameState.player.mp < 15 ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
-    html += `<button class="action-btn danger" onclick="dungeonAction('flee')">Leave Dungeon</button>`;
+    html += `<button class="action-btn" onclick="dungeonAction('attack')" ${combatLocked ? 'disabled' : ''}>Attack</button>`;
+    html += `<button class="action-btn" onclick="dungeonAction('spell')" ${(gameState.player.mp < 15 || combatLocked) ? 'disabled' : ''}>Cast Spell (15 MP)</button>`;
+    html += `<button class="action-btn danger" onclick="dungeonAction('flee')" ${combatLocked ? 'disabled' : ''}>Leave Dungeon</button>`;
+    if (combatLocked) {
+        html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
+    }
 
     const visibleScrolls = getVisibleCombatScrolls();
     if (visibleScrolls.length > 0) {
@@ -5844,6 +5968,8 @@ function initPvp() {
 function startPvp(idx) {
     const enemy = ensureFakePlayerRoster()[idx];
     if (!enemy) return;
+
+    if (guardCombatCooldown(addBattleMsg, renderPlayers)) return;
 
     const remainingCooldown = getPvpCooldownRemainingMs();
     if (remainingCooldown > 0) {
@@ -6342,6 +6468,8 @@ function sanitizeLoadedStateData(state) {
     ensurePlayerBaseStats(state.player);
     state.pvpCooldownUntil = Math.max(0, Number(state.pvpCooldownUntil) || 0);
     state.tradeCooldownUntil = Math.max(0, Number(state.tradeCooldownUntil) || 0);
+    state.combatCooldownUntil = Math.max(0, Number(state.combatCooldownUntil) || 0);
+    state.navigationCooldownUntil = Math.max(0, Number(state.navigationCooldownUntil) || 0);
     state.questProgress = normalizeQuestProgressById(state.quests, state.questProgress);
     state.guildQuestProgress = normalizeGuildQuestProgressById(state.guildQuests, state.guildQuestProgress);
 
@@ -6687,6 +6815,8 @@ function buildCompactSaveData() {
     if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
     if (gameState.pvpCooldownUntil) save.pc = gameState.pvpCooldownUntil;
     if (gameState.tradeCooldownUntil) save.tc = gameState.tradeCooldownUntil;
+    if (gameState.combatCooldownUntil) save.cc = gameState.combatCooldownUntil;
+    if (gameState.navigationCooldownUntil) save.nc = gameState.navigationCooldownUntil;
     const persistedAuctionState = encodeAuctionStateForSave();
     if (persistedAuctionState) save.au = persistedAuctionState;
 
@@ -6759,6 +6889,8 @@ function decodeCompactSaveData(data) {
     if (data.wbn !== undefined) hydrated.worldBossNextSpawn = data.wbn;
     if (data.pc !== undefined) hydrated.pvpCooldownUntil = data.pc;
     if (data.tc !== undefined) hydrated.tradeCooldownUntil = data.tc;
+    if (data.cc !== undefined) hydrated.combatCooldownUntil = data.cc;
+    if (data.nc !== undefined) hydrated.navigationCooldownUntil = data.nc;
 
     const guildQuestState = decodeGuildQuestsFromSave(data.gq || []);
     hydrated.guildQuests = guildQuestState.quests;
@@ -7056,6 +7188,8 @@ function autoRegen() {
             }
         }
     }
+
+    refreshCooldownUi();
 }
 async function init() {
     // Try to load saved game from localStorage or IndexedDB fallback.
@@ -7076,6 +7210,9 @@ async function init() {
     
     // Auto-regen every 5 seconds
     setInterval(autoRegen, 5000);
+
+    // Cooldown banner / button countdown updates
+    setInterval(refreshCooldownUi, 1000);
     
     // Fake chat every 15-30 seconds
     setInterval(generateFakeChat, 15000 + Math.random() * 15000);
@@ -7280,6 +7417,7 @@ function despawnWorldBoss(defeated) {
 
 function attackWorldBoss() {
     if (!gameState.worldBossActive || !gameState.currentWorldBoss) return;
+    if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
     activateCombatScrollsForCurrentBattle('worldboss');
     
     const boss = gameState.currentWorldBoss;
@@ -7357,8 +7495,7 @@ function attackWorldBoss() {
     decrementScrollEffects(addBattleMsg);
     
     if (p.hp <= 0) {
-        addBattleMsg('You have been defeated by the World Boss!', 'damage');
-        p.hp = Math.floor(p.maxHp * 0.5);
+        triggerDefeatRecovery(addBattleMsg);
         resetCombatScrollSession();
     }
     
@@ -7483,6 +7620,8 @@ function distributeWorldBossRewards() {
 const originalRenderBattle = renderBattle;
 renderBattle = function() {
     const container = document.getElementById('battle-content');
+    const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const combatLocked = combatCooldownRemaining > 0;
     
     // Show World Boss if active
     if (gameState.worldBossActive && gameState.currentWorldBoss) {
@@ -7505,7 +7644,7 @@ renderBattle = function() {
                 <div class="boss-hp-fill" style="width:${hpPct}%"></div>
             </div>
             <div style="color:#ff6600;margin:5px 0">HP: ${boss.hp.toLocaleString()} / ${boss.maxHp.toLocaleString()} (${hpPct}%)</div>
-            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;">⚔️ ATTACK WORLD BOSS</button>
+            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `RECOVERING (${formatPvpCooldown(combatCooldownRemaining)})` : '⚔️ ATTACK WORLD BOSS'}</button>
         </div>`;
 
         const visibleScrolls = getVisibleCombatScrolls();
@@ -7532,7 +7671,7 @@ renderBattle = function() {
         }
         
         html += `<div style="margin-top:20px;">
-            <button class="action-btn dungeon-btn" onclick="startDungeon()">Enter Dungeon</button>
+            <button class="action-btn dungeon-btn" onclick="startDungeon()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Enter Dungeon'}</button>
         </div>`;
         
         container.innerHTML = html;
