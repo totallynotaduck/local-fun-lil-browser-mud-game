@@ -1509,8 +1509,8 @@ function checkLevelUp() {
         p.hp = p.maxHp;
         p.mp = p.maxMp;
 
-        // XP Requirement scaling HARD CAP at 999,999,999 XP maximum
-        p.xpToNext = Math.min(999999999, Math.floor(p.xpToNext * 1.5));
+        // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
+        p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
         
         addBattleMsg(`LEVEL UP! You are now level ${p.level}!`, 'reward');
         addBattleMsg(`Max HP: ${p.maxHp}, Max MP: ${p.maxMp}, ATK: ${p.atk}, DEF: ${p.def}`, 'reward');
@@ -6139,6 +6139,7 @@ initAuctionSystem();
 
 // Start the game
 init();
+
 
 
 

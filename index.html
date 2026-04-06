@@ -96,6 +96,17 @@
         .action-btn.premium-btn:hover { background: linear-gradient(135deg, #660066, #990099); }
         .action-btn.craft-btn { background-color: #332200; border-color: #ffaa00; color: #ffaa00; }
         .action-btn.craft-btn:hover { background-color: #664400; }
+        .action-btn.craft-btn:disabled {
+            background: repeating-linear-gradient(135deg, #262626, #262626 8px, #1a1a1a 8px, #1a1a1a 16px);
+            border-color: #666;
+            color: #888;
+            opacity: 0.55;
+            cursor: not-allowed;
+            text-shadow: none;
+            box-shadow: none;
+            filter: grayscale(100%);
+        }
+        .action-btn.craft-btn:disabled:hover { background: repeating-linear-gradient(135deg, #262626, #262626 8px, #1a1a1a 8px, #1a1a1a 16px); }
         .action-btn.dungeon-btn { background-color: #002233; border-color: #0088ff; color: #0088ff; }
         .action-btn.dungeon-btn:hover { background-color: #004466; }
         .action-btn.boss-btn { background-color: #330000; border-color: #ff6600; color: #ff6600; font-weight: bold; }
@@ -3091,8 +3102,8 @@ function checkLevelUp() {
         p.hp = p.maxHp;
         p.mp = p.maxMp;
 
-        // XP Requirement scaling HARD CAP at 999,999,999 XP maximum
-        p.xpToNext = Math.min(999999999, Math.floor(p.xpToNext * 1.5));
+        // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
+        p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
         
         addBattleMsg(`LEVEL UP! You are now level ${p.level}!`, 'reward');
         addBattleMsg(`Max HP: ${p.maxHp}, Max MP: ${p.maxMp}, ATK: ${p.atk}, DEF: ${p.def}`, 'reward');
@@ -3140,6 +3151,11 @@ function addToInventory(item, options = {}) {
             body: options.announcementBody
         });
     }
+
+    const craftingScreen = document.getElementById('crafting-screen');
+    if (craftingScreen && craftingScreen.classList.contains('active') && typeof renderCrafting === 'function') {
+        renderCrafting();
+    }
 }
 
 function removeFromInventory(index, qty = 1) {
@@ -3152,6 +3168,11 @@ function removeFromInventory(index, qty = 1) {
         }
     } else {
         gameState.inventory.splice(index, 1);
+    }
+
+    const craftingScreen = document.getElementById('crafting-screen');
+    if (craftingScreen && craftingScreen.classList.contains('active') && typeof renderCrafting === 'function') {
+        renderCrafting();
     }
 }
 
@@ -3703,23 +3724,72 @@ function startJob(idx) {
 }
 
 // CRAFTING
+let craftingStatusMessage = null;
+
+function setCraftingStatus(message, type = 'info') {
+    craftingStatusMessage = { message, type };
+}
+
+function getInventoryItemQuantity(itemName) {
+    return gameState.inventory.reduce((total, item) => {
+        if (!item || item.name !== itemName) return total;
+        return total + ((Number.isFinite(item.qty) && item.qty > 0) ? item.qty : 1);
+    }, 0);
+}
+
+function consumeInventoryItemQuantity(itemName, qtyNeeded) {
+    let remaining = Math.max(0, Number(qtyNeeded) || 0);
+    if (remaining <= 0) return true;
+
+    for (let i = gameState.inventory.length - 1; i >= 0 && remaining > 0; i--) {
+        const item = gameState.inventory[i];
+        if (!item || item.name !== itemName) continue;
+
+        const itemQty = (Number.isFinite(item.qty) && item.qty > 0) ? item.qty : 1;
+        const qtyToRemove = Math.min(itemQty, remaining);
+        removeFromInventory(i, qtyToRemove);
+        remaining -= qtyToRemove;
+    }
+
+    return remaining <= 0;
+}
+
+function meetsCraftLevelRequirement(recipe) {
+    const result = recipe && recipe.result;
+    if (!result || !result.levelReq) return true;
+    return gameState.player.level >= result.levelReq;
+}
+
 function canCraft(recipe) {
+    if (!meetsCraftLevelRequirement(recipe)) return false;
     for (const [mat, qty] of Object.entries(recipe.materials)) {
-        const item = gameState.inventory.find(i => i.name === mat && i.qty >= qty);
-        if (!item) return false;
+        if (getInventoryItemQuantity(mat) < qty) return false;
     }
     return true;
 }
 
 function craftItem(recipeIdx) {
     const recipe = craftingRecipes[recipeIdx];
-    if (!recipe || !canCraft(recipe)) return;
+    if (!recipe) return;
+
+    if (!meetsCraftLevelRequirement(recipe)) {
+        setCraftingStatus(`You need to be level ${recipe.result.levelReq} to craft ${recipe.result.name}.`, 'damage');
+        renderCrafting();
+        return;
+    }
+
+    if (!canCraft(recipe)) {
+        setCraftingStatus(`Insufficient materials for ${recipe.name}.`, 'damage');
+        renderCrafting();
+        return;
+    }
     
     // Remove materials
     for (const [mat, qty] of Object.entries(recipe.materials)) {
-        const idx = gameState.inventory.findIndex(i => i.name === mat);
-        if (idx >= 0) {
-            removeFromInventory(idx, qty);
+        if (!consumeInventoryItemQuantity(mat, qty)) {
+            setCraftingStatus(`Insufficient materials for ${recipe.name}.`, 'damage');
+            renderCrafting();
+            return;
         }
     }
     
@@ -3727,16 +3797,19 @@ function craftItem(recipeIdx) {
     if (Math.random() <= recipe.chance) {
         addToInventory({ ...recipe.result, qty: 1 });
         addBattleMsg(`Crafted: ${recipe.result.name}!`, 'reward');
+        setCraftingStatus(`Crafted ${recipe.result.name} successfully!`, 'reward');
 
         if (recipe.result && recipe.result.rarity === 'unique' && Math.random() < (globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10)) {
             const bonusUberUnique = getCraftingUberUniqueDrop(recipe.result);
             if (bonusUberUnique) {
                 addToInventory({ ...bonusUberUnique, qty: 1 });
                 addBattleMsg(`Lucky bonus drop! You also received Uber Unique: ${bonusUberUnique.name}!`, 'reward');
+                setCraftingStatus(`Crafted ${recipe.result.name} successfully! Bonus Uber Unique: ${bonusUberUnique.name}!`, 'reward');
             }
         }
     } else {
         addBattleMsg('Crafting failed!', 'damage');
+        setCraftingStatus(`Crafting ${recipe.result.name} failed.`, 'damage');
     }
     
     renderCrafting();
@@ -5110,11 +5183,23 @@ function renderCrafting() {
     
     let html = `<div class="section-title">Crafting Recipes</div>`;
     html += `<div class="description">Item names are colour-coded by rarity. Crafting a Unique item has a ${Math.round((globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10) * 100)}% chance to also drop a bonus Uber Unique.</div>`;
+    if (craftingStatusMessage && craftingStatusMessage.message) {
+        const messageColor = craftingStatusMessage.type === 'reward'
+            ? '#44ff44'
+            : (craftingStatusMessage.type === 'damage' ? '#ff6666' : '#8888ff');
+        const borderColor = craftingStatusMessage.type === 'reward'
+            ? '#228822'
+            : (craftingStatusMessage.type === 'damage' ? '#882222' : '#333388');
+        html += `<div class="battle-log" style="border-left-color:${messageColor};border:1px solid ${borderColor};max-height:none;margin-bottom:15px;"><p style="color:${messageColor}">${craftingStatusMessage.message}</p></div>`;
+    }
     
     craftingRecipes.forEach((recipe, idx) => {
         const can = canCraft(recipe);
         const resultItem = recipe.result || {};
-        const recipeBorderColor = can ? '#44ff44' : (isUberUnique(resultItem) ? '#ff00ff' : getRarityColor(resultItem.rarity));
+        const meetsLevel = meetsCraftLevelRequirement(recipe);
+        const recipeBorderColor = can
+            ? '#44ff44'
+            : (!meetsLevel ? '#ff4444' : (isUberUnique(resultItem) ? '#ff00ff' : getRarityColor(resultItem.rarity)));
         const resultStyle = getRarityTextStyle(resultItem);
         const materialsHtml = Object.entries(recipe.materials).map(([m, q]) => {
             const materialItem = itemPool[m] || scrollPool[m] || { name: m, rarity: 'common' };
@@ -5123,11 +5208,15 @@ function renderCrafting() {
         const uniqueBonusHtml = resultItem.rarity === 'unique'
             ? `<div class="craft-materials" style="color:#ff66ff">Bonus: ${Math.round((globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10) * 100)}% chance to also drop a bonus Uber Unique</div>`
             : '';
+        const levelRequirementHtml = resultItem.levelReq
+            ? `<div class="craft-materials" style="color:${meetsLevel ? '#888' : '#ff6666'}">Requires Level ${resultItem.levelReq}${meetsLevel ? '' : ` (You are Level ${gameState.player.level})`}</div>`
+            : '';
 
         html += `<div class="craft-recipe" style="border-color: ${recipeBorderColor}">
             <div style="${resultStyle};font-weight:bold">${recipe.name} (${Math.floor(recipe.chance * 100)}% success)</div>
             <div class="craft-materials">Requires: ${materialsHtml}</div>
             <div class="craft-result">Result: <span style="${resultStyle}">${recipe.result.name}</span><span style="color:#888"> (${formatRarityLabel(resultItem.rarity)})</span></div>
+            ${levelRequirementHtml}
             ${uniqueBonusHtml}
             <button class="action-btn craft-btn" onclick="craftItem(${idx})" ${can ? '' : 'disabled'}>Craft</button>
         </div>`;
