@@ -2270,17 +2270,23 @@ function generateEnemy(location, isBoss = false) {
 }
 
 // ITEM DROP SYSTEM WITH RARITY RATES
-// Legendary: 0.5%, Epic: 2.5%, Rare: 10%, Uncommon: 25%, Common: 62%
+// Common: 62.04%, Uncommon: 25%, Rare: 10%, Epic: 1.83%, Legendary: 0.67%, Unique: 0.45%, Uber Unique: 0.01%
 function getItemDropByRarity() {
-    return getModifiedItemRarity({
-        common: 62,
+    let targetRarity = getModifiedItemRarity({
+        common: 62.04,
         uncommon: 25,
         rare: 10,
         epic: 1.83,
-        unique: 0.67,
-        legendary: 0.45,
-        uber_unique: 0.05
+        legendary: 0.67,
+        unique: 0.45,
+        uber_unique: 0.01
     }) || 'common';
+
+    if (targetRarity === 'unique' && Math.random() < 0.10) {
+        targetRarity = 'uber_unique';
+    }
+
+    return targetRarity;
 }
 
 // Get item drop with level cap based on ENEMY TIER, not player level
@@ -8288,13 +8294,17 @@ function distributeWorldBossRewards() {
     // Item drops - higher damage = higher rarity chance
     const dropChance = Math.min(1, (0.3 + damagePercent * 0.5) * (1 + getScrollDropBoost()));
     if (Math.random() < dropChance) {
-        // 10x drop rate for epic and above
-        const targetRarity = getModifiedItemRarity({
+        // 10x drop rate for epic and above, plus unique at 1/5 the legendary rate
+        let targetRarity = getModifiedItemRarity({
             uncommon: 50,
             rare: 25,
             epic: 20,
-            legendary: 5
+            legendary: 5,
+            unique: 1
         }) || 'uncommon';
+        if (targetRarity === 'unique' && Math.random() < 0.10) {
+            targetRarity = 'uber_unique';
+        }
         const droppedItem = getLeveledItemDrop(targetRarity, boss.tier);
         if (droppedItem) {
             addToInventory({ ...droppedItem, qty: 1 });
