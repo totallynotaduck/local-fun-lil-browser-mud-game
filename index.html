@@ -7359,18 +7359,29 @@ function buildFallbackItemDescription(item) {
     return desc;
 }
 
+function buildMergedDescription(baseDescription, mergeLevel) {
+    const rootDescription = String(baseDescription || '').split('\n✨')[0];
+    if (!(mergeLevel > 0)) return rootDescription;
+    const totalPercent = Math.round((Math.pow(1.5, mergeLevel) - 1) * 100);
+    return `${rootDescription}${rootDescription ? '\n' : ''}✨ Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+}
+
 function ensureItemDescription(item) {
     if (!item) return item;
-    if (item.desc) return item;
 
     const baseName = item.name ? item.name.replace(/ \+\d+$/, '') : null;
     const base = getCanonicalItemByName(baseName);
+
+    if (item.mergeLevel > 0) {
+        const baseDescription = base?.desc || item.desc || buildFallbackItemDescription({ ...item, mergeLevel: 0 });
+        item.desc = buildMergedDescription(baseDescription, item.mergeLevel);
+        return item;
+    }
+
+    if (item.desc) return item;
+
     if (base && base.desc) {
-        item.desc = base.desc.split('\n✨')[0];
-        if (item.mergeLevel > 0) {
-            const totalPercent = Math.round((Math.pow(1.5, item.mergeLevel) - 1) * 100);
-            item.desc += `\n✨ Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
-        }
+        item.desc = buildMergedDescription(base.desc, item.mergeLevel || 0);
         return item;
     }
 

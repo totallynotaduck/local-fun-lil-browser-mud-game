@@ -114,6 +114,11 @@ if (!uniqueEntry || !uberUniqueEntry) {
 
 const [uniqueBaseName, uniqueBaseItem] = uniqueEntry;
 const [uberBaseName, uberBaseItem] = uberUniqueEntry;
+const amuletBaseItem = context.itemPool['Amulet of Vitality'];
+
+if (!amuletBaseItem) {
+    throw new Error('Unable to locate Amulet of Vitality test item');
+}
 
 function simulateMergeFromBase(baseItem, levels) {
     let current = { ...baseItem, name: baseItem.name, mergeLevel: 0 };
@@ -125,6 +130,7 @@ function simulateMergeFromBase(baseItem, levels) {
 
 const expectedLegacyUnique = simulateMergeFromBase(uniqueBaseItem, 2);
 const expectedLegacyUber = simulateMergeFromBase(uberBaseItem, 1);
+const expectedAmulet = simulateMergeFromBase(amuletBaseItem, 2);
 
 const oldSchemaSave = {
     v: 2,
@@ -161,6 +167,25 @@ const legacyRecoveredItems = context.__gameState.inventory || [];
 const legacyRecoveredUnique = legacyRecoveredItems.find(item => item?.name === `${uniqueBaseName} +2`);
 const legacyRecoveredUber = legacyRecoveredItems.find(item => item?.name === `${uberBaseName} +1`);
 
+const amuletCompactNameOnlySave = {
+    v: 2,
+    t: Date.now(),
+    p: {},
+    i: [['Amulet of Vitality', { n: 'Amulet of Vitality +2' }]]
+};
+const restoredAmuletCompact = context.restoreGameStateFromSaveData(JSON.stringify(amuletCompactNameOnlySave));
+const amuletCompactRecovered = (context.__gameState.inventory || []).find(item => item?.name === 'Amulet of Vitality +2');
+
+const amuletLegacyNameOnlySave = {
+    player: {},
+    inventory: [
+        { ...amuletBaseItem, name: 'Amulet of Vitality +2' }
+    ],
+    equipment: {}
+};
+const restoredAmuletLegacy = context.restoreGameStateFromSaveData(JSON.stringify(amuletLegacyNameOnlySave));
+const amuletLegacyRecovered = (context.__gameState.inventory || []).find(item => item?.name === 'Amulet of Vitality +2');
+
 console.log(JSON.stringify({
     encodedSample,
     decodedSampleName: decodedSample?.name,
@@ -192,5 +217,27 @@ console.log(JSON.stringify({
         uberMergeLevel: legacyRecoveredUber?.mergeLevel,
         uberDef: legacyRecoveredUber?.def,
         uberExpectedDef: expectedLegacyUber?.def
+    },
+    amuletCompactRestore: {
+        restoredAmuletCompact,
+        name: amuletCompactRecovered?.name,
+        mergeLevel: amuletCompactRecovered?.mergeLevel,
+        hp: amuletCompactRecovered?.hp,
+        expectedHp: expectedAmulet?.hp,
+        healthRegen: amuletCompactRecovered?.healthRegen,
+        expectedHealthRegen: expectedAmulet?.healthRegen,
+        desc: amuletCompactRecovered?.desc,
+        expectedDesc: expectedAmulet?.desc
+    },
+    amuletLegacyRestore: {
+        restoredAmuletLegacy,
+        name: amuletLegacyRecovered?.name,
+        mergeLevel: amuletLegacyRecovered?.mergeLevel,
+        hp: amuletLegacyRecovered?.hp,
+        expectedHp: expectedAmulet?.hp,
+        healthRegen: amuletLegacyRecovered?.healthRegen,
+        expectedHealthRegen: expectedAmulet?.healthRegen,
+        desc: amuletLegacyRecovered?.desc,
+        expectedDesc: expectedAmulet?.desc
     }
 }, null, 2));
