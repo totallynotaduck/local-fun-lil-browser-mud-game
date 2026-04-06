@@ -3708,6 +3708,28 @@ function increaseMaxJobPoints() {
     renderJobs();
 }
 
+function refillJobPointsToMax() {
+    if (gameState.soulGems < 1) {
+        addBattleMsg('Not enough Soul Gems! Requires 1 Soul Gem.', 'damage');
+        return;
+    }
+
+    if (gameState.jobPoints >= gameState.maxJobPoints) {
+        addBattleMsg('Your Job Points are already full.', 'info');
+        return;
+    }
+
+    const restoredPoints = gameState.maxJobPoints - gameState.jobPoints;
+    gameState.soulGems -= 1;
+    gameState.jobPoints = gameState.maxJobPoints;
+
+    addBattleMsg(`Job Points refilled to max! Restored ${restoredPoints} point${restoredPoints === 1 ? '' : 's'}.`, 'reward');
+    addChatMessage('SYSTEM', `${gameState.player.name} spent 1 Soul Gem to refill Job Points to max!`, true);
+
+    updateStats();
+    renderJobs();
+}
+
 function startJob(idx) {
     const job = jobDefs[idx];
     if (!job) return;
@@ -4734,6 +4756,7 @@ function renderQuests() {
 // JOBS RENDER
 function renderJobs() {
     const container = document.getElementById('job-content');
+    const missingJobPoints = Math.max(0, gameState.maxJobPoints - gameState.jobPoints);
     
     let html = `<div class="section-title">Available Jobs</div>`;
     html += `<div class="description">Job Points: ${gameState.jobPoints}/${gameState.maxJobPoints} | Jobs Completed: ${gameState.jobsCompleted}</div>`;
@@ -4744,6 +4767,13 @@ function renderJobs() {
         <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Permanently increase your maximum Job Points capacity by 1</div>
         <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Current: ${gameState.maxJobPoints} Max Points</div>
         <button class="action-btn soul-btn" onclick="increaseMaxJobPoints()" ${gameState.soulGems >= 1 ? '' : 'disabled'} style="margin-top:8px;">Upgrade Max Job Points</button>
+    </div>`;
+
+    html += `<div style="background:#1a1a1a;border:2px solid #ff00ff;padding:12px;margin:10px 0;border-radius:5px;">
+        <div style="color:#ff00ff;font-weight:bold">🔮 Refill Job Points</div>
+        <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Instantly restore your Job Points to maximum</div>
+        <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Missing: ${missingJobPoints} Point${missingJobPoints === 1 ? '' : 's'}</div>
+        <button class="action-btn soul-btn" onclick="refillJobPointsToMax()" ${(gameState.soulGems >= 1 && gameState.jobPoints < gameState.maxJobPoints) ? '' : 'disabled'} style="margin-top:8px;">Refill Job Points to Max</button>
     </div>`;
     
     jobDefs.forEach((job, idx) => {
