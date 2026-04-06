@@ -374,7 +374,8 @@ let combatScrollState = {
     context: null,
     sessionId: null,
     usedSlots: [],
-    activatedEffects: {}
+    activatedEffects: {},
+    turnCounter: 0
 };
 
 let lastCooldownUiSignature = '';
@@ -1416,6 +1417,176 @@ function getEffectivePlayerDodgeChance() {
     return Math.min(95, dodgePercent) / 100;
 }
 
+function getTotalArmorPen() {
+    return Math.max(0, getTotalStat('armorPen') || 0);
+}
+
+function getTotalAttackSpeed() {
+    return Math.max(0, getTotalStat('attackSpeed') || 0);
+}
+
+function getTotalMoveSpeed() {
+    return Math.max(0, getTotalStat('moveSpeed') || 0);
+}
+
+function getTotalHealthRegen() {
+    return Math.max(0, getTotalStat('healthRegen') || 0);
+}
+
+function getTotalMagicFind() {
+    return Math.max(0, getTotalStat('magicFind') || 0);
+}
+
+function getEffectiveEnemyDefense(enemyObj, defenseMultiplier = 1) {
+    const armorPenPercent = Math.min(100, getTotalArmorPen()) / 100;
+    const baseDefense = Math.max(0, Math.floor((enemyObj?.def || 0) * defenseMultiplier));
+    return Math.max(0, Math.floor(baseDefense * (1 - armorPenPercent)));
+}
+
+function getAttackSpeedHitCount() {
+    const attackSpeed = getTotalAttackSpeed();
+    const guaranteedExtraHits = Math.floor(attackSpeed / 100);
+    const bonusHitChance = attackSpeed % 100;
+    let totalHits = 1 + guaranteedExtraHits;
+
+    if (Math.random() * 100 < bonusHitChance) {
+        totalHits++;
+    }
+
+    return Math.max(1, totalHits);
+}
+
+function getTotalAttackInstances(baseHits = 1) {
+    let totalHits = 0;
+    const safeBaseHits = Math.max(1, Math.floor(baseHits || 1));
+    for (let i = 0; i < safeBaseHits; i++) {
+        totalHits += getAttackSpeedHitCount();
+    }
+    return Math.max(1, totalHits);
+}
+
+function applyCombatHealthRegen(playerObj, logCallback = addBattleMsg) {
+    if (!playerObj) return 0;
+
+    if (!Number.isFinite(combatScrollState.turnCounter)) {
+        combatScrollState.turnCounter = 0;
+    }
+
+    combatScrollState.turnCounter++;
+    if (combatScrollState.turnCounter % 5 !== 0) return 0;
+
+    const regenPercent = getTotalHealthRegen();
+    if (regenPercent <= 0) return 0;
+
+    const maxHp = getTotalMaxHp();
+    const healAmt = Math.min(maxHp - playerObj.hp, Math.floor(maxHp * regenPercent / 100));
+    if (healAmt > 0) {
+        playerObj.hp += healAmt;
+        logCallback(`💚 Health Regen restores ${healAmt} HP! (${regenPercent}% Max HP)`, 'heal');
+    }
+
+    return healAmt;
+}
+
+function getWanderingRewardMultiplier() {
+    return 1 + (getTotalMoveSpeed() / 100);
+}
+
+function applyWanderingRewardBoost(amount) {
+    return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier()));
+}
+
+function getAdjustedRarityWeights(baseWeights = {}) {
+    const adjustedWeights = { ...baseWeights };
+    const luck = Math.max(0, getTotalLuck());
+    const magicFind = Math.max(0, getTotalMagicFind());
+    const luckBoost = Math.min(luck * 0.01, 0.5);
+
+    if (adjustedWeights.common !== undefined) {
+        adjustedWeights.common *= Math.max(0.05, 1 - magicFind / 120);
+    }
+    if (adjustedWeights.uncommon !== undefined) {
+        adjustedWeights.uncommon *= Math.max(0.10, 1 - magicFind / 150);
+    }
+    if (adjustedWeights.rare !== undefined) {
+        adjustedWeights.rare *= 1 + (magicFind / 140) + (luckBoost * 0.5);
+    }
+    if (adjustedWeights.epic !== undefined) {
+        adjustedWeights.epic *= 1 + (magicFind / 110) + (luckBoost * 0.7);
+    }
+    if (adjustedWeights.legendary !== undefined) {
+        adjustedWeights.legendary *= 1 + (magicFind / 90) + luckBoost;
+    }
+    if (adjustedWeights.unique !== undefined) {
+        adjustedWeights.unique *= 1 + (magicFind / 80) + (luckBoost * 1.1);
+    }
+    if (adjustedWeights.uber_unique !== undefined) {
+        adjustedWeights.uber_unique *= 1 + (magicFind / 70) + (luckBoost * 1.2);
+    }
+
+    return adjustedWeights;
+}
+
+function rollRarityFromWeights(weights = {}) {
+    const entries = Object.entries(weights).filter(([, weight]) => Number.isFinite(weight) && weight > 0);
+    if (entries.length === 0) return null;
+
+    const totalWeight = entries.reduce((sum, [, weight]) => sum + weight, 0);
+    let roll = Math.random() * totalWeight;
+
+    for (const [rarity, weight] of entries) {
+        roll -= weight;
+        if (roll <= 0) return rarity;
+    }
+
+    return entries[entries.length - 1][0];
+}
+
+function getModifiedItemRarity(baseWeights = {}) {
+    return rollRarityFromWeights(getAdjustedRarityWeights(baseWeights));
+}
+
+function getRandomScrollDropName() {
+    const availableScrollEntries = Object.entries(scrollPool || {});
+    if (availableScrollEntries.length === 0) return null;
+
+    const targetRarity = getModifiedItemRarity({
+        common: 50,
+        uncommon: 30,
+        rare: 15,
+        epic: 4,
+        legendary: 1
+    }) || 'common';
+
+    const rarityOrder = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    const getScrollNamesForRarity = (rarity) => availableScrollEntries
+        .filter(([, scroll]) => (scroll?.rarity || 'common') === rarity)
+        .map(([name]) => name);
+
+    let matchingScrolls = getScrollNamesForRarity(targetRarity);
+
+    if (matchingScrolls.length === 0) {
+        const targetIndex = Math.max(0, rarityOrder.indexOf(targetRarity));
+        for (let distance = 1; distance < rarityOrder.length && matchingScrolls.length === 0; distance++) {
+            const higherRarity = rarityOrder[targetIndex + distance];
+            const lowerRarity = rarityOrder[targetIndex - distance];
+
+            if (higherRarity) {
+                matchingScrolls = getScrollNamesForRarity(higherRarity);
+            }
+            if (matchingScrolls.length === 0 && lowerRarity) {
+                matchingScrolls = getScrollNamesForRarity(lowerRarity);
+            }
+        }
+    }
+
+    if (matchingScrolls.length === 0) {
+        matchingScrolls = availableScrollEntries.map(([name]) => name);
+    }
+
+    return matchingScrolls.length > 0 ? pick(matchingScrolls) : null;
+}
+
 function calculateDamageBasedHealing(damageDealt) {
     let healAmt = 0;
 
@@ -1567,6 +1738,8 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
         });
     });
 
+    applyCombatHealthRegen(playerObj, logCallback);
+
     return { enemyDied };
 }
 
@@ -1626,6 +1799,7 @@ function resetCombatScrollSession(clearEffects = true) {
     combatScrollState.sessionId = null;
     combatScrollState.activatedEffects = {};
     combatScrollState.usedSlots = Array(gameState.scrollSlots).fill(false);
+    combatScrollState.turnCounter = 0;
     if (clearEffects) {
         gameState.activeScrollEffects = [];
     }
@@ -1676,6 +1850,7 @@ function activateCombatScrollsForCurrentBattle(context = getCurrentCombatContext
     combatScrollState.sessionId = sessionId;
     combatScrollState.activatedEffects = {};
     combatScrollState.usedSlots = Array(gameState.scrollSlots).fill(false);
+    combatScrollState.turnCounter = 0;
     gameState.activeScrollEffects = [];
 
     for (let i = 0; i < gameState.unlockedScrollSlots; i++) {
@@ -2061,33 +2236,15 @@ function generateEnemy(location, isBoss = false) {
 // ITEM DROP SYSTEM WITH RARITY RATES
 // Legendary: 0.5%, Epic: 2.5%, Rare: 10%, Uncommon: 25%, Common: 62%
 function getItemDropByRarity() {
-    const luck = getTotalLuck();
-    const luckBonus = Math.min(luck * 0.005, 0.15); // Max 15% bonus from luck
-    
-    const roll = Math.random();
-    let targetRarity;
-    
-    // Rarity percentages with luck bonus applied to higher rarities
-    if (roll < 0.005 + luckBonus * 0.05) {
-        // 10% chance when rolling legendary to get an uber unique
-        if (Math.random() < 0.10) {
-            targetRarity = 'uber_unique';
-        } else {
-            targetRarity = 'legendary'; // 0.5% base
-        }
-    } else if (roll < 0.0117 + luckBonus * 0.07) {
-        targetRarity = 'unique'; // ~0.67% base (1/3 of legendary rate)
-    } else if (roll < 0.03 + luckBonus * 0.1) {
-        targetRarity = 'epic'; // 1.83% base (0.0117 to 0.03)
-    } else if (roll < 0.13 + luckBonus * 0.15) {
-        targetRarity = 'rare'; // 10% base (0.03 to 0.13)
-    } else if (roll < 0.38 + luckBonus * 0.2) {
-        targetRarity = 'uncommon'; // 25% base (0.13 to 0.38)
-    } else {
-        targetRarity = 'common'; // 62% base
-    }
-    
-    return targetRarity;
+    return getModifiedItemRarity({
+        common: 62,
+        uncommon: 25,
+        rare: 10,
+        epic: 1.83,
+        unique: 0.67,
+        legendary: 0.45,
+        uber_unique: 0.05
+    }) || 'common';
 }
 
 // Get item drop with level cap based on ENEMY TIER, not player level
@@ -2098,11 +2255,13 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     const maxItemLevel = enemyTier * 6;
     
     // Filter items by rarity and level requirement matching enemy strength
-    const allItems = [...Object.values(itemPool), ...Object.values(scrollPool)];
+    const allItems = Object.values(itemPool);
     const matchingItems = allItems.filter(item => 
         item.rarity === targetRarity && 
+        item.equipSlot &&
         item.type !== 'material' && 
         item.type !== 'currency' &&
+        item.type !== 'consumable' &&
         (!item.levelReq || item.levelReq <= maxItemLevel)
     );
     
@@ -2111,7 +2270,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     }
     
     // Fallback: try lower rarity if no items match
-    const rarityOrder = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+    const rarityOrder = ['uber_unique', 'unique', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
     const currentIdx = rarityOrder.indexOf(targetRarity);
     
     for (let i = currentIdx + 1; i < rarityOrder.length; i++) {
@@ -2422,7 +2581,8 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             const totalLuck = getTotalLuck();
             const cappedLuck = Math.min(totalLuck, 9);
             const minRoll = Math.min(-3 + cappedLuck, 3); // luck reduces negative variance
-            let dmg = Math.max(1, totalAtk - enemyObj.def + rand(minRoll, 3));
+            const effectiveEnemyDefense = getEffectiveEnemyDefense(enemyObj);
+            let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(minRoll, 3));
             let crit = Math.random() * 100 < (totalCrit + critBonus);
             if (crit) dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
             // Apply damage multiplier from scrolls
@@ -2489,13 +2649,15 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             }
             
             // Handle multiple attacks
+            const totalAttackInstances = getTotalAttackInstances(attackCount);
             let totalDamageDealt = 0;
-            for (let i = 0; i < attackCount; i++) {
+            for (let i = 0; i < totalAttackInstances; i++) {
                 totalDamageDealt += dmg;
                 enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
             }
             
-            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}!`, crit ? 'reward' : 'info');
+            const multiHitMsg = totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : '';
+            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, crit ? 'reward' : 'info');
             
             // Apply lifesteal healing
             const healAmt = calculateDamageBasedHealing(totalDamageDealt);
@@ -2645,17 +2807,20 @@ function battleAction(action) {
         const spellMultiplier = 0.5 + Math.random() * 2.5;
         const totalAtk = getTotalAtk();
         const totalCrit = getTotalCrit();
+        const effectiveEnemyDefense = getEffectiveEnemyDefense(gameState.currentEnemy);
+        const totalAttackInstances = getTotalAttackInstances();
         
-        let dmg = Math.max(1, totalAtk - gameState.currentEnemy.def + rand(-3, 3));
+        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
         let crit = Math.random() * 100 < (totalCrit + critBonus);
         if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
         
         // Apply spell multiplier + scroll damage multiplier
         dmg = Math.floor(dmg * spellMultiplier * damageMult);
+        dmg *= totalAttackInstances;
         
         gameState.currentEnemy.hp = Math.max(0, gameState.currentEnemy.hp - dmg);
         
-        addBattleMsg(`You cast a spell for ${dmg} damage! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+        addBattleMsg(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
 
         const spellHeal = calculateDamageBasedHealing(dmg);
         if (spellHeal > 0) {
@@ -2816,30 +2981,14 @@ function enemyDefeated() {
         }
     }
     
-    // Random scroll drop (0.5% chance) with rarity weighting
+    // Random scroll drop (0.5% chance) with Magic Find-adjusted rarity weighting
     if (Math.random() < 0.005) {
-        // Rarity weights: legendary being rarest
-        const scrollRarityWeights = {
-            common: 50,
-            uncommon: 30,
-            rare: 15,
-            epic: 4,
-            legendary: 1
-        };
-        
-        // Build weighted scroll pool
-        const weightedScrolls = [];
-        Object.entries(scrollPool).forEach(([name, scroll]) => {
-            const weight = scrollRarityWeights[scroll.rarity] || 1;
-            for (let i = 0; i < weight; i++) {
-                weightedScrolls.push(name);
-            }
-        });
-        
-        const scrollName = pick(weightedScrolls);
-        addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
-        addBattleMsg(`Dropped scroll: ${scrollName}!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} found a scroll: ${scrollName}!`, true);
+        const scrollName = getRandomScrollDropName();
+        if (scrollName && scrollPool[scrollName]) {
+            addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
+            addBattleMsg(`Dropped scroll: ${scrollName}!`, 'reward');
+            addChatMessage('SYSTEM', `${p.name} found a scroll: ${scrollName}!`, true);
+        }
     }
     
     // Check level up
@@ -3737,14 +3886,14 @@ function generateWanderingEvent() {
         // 10% chance: Find gold
         const goldFound = rand(Math.floor(level * 2) + 5, Math.floor(level * 5) + 20);
         const luckBonus = Math.floor(luck * 0.5);
-        const totalGold = goldFound + luckBonus;
+        const totalGold = applyWanderingRewardBoost(goldFound + luckBonus);
         w.rewards.gold += totalGold;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Found ${totalGold} gold!`, 'reward');
     } else if (eventType < 65) {
         // 10% chance: Gain XP
         const xpGained = rand(Math.floor(level * 2) + 10, Math.floor(level * 5) + 30);
         const luckBonus = Math.floor(luck * 0.2);
-        const totalXp = xpGained + luckBonus;
+        const totalXp = applyWanderingRewardBoost(xpGained + luckBonus);
         w.rewards.xp += totalXp;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Gained ${totalXp} XP from exploration!`, 'reward');
     } else if (eventType < 80) {
@@ -3824,8 +3973,8 @@ function wanderingEnemyDefeated() {
     const p = gameState.player;
     
     // Scale XP and Gold to enemy level/tier, not player level
-    const scaledXp = e.xp;
-    const scaledGold = e.gold;
+    const scaledXp = applyWanderingRewardBoost(e.xp);
+    const scaledGold = applyWanderingRewardBoost(e.gold);
     
     // Add battle rewards to wandering rewards
     w.rewards.xp += scaledXp;
@@ -3874,12 +4023,14 @@ function wanderingEnemyDefeated() {
         }
     }
     
-    // Random scroll drop (0.5% chance)
+    // Random scroll drop (0.5% chance) with Magic Find-adjusted rarity weighting
     if (Math.random() < 0.005) {
-        const scrollName = pick(Object.keys(scrollPool));
-        w.rewards.items.push({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
-        addWanderingLog(`Dropped scroll: ${scrollName}!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} found a scroll while wandering: ${scrollName}!`, true);
+        const scrollName = getRandomScrollDropName();
+        if (scrollName && scrollPool[scrollName]) {
+            w.rewards.items.push({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
+            addWanderingLog(`Dropped scroll: ${scrollName}!`, 'reward');
+            addChatMessage('SYSTEM', `${p.name} found a scroll while wandering: ${scrollName}!`, true);
+        }
     }
 
     resetCombatScrollSession();
@@ -4255,24 +4406,13 @@ function dismissMerchant() {
 
 // Get random item drop based on rarity percentages for wander function
 function getWanderItemDrop() {
-    const luck = getTotalLuck();
-    const luckBonus = Math.min(luck * 0.005, 0.15); // Max 15% bonus from luck
-    
-    const roll = Math.random();
-    let targetRarity;
-    
-    // Rarity percentages with luck bonus
-    if (roll < 0.02 + luckBonus * 0.1) {
-        targetRarity = 'legendary'; // ~2% base
-    } else if (roll < 0.08 + luckBonus * 0.2) {
-        targetRarity = 'epic'; // ~6% base
-    } else if (roll < 0.22 + luckBonus * 0.3) {
-        targetRarity = 'rare'; // ~14% base
-    } else if (roll < 0.45 + luckBonus * 0.3) {
-        targetRarity = 'uncommon'; // ~23% base
-    } else {
-        targetRarity = 'common'; // ~55% base
-    }
+    const targetRarity = getModifiedItemRarity({
+        common: 55,
+        uncommon: 23,
+        rare: 14,
+        epic: 6,
+        legendary: 2
+    }) || 'common';
     
     // Filter items of this rarity (equipment only, not materials/consumables/currency)
     const allItems = Object.values(itemPool);
@@ -5925,17 +6065,20 @@ function dungeonAction(action) {
         const spellMultiplier = 0.5 + Math.random() * 2.5;
         const totalAtk = getTotalAtk();
         const totalCrit = getTotalCrit();
+        const effectiveEnemyDefense = getEffectiveEnemyDefense(e);
+        const totalAttackInstances = getTotalAttackInstances();
         
-        let dmg = Math.max(1, totalAtk - e.def + rand(-3, 3));
+        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
         let crit = Math.random() * 100 < (totalCrit + critBonus);
         if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
         
         // Apply spell multiplier + scroll damage multiplier
         dmg = Math.floor(dmg * spellMultiplier * damageMult);
+        dmg *= totalAttackInstances;
         
         e.hp = Math.max(0, e.hp - dmg);
         
-        addDungeonLog(`You cast a spell for ${dmg} damage! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+        addDungeonLog(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
 
         const spellHeal = calculateDamageBasedHealing(dmg);
         if (spellHeal > 0) {
@@ -6089,13 +6232,15 @@ function dungeonEnemyDefeated() {
         }
     }
 
-    // Random scroll drop (0.5% chance, tripled for miniboss = 3 rolls)
+    // Random scroll drop (0.5% chance, tripled for miniboss = 3 rolls) with Magic Find-adjusted rarity weighting
     for (let roll = 0; roll < numDropRolls; roll++) {
         if (Math.random() < 0.005) {
-            const scrollName = pick(Object.keys(scrollPool));
-            addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
-            addDungeonLog(`Dropped scroll: ${scrollName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-            addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${scrollName}!`, true);
+            const scrollName = getRandomScrollDropName();
+            if (scrollName && scrollPool[scrollName]) {
+                addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
+                addDungeonLog(`Dropped scroll: ${scrollName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
+                addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${scrollName}!`, true);
+            }
         }
     }
 
@@ -7768,7 +7913,9 @@ function attackWorldBoss() {
     const totalDef = getEffectivePlayerDefense();
     
     // Calculate damage
-    let dmg = Math.max(5, totalAtk - Math.floor(boss.def * 0.3) + rand(-5, 10));
+    const effectiveEnemyDefense = getEffectiveEnemyDefense(boss, 0.3);
+    const totalAttackInstances = getTotalAttackInstances();
+    let dmg = Math.max(5, totalAtk - effectiveEnemyDefense + rand(-5, 10));
     let crit = Math.random() * 100 < (totalCrit + critBonus);
     if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
     dmg = Math.floor(dmg * damageMult);
@@ -7787,6 +7934,7 @@ function attackWorldBoss() {
         }
     });
     dmg += bonusDmg;
+    dmg *= totalAttackInstances;
 
     boss.hp = Math.max(0, boss.hp - dmg);
 
@@ -7794,7 +7942,7 @@ function attackWorldBoss() {
     recordWorldBossPlayerDamage(dmg);
     scheduleSilentPersist();
     
-    addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}!`, crit ? 'reward' : 'info');
+    addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
 
     // Apply lifesteal
     let healAmt = calculateDamageBasedHealing(dmg);
@@ -7923,22 +8071,12 @@ function distributeWorldBossRewards() {
     const dropChance = Math.min(1, (0.3 + damagePercent * 0.5) * (1 + getScrollDropBoost()));
     if (Math.random() < dropChance) {
         // 10x drop rate for epic and above
-        const luck = getTotalLuck();
-        const luckBonus = Math.min(luck * 0.01, 0.3);
-        
-        const roll = Math.random();
-        let targetRarity;
-        
-        if (roll < 0.05 + luckBonus * 0.1) {
-            targetRarity = 'legendary';
-        } else if (roll < 0.25 + luckBonus * 0.2) {
-            targetRarity = 'epic';
-        } else if (roll < 0.50 + luckBonus * 0.3) {
-            targetRarity = 'rare';
-        } else {
-            targetRarity = 'uncommon';
-        }
-        
+        const targetRarity = getModifiedItemRarity({
+            uncommon: 50,
+            rare: 25,
+            epic: 20,
+            legendary: 5
+        }) || 'uncommon';
         const droppedItem = getLeveledItemDrop(targetRarity, boss.tier);
         if (droppedItem) {
             addToInventory({ ...droppedItem, qty: 1 });
