@@ -190,11 +190,11 @@
         .craft-result { color: #00ff00; font-weight: bold; }
         .encounter-info { color: #888; font-size: 0.8em; margin: 5px 0; }
         .wandering-screen-shell { position: relative; min-height: 100%; }
-        .wandering-battle-dimmed { filter: brightness(0.55); pointer-events: none; user-select: none; }
-        .wandering-battle-overlay { position: absolute; inset: 0; z-index: 25; display: flex; align-items: flex-start; justify-content: center; padding: 16px; background: rgba(5, 8, 12, 0.82); backdrop-filter: blur(2px); }
-        .wandering-battle-card { width: min(100%, 720px); background: #111; border: 2px solid #ff4444; border-radius: 8px; box-shadow: 0 0 24px rgba(255, 68, 68, 0.28); padding: 16px; }
+        .wandering-battle-card { width: 100%; background: #111; border: 2px solid #ff4444; border-radius: 8px; box-shadow: 0 0 24px rgba(255, 68, 68, 0.28); padding: 16px; margin-top: 10px; }
         .wandering-battle-card .section-title:first-child { margin-top: 0; }
         .wandering-battle-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .wandering-primary-action { flex: 1 1 0; font-size: 1.2em; padding: 15px 30px; }
+        .wandering-secondary-action { font-size: 1em; padding: 15px 20px; }
         .wandering-battle-card .battle-log { max-height: 200px; }
         
         @media (max-width: 900px) {
@@ -4161,9 +4161,7 @@ function renderWandering() {
         return;
     }
     
-    const hasBattleOverlay = !!(w.inBattle && w.currentEnemy);
     let html = `<div class="wandering-screen-shell">`;
-    html += `<div class="${hasBattleOverlay ? 'wandering-battle-dimmed' : ''}">`;
     html += `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>`;
     html += `<div style="margin-bottom:10px; padding:8px; background-color:#112211; border:1px solid #004400; border-radius:4px;">
         <span style="color:#888;">Current Location: </span>
@@ -4215,45 +4213,20 @@ function renderWandering() {
         html += `<div style="margin-top:15px;">
             <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
-    } else {
-        // Continue/Escape buttons - Make them prominent!
-        html += `<div class="section-title">Continue Your Expedition</div>`;
-        if (w.currentEvent >= w.totalEvents) {
-            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">🎉 Complete Expedition</button>`;
-        } else {
-            html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-            html += `<button class="action-btn" onclick="wanderingContinue()" style="font-size:1.2em; padding:15px 30px; flex:1;">▶️ Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
-            html += `<button class="action-btn danger" onclick="wanderingEscape()" style="font-size:1em; padding:15px 20px;">🚪 Escape (Lose Half Rewards)</button>`;
-            html += `</div>`;
-        }
-    }
-    
-    // Expedition log
-    html += `<div class="section-title">Expedition Log</div>`;
-    html += `<div class="battle-log" style="max-height:200px; border-left-color: #00ffff;">`;
-    w.log.slice(-15).forEach(log => {
-        html += `<p class="${log.type}">${log.msg}</p>`;
-    });
-    html += `</div>`;
-    html += `</div>`;
-
-    if (hasBattleOverlay) {
+    } else if (w.inBattle && w.currentEnemy) {
         activateCombatScrollsForCurrentBattle('wandering');
-        if (!w.inBattle || !w.currentEnemy) return;
-
         const e = w.currentEnemy;
         const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
-        html += `<div class="wandering-battle-overlay">`;
+
         html += `<div class="wandering-battle-card">`;
         html += `<div class="section-title" style="color:#ff4444;">⚔️ Ambushed During Wandering - ${e.name}</div>`;
-        html += `<div class="description">The expedition remains active underneath this encounter. Defeat or flee from the enemy to continue exploring.</div>`;
+        html += `<div class="wandering-battle-actions">`;
+        html += `<button class="action-btn wandering-primary-action" onclick="wanderingBattle('attack')" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
+        html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingBattle('flee')" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
+        html += `</div>`;
+        html += `<div class="description" style="margin-top:10px;">The expedition remains active underneath this encounter. Defeat or flee from the enemy to continue exploring.</div>`;
         html += `<div class="boss-hp-bar"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>`;
         html += `<div class="description">HP: ${e.hp}/${e.maxHp} | ATK: ${e.atk} | DEF: ${e.def}</div>`;
-        html += `<div class="section-title">Battle Actions</div>`;
-        html += `<div class="wandering-battle-actions">`;
-        html += `<button class="action-btn" onclick="wanderingBattle('attack')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
-        html += `<button class="action-btn danger" onclick="wanderingBattle('flee')" style="font-size:1.1em; padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
-        html += `</div>`;
         if (combatLocked) {
             html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
         }
@@ -4276,15 +4249,28 @@ function renderWandering() {
             });
             html += `</div>`;
         }
-
-        html += `<div class="section-title">Recent Expedition Log</div>`;
-        html += `<div class="battle-log" style="border-left-color:#ff4444;">`;
-        w.log.slice(0, 10).forEach(log => {
-            html += `<p class="${log.type}">${log.msg}</p>`;
-        });
         html += `</div>`;
-        html += `</div></div>`;
+    } else {
+        // Continue/Escape buttons - Make them prominent!
+        html += `<div class="section-title">Continue Your Expedition</div>`;
+        if (w.currentEvent >= w.totalEvents) {
+            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">🎉 Complete Expedition</button>`;
+        } else {
+            html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
+            html += `<button class="action-btn wandering-primary-action" onclick="wanderingContinue()">▶️ Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
+            html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingEscape()">🚪 Escape (Lose Half Rewards)</button>`;
+            html += `</div>`;
+        }
     }
+    
+    // Expedition log
+    html += `<div class="section-title">Expedition Log</div>`;
+    html += `<div class="battle-log" style="max-height:200px; border-left-color: #00ffff;">`;
+    w.log.slice(0, 15).forEach(log => {
+        html += `<p class="${log.type}">${log.msg}</p>`;
+    });
+    html += `</div>`;
+    html += `</div>`;
 
     html += `</div>`;
 
