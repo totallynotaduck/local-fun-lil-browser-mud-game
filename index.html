@@ -3521,12 +3521,32 @@ function craftItem(recipeIdx) {
     if (Math.random() <= recipe.chance) {
         addToInventory({ ...recipe.result, qty: 1 });
         addBattleMsg(`Crafted: ${recipe.result.name}!`, 'reward');
+
+        if (recipe.result && recipe.result.rarity === 'unique' && Math.random() < (globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10)) {
+            const bonusUberUnique = getCraftingUberUniqueDrop(recipe.result);
+            if (bonusUberUnique) {
+                addToInventory({ ...bonusUberUnique, qty: 1 });
+                addBattleMsg(`Lucky bonus drop! You also received Uber Unique: ${bonusUberUnique.name}!`, 'reward');
+            }
+        }
     } else {
         addBattleMsg('Crafting failed!', 'damage');
     }
     
     renderCrafting();
     updateStats();
+}
+
+function getCraftingUberUniqueDrop(baseItem) {
+    const uberUniquePool = Object.values(itemPool).filter(item => item && (item.rarity === 'uber_unique' || item.uberUnique === true));
+    if (!uberUniquePool.length) return null;
+
+    const targetSlot = baseItem && (baseItem.equipSlot || baseItem.type);
+    const slotMatches = targetSlot
+        ? uberUniquePool.filter(item => (item.equipSlot || item.type) === targetSlot)
+        : [];
+
+    return pick(slotMatches.length ? slotMatches : uberUniquePool);
 }
 
 // LOCATIONS RENDER
@@ -4683,6 +4703,19 @@ function getRarityColor(rarity) {
     }
 }
 
+function getRarityTextStyle(itemOrRarity) {
+    const rarity = typeof itemOrRarity === 'string' ? itemOrRarity : itemOrRarity?.rarity;
+    const isUber = rarity === 'uber_unique' || (itemOrRarity && typeof itemOrRarity === 'object' && itemOrRarity.uberUnique === true);
+    if (isUber) {
+        return 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;';
+    }
+    return `color:${getRarityColor(rarity)}`;
+}
+
+function formatRarityLabel(rarity) {
+    return String(rarity || 'common').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function isUberUnique(item) {
     return item.rarity === 'uber_unique' || item.uberUnique === true;
 }
@@ -4879,13 +4912,26 @@ function renderCrafting() {
     const container = document.getElementById('crafting-screen-content');
     
     let html = `<div class="section-title">Crafting Recipes</div>`;
+    html += `<div class="description">Item names are colour-coded by rarity. Crafting a Unique item has a ${Math.round((globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10) * 100)}% chance to also drop a bonus Uber Unique.</div>`;
     
     craftingRecipes.forEach((recipe, idx) => {
         const can = canCraft(recipe);
-        html += `<div class="craft-recipe" style="${can ? 'border-color: #44ff44' : ''}">
-            <div style="color:#ffaa00;font-weight:bold">${recipe.name} (${Math.floor(recipe.chance * 100)}% success)</div>
-            <div class="craft-materials">Requires: ${Object.entries(recipe.materials).map(([m, q]) => `${m} x${q}`).join(', ')}</div>
-            <div class="craft-result">Result: ${recipe.result.name}</div>
+        const resultItem = recipe.result || {};
+        const recipeBorderColor = can ? '#44ff44' : (isUberUnique(resultItem) ? '#ff00ff' : getRarityColor(resultItem.rarity));
+        const resultStyle = getRarityTextStyle(resultItem);
+        const materialsHtml = Object.entries(recipe.materials).map(([m, q]) => {
+            const materialItem = itemPool[m] || scrollPool[m] || { name: m, rarity: 'common' };
+            return `<span style="${getRarityTextStyle(materialItem)}">${m}</span> x${q}`;
+        }).join(', ');
+        const uniqueBonusHtml = resultItem.rarity === 'unique'
+            ? `<div class="craft-materials" style="color:#ff66ff">Bonus: ${Math.round((globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10) * 100)}% chance to also drop a bonus Uber Unique</div>`
+            : '';
+
+        html += `<div class="craft-recipe" style="border-color: ${recipeBorderColor}">
+            <div style="${resultStyle};font-weight:bold">${recipe.name} (${Math.floor(recipe.chance * 100)}% success)</div>
+            <div class="craft-materials">Requires: ${materialsHtml}</div>
+            <div class="craft-result">Result: <span style="${resultStyle}">${recipe.result.name}</span><span style="color:#888"> (${formatRarityLabel(resultItem.rarity)})</span></div>
+            ${uniqueBonusHtml}
             <button class="action-btn craft-btn" onclick="craftItem(${idx})" ${can ? '' : 'disabled'}>Craft</button>
         </div>`;
     });

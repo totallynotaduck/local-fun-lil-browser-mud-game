@@ -283,6 +283,7 @@ const SPECIAL_CRAFTING_RECIPES = [
 ];
 
 const craftingRecipes = [];
+const UNIQUE_CRAFT_UBER_DROP_CHANCE = 0.10;
 
 const CRAFTABLE_EQUIP_TYPES = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape', 'charm'];
 const RECIPE_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique', 'uber_unique'];
@@ -446,6 +447,7 @@ function rebuildCraftingRecipes() {
 
     Object.values(itemPool)
         .filter(isStaticCraftableItem)
+        .filter(item => item.rarity !== 'uber_unique')
         .forEach(item => {
             if (!recipeMap.has(item.name)) {
                 recipeMap.set(item.name, createAutoCraftingRecipe(item));
@@ -454,7 +456,7 @@ function rebuildCraftingRecipes() {
 
     const specialRecipes = Array.isArray(globalThis.SPECIAL_CRAFTING_RECIPES) ? globalThis.SPECIAL_CRAFTING_RECIPES : SPECIAL_CRAFTING_RECIPES;
     specialRecipes.forEach(recipe => {
-        if (recipe && recipe.result && recipe.result.name) {
+        if (recipe && recipe.result && recipe.result.name && recipe.result.rarity !== 'uber_unique') {
             recipeMap.set(recipe.result.name, cloneRecipe(recipe));
         }
     });
@@ -695,9 +697,10 @@ globalThis.scrollPool = scrollPool;
 globalThis.craftingRecipes = craftingRecipes;
 globalThis.SPECIAL_CRAFTING_RECIPES = SPECIAL_CRAFTING_RECIPES;
 globalThis.rebuildCraftingRecipes = rebuildCraftingRecipes;
+globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE = UNIQUE_CRAFT_UBER_DROP_CHANCE;
 globalThis.UNIQUE_ATTRIBUTE_POOL = UNIQUE_ATTRIBUTE_POOL;
 globalThis.SELL_VALUES = SELL_VALUES;
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { itemPool, scrollPool, craftingRecipes, rebuildCraftingRecipes, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
+    module.exports = { itemPool, scrollPool, craftingRecipes, rebuildCraftingRecipes, UNIQUE_CRAFT_UBER_DROP_CHANCE, UNIQUE_ATTRIBUTE_POOL, SELL_VALUES };
 }
