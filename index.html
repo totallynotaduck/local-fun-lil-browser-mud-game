@@ -1802,6 +1802,10 @@ function getTotalHealthRegen() {
     return Math.max(0, getTotalStat('healthRegen') || 0);
 }
 
+function getTotalManaRegen() {
+    return Math.max(0, getTotalStat('manaRegen') || 0);
+}
+
 function getTotalMagicFind() {
     return Math.max(0, getTotalStat('magicFind') || 0);
 }
@@ -1855,6 +1859,11 @@ function applyCombatHealthRegen(playerObj, logCallback = addBattleMsg) {
     }
 
     return healAmt;
+}
+
+function getCombatManaRegenAmount() {
+    const maxMp = getTotalMaxMp();
+    return Math.max(0, Math.floor(maxMp * 0.05) + getTotalManaRegen());
 }
 
 function getWanderingRewardMultiplier() {
@@ -3109,9 +3118,9 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     // Decrement scroll effects at end of turn
     decrementScrollEffects(logCallback);
     
-    // Mana regeneration: 5% of max MP every turn
+    // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
     const maxMp = getTotalMaxMp();
-    const manaRegenAmount = Math.floor(maxMp * 0.05);
+    const manaRegenAmount = getCombatManaRegenAmount();
     gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
     
     // After hit callback
@@ -3285,9 +3294,9 @@ function battleAction(action) {
         // Decrement scroll effects at end of turn
         decrementScrollEffects(addBattleMsg);
         
-        // Mana regeneration: 5% of max MP every turn
+        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
         const maxMp = getTotalMaxMp();
-        const manaRegenAmount = Math.floor(maxMp * 0.05);
+        const manaRegenAmount = getCombatManaRegenAmount();
         gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
         
         renderBattle();
@@ -3359,7 +3368,7 @@ function enemyDefeated() {
                 addBattleMsg(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
                 addItemLog('battle', dropItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found: ${formatChatItemMention(dropItem)}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
             }
         } else {
             // Equipment drop using new rarity system
@@ -3374,7 +3383,7 @@ function enemyDefeated() {
                 addBattleMsg(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})!`, 'reward');
                 addItemLog('battle', droppedItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item: ${droppedItem.name}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item: ${formatChatItemMention(droppedItem)}!`, true);
             }
         }
     }
@@ -3392,7 +3401,7 @@ function enemyDefeated() {
             const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
             addBattleMsg(`✅ BONUS DROP: <span style="${itemColorStyle}">${extraItem.name}</span> (${extraItem.rarity})!`, 'reward');
             addItemLog('battle', extraItem.name);
-            addChatMessage('SYSTEM', `${p.name} got BONUS DROP: ${extraItem.name}!`, true);
+            addChatMessage('SYSTEM', `${p.name} got BONUS DROP: ${formatChatItemMention(extraItem)}!`, true);
         }
     }
     
@@ -3402,7 +3411,7 @@ function enemyDefeated() {
         if (scrollName && scrollPool[scrollName]) {
             addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
             addBattleMsg(`Dropped scroll: ${scrollName}!`, 'reward');
-            addChatMessage('SYSTEM', `${p.name} found a scroll: ${scrollName}!`, true);
+            addChatMessage('SYSTEM', `${p.name} found a scroll: ${formatChatItemMention(scrollName)}!`, true);
         }
     }
     
@@ -4513,7 +4522,7 @@ function wanderingEnemyDefeated() {
                 addWanderingLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
                 addItemLog('wandering', dropItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found while wandering: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found while wandering: ${formatChatItemMention(dropItem)}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
             }
         } else {
             // Equipment drop using new rarity system
@@ -4528,7 +4537,7 @@ function wanderingEnemyDefeated() {
                 addWanderingLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})!`, 'reward');
                 addItemLog('wandering', droppedItem.name);
                 // Show in chat
-                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item while wandering: ${droppedItem.name}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item while wandering: ${formatChatItemMention(droppedItem)}!`, true);
             }
         }
     }
@@ -4539,7 +4548,7 @@ function wanderingEnemyDefeated() {
         if (scrollName && scrollPool[scrollName]) {
             w.rewards.items.push({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
             addWanderingLog(`Dropped scroll: ${scrollName}!`, 'reward');
-            addChatMessage('SYSTEM', `${p.name} found a scroll while wandering: ${scrollName}!`, true);
+            addChatMessage('SYSTEM', `${p.name} found a scroll while wandering: ${formatChatItemMention(scrollName)}!`, true);
         }
     }
 
@@ -5399,10 +5408,23 @@ function getRarityTextStyle(itemOrRarity) {
         return 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;';
     }
     return `color:${getRarityColor(rarity)}`;
+
 }
 
-function formatRarityLabel(rarity) {
-    return String(rarity || 'common').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+function getChatMentionItemByName(itemName) {
+    if (!itemName) return null;
+    return (itemPool && itemPool[itemName])
+        || (scrollPool && scrollPool[itemName])
+        || (typeof SAVE_ITEM_CATALOG !== 'undefined' && SAVE_ITEM_CATALOG.get ? SAVE_ITEM_CATALOG.get(itemName) : null)
+        || null;
+}
+
+function formatChatItemMention(itemOrName, displayName = null) {
+    const item = typeof itemOrName === 'string' ? getChatMentionItemByName(itemOrName) : itemOrName;
+    const resolvedName = displayName || item?.name || itemOrName;
+    if (!resolvedName) return '';
+    if (!item) return resolvedName;
+    return `<span style="${getRarityTextStyle(item)};font-weight:bold">${resolvedName}</span>`;
 }
 
 function isUberUnique(item) {
@@ -6699,9 +6721,9 @@ function dungeonAction(action) {
         // Decrement scroll effects at end of turn
         decrementScrollEffects(addDungeonLog);
         
-        // Mana regeneration: 5% of max MP every turn
+        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
         const maxMp = getTotalMaxMp();
-        const manaRegenAmount = Math.floor(maxMp * 0.05);
+        const manaRegenAmount = getCombatManaRegenAmount();
         p.mp = Math.min(maxMp, p.mp + manaRegenAmount);
         
         renderDungeon();
@@ -6778,8 +6800,7 @@ function dungeonEnemyDefeated() {
                     addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
                     addDungeonLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
                     addItemLog('dungeon', dropItem.name);
-                    // Show in chat
-                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
+                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${formatChatItemMention(dropItem)}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
                 }
             } else {
                 // Equipment drop using new rarity system
@@ -6793,8 +6814,7 @@ function dungeonEnemyDefeated() {
                     const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
                     addDungeonLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
                     addItemLog('dungeon', droppedItem.name);
-                    // Show in chat
-                    addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${droppedItem.name}!`, true);
+                    addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${formatChatItemMention(droppedItem)}!`, true);
                 }
             }
         }
@@ -6807,7 +6827,7 @@ function dungeonEnemyDefeated() {
             if (scrollName && scrollPool[scrollName]) {
                 addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
                 addDungeonLog(`Dropped scroll: ${scrollName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${scrollName}!`, true);
+                addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${formatChatItemMention(scrollName)}!`, true);
             }
         }
     }
@@ -7218,6 +7238,76 @@ function getExpectedMergedItemName(baseName, mergeLevel) {
     return mergeLevel > 0 ? `${baseName} +${mergeLevel}` : baseName;
 }
 
+function parseMergeLevelFromItemName(name) {
+    if (typeof name !== 'string') return { baseName: name || '', mergeLevel: 0 };
+    const match = name.match(/^(.*) \+(\d+)$/);
+    if (!match) return { baseName: name, mergeLevel: 0 };
+    return {
+        baseName: match[1],
+        mergeLevel: Math.max(0, parseInt(match[2], 10) || 0)
+    };
+}
+
+function isMergeableSavedItem(baseItem, item = baseItem) {
+    if (!baseItem) return false;
+    const rarity = item?.rarity || baseItem.rarity;
+    return rarity === 'unique' || rarity === 'uber_unique' || !!item?.uberUnique || !!baseItem.uberUnique || !!item?.canMerge || !!baseItem.canMerge;
+}
+
+function getMergeMultiplierForStat(stat) {
+    const lowerStat = String(stat || '').toLowerCase();
+    if (lowerStat === 'atk' || lowerStat === 'atk%' || lowerStat === 'attack' || lowerStat === 'attack%') return 1.5;
+    if (lowerStat === 'def' || lowerStat === 'def%' || lowerStat === 'defense' || lowerStat === 'defense%') return 1.5;
+    if (lowerStat === 'crit' || lowerStat === 'crit%' || lowerStat === 'critchance' || lowerStat === 'crit_chance') return 1.1;
+    if (lowerStat === 'critdmg' || lowerStat === 'crit_dmg' || lowerStat === 'critdamage' || lowerStat === 'crit_damage') return 1.2;
+    return 1.15;
+}
+
+function rebuildMergedItemFromBase(baseName, mergeLevel, preservedItem = null) {
+    const base = getCanonicalItemByName(baseName);
+    if (!base || mergeLevel <= 0 || !isMergeableSavedItem(base, preservedItem || base)) return null;
+
+    const rebuilt = cloneData(base);
+    const nonScalingKeys = new Set([
+        'name', 'levelReq', 'specialAbility', 'uberUnique', 'equipSlot', 'type', 'rarity',
+        'desc', 'mergeLevel', 'canMerge', 'qty', 'equipped', 'equippedAt'
+    ]);
+
+    for (let i = 0; i < mergeLevel; i++) {
+        Object.keys(rebuilt).forEach(stat => {
+            if (nonScalingKeys.has(stat)) return;
+            if (typeof rebuilt[stat] !== 'number') return;
+            rebuilt[stat] = Math.ceil(rebuilt[stat] * getMergeMultiplierForStat(stat));
+        });
+    }
+
+    rebuilt.mergeLevel = mergeLevel;
+    rebuilt.canMerge = true;
+    rebuilt.name = getExpectedMergedItemName(baseName, mergeLevel);
+
+    if (preservedItem && typeof preservedItem === 'object') {
+        ['qty', 'equipped', 'equippedAt'].forEach(key => {
+            if (preservedItem[key] !== undefined) rebuilt[key] = cloneData(preservedItem[key]);
+        });
+    }
+
+    return ensureItemDescription(rebuilt);
+}
+
+function recoverMergeLevelFromItemName(item) {
+    if (!item || typeof item.name !== 'string') return item;
+
+    const { baseName, mergeLevel } = parseMergeLevelFromItemName(item.name);
+    if (mergeLevel <= 0) return item;
+
+    const base = getCanonicalItemByName(baseName);
+    if (!base || !isMergeableSavedItem(base, item)) return item;
+
+    if ((Number(item.mergeLevel) || 0) > 0) return item;
+
+    return rebuildMergedItemFromBase(baseName, mergeLevel, item) || item;
+}
+
 function humanizeSpecialAbility(ability) {
     const labels = {
         half_current_hp: 'Deals 50% of enemy current HP as bonus damage',
@@ -7327,9 +7417,13 @@ function decodeItemForSave(entry) {
         if (!base) return null;
         item = cloneData(base);
     } else if (typeof entry === 'string') {
-        const base = getCanonicalItemByName(entry);
+        const { baseName, mergeLevel } = parseMergeLevelFromItemName(entry);
+        const base = getCanonicalItemByName(entry) || getCanonicalItemByName(baseName);
         if (!base) return null;
         item = cloneData(base);
+        if (mergeLevel > 0) {
+            item = rebuildMergedItemFromBase(baseName, mergeLevel, { name: entry }) || item;
+        }
     } else if (Array.isArray(entry) && entry[0] === 'c') {
         item = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
     } else if (Array.isArray(entry)) {
@@ -7338,6 +7432,7 @@ function decodeItemForSave(entry) {
         if (!base) return null;
         const overrides = decodeAliasedObject(entry[1] || {}, SAVE_ITEM_KEY_FROM_ALIAS);
         item = { ...cloneData(base), ...overrides };
+        item = recoverMergeLevelFromItemName(item);
         if (item.mergeLevel > 0 && !overrides.name) {
             item.name = getExpectedMergedItemName(baseName, item.mergeLevel);
         }
@@ -7346,11 +7441,13 @@ function decodeItemForSave(entry) {
     }
 
     if (item.qty === 1) delete item.qty;
-    return normalizeScrollItemData(item);
+    return normalizeScrollItemData(recoverMergeLevelFromItemName(item));
 }
 
 function normalizeScrollItemData(item) {
     if (!item) return null;
+
+    item = recoverMergeLevelFromItemName(item);
 
     const scrollBase = scrollPool[item.name];
     if (!scrollBase && item.type !== 'scroll') {
@@ -8809,7 +8906,7 @@ function distributeWorldBossRewards() {
             const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
             addBattleMsg(`World Boss dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})!`, 'reward');
             addItemLog('worldboss', droppedItem.name);
-            addChatMessage('SYSTEM', `${playerName} received ${droppedItem.name} (${droppedItem.rarity}) from World Boss!`, true);
+            addChatMessage('SYSTEM', `${playerName} received ${formatChatItemMention(droppedItem)} (${droppedItem.rarity}) from World Boss!`, true);
         }
     }
     

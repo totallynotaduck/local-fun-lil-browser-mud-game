@@ -105,6 +105,27 @@ const decodedLegacyNumeric = context.decodeItemForSave(147);
 const encodedMerged = context.encodeItemForSave(mergedItem);
 const decodedMerged = context.decodeItemForSave(encodedMerged);
 
+const uniqueEntry = Object.entries(context.itemPool).find(([, item]) => item && item.rarity === 'unique');
+const uberUniqueEntry = Object.entries(context.itemPool).find(([, item]) => item && (item.rarity === 'uber_unique' || item.uberUnique));
+
+if (!uniqueEntry || !uberUniqueEntry) {
+    throw new Error('Unable to locate unique and uber unique test items');
+}
+
+const [uniqueBaseName, uniqueBaseItem] = uniqueEntry;
+const [uberBaseName, uberBaseItem] = uberUniqueEntry;
+
+function simulateMergeFromBase(baseItem, levels) {
+    let current = { ...baseItem, name: baseItem.name, mergeLevel: 0 };
+    for (let i = 0; i < levels; i++) {
+        current = context.mergeUberUniqueItems(current, { ...baseItem, name: baseItem.name, mergeLevel: 0 });
+    }
+    return current;
+}
+
+const expectedLegacyUnique = simulateMergeFromBase(uniqueBaseItem, 2);
+const expectedLegacyUber = simulateMergeFromBase(uberBaseItem, 1);
+
 const oldSchemaSave = {
     v: 2,
     t: Date.now(),
@@ -112,6 +133,33 @@ const oldSchemaSave = {
     i: [147, encodedMerged]
 };
 const restoredOld = context.restoreGameStateFromSaveData(JSON.stringify(oldSchemaSave));
+
+const oldCompactNameOnlySave = {
+    v: 2,
+    t: Date.now(),
+    p: {},
+    i: [
+        [uniqueBaseName, { n: `${uniqueBaseName} +2` }],
+        [uberBaseName, { n: `${uberBaseName} +1` }]
+    ]
+};
+const restoredCompactNameOnly = context.restoreGameStateFromSaveData(JSON.stringify(oldCompactNameOnlySave));
+const compactRecoveredItems = context.__gameState.inventory || [];
+const compactRecoveredUnique = compactRecoveredItems.find(item => item?.name === `${uniqueBaseName} +2`);
+const compactRecoveredUber = compactRecoveredItems.find(item => item?.name === `${uberBaseName} +1`);
+
+const legacyNameOnlySave = {
+    player: {},
+    inventory: [
+        { ...uniqueBaseItem, name: `${uniqueBaseName} +2` },
+        { ...uberBaseItem, name: `${uberBaseName} +1` }
+    ],
+    equipment: {}
+};
+const restoredLegacyNameOnly = context.restoreGameStateFromSaveData(JSON.stringify(legacyNameOnlySave));
+const legacyRecoveredItems = context.__gameState.inventory || [];
+const legacyRecoveredUnique = legacyRecoveredItems.find(item => item?.name === `${uniqueBaseName} +2`);
+const legacyRecoveredUber = legacyRecoveredItems.find(item => item?.name === `${uberBaseName} +1`);
 
 console.log(JSON.stringify({
     encodedSample,
@@ -122,5 +170,27 @@ console.log(JSON.stringify({
     decodedMergedName: decodedMerged?.name,
     decodedMergedMergeLevel: decodedMerged?.mergeLevel,
     restoredOld,
-    restoredInventoryNames: (context.__gameState.inventory || []).map(item => item?.name)
+    restoredInventoryNames: (context.__gameState.inventory || []).map(item => item?.name),
+    compactNameOnlyRestore: {
+        restoredCompactNameOnly,
+        uniqueName: compactRecoveredUnique?.name,
+        uniqueMergeLevel: compactRecoveredUnique?.mergeLevel,
+        uniqueAtk: compactRecoveredUnique?.atk,
+        uniqueExpectedAtk: expectedLegacyUnique?.atk,
+        uberName: compactRecoveredUber?.name,
+        uberMergeLevel: compactRecoveredUber?.mergeLevel,
+        uberDef: compactRecoveredUber?.def,
+        uberExpectedDef: expectedLegacyUber?.def
+    },
+    legacyNameOnlyRestore: {
+        restoredLegacyNameOnly,
+        uniqueName: legacyRecoveredUnique?.name,
+        uniqueMergeLevel: legacyRecoveredUnique?.mergeLevel,
+        uniqueAtk: legacyRecoveredUnique?.atk,
+        uniqueExpectedAtk: expectedLegacyUnique?.atk,
+        uberName: legacyRecoveredUber?.name,
+        uberMergeLevel: legacyRecoveredUber?.mergeLevel,
+        uberDef: legacyRecoveredUber?.def,
+        uberExpectedDef: expectedLegacyUber?.def
+    }
 }, null, 2));
