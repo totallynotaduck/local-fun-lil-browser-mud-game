@@ -1713,13 +1713,13 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
                 const shouldApplyGlobalMerge =
                     mergeLevel > 0 &&
                     (eq.rarity === 'unique' || eq.rarity === 'uber_unique' || eq.uberUnique || eq.canMerge) &&
-                    (stat === 'atk' || stat === 'def') &&
-                    canonicalBase &&
-                    typeof canonicalBase[stat] === 'number';
+                    (stat === 'atk' || stat === 'def');
+                const canUseCanonicalBaseStat = canonicalBase && typeof canonicalBase[stat] === 'number';
+                const hasIntrinsicStat = typeof eq[stat] === 'number';
 
                 // Add flat stat bonus
                 if (eq[stat]) {
-                    if (shouldApplyGlobalMerge && canonicalBase && typeof canonicalBase[stat] === 'number') {
+                    if (shouldApplyGlobalMerge && canUseCanonicalBaseStat) {
                         flatBonus += canonicalBase[stat];
                     } else {
                         flatBonus += eq[stat];
@@ -1756,7 +1756,7 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
                     }
                 }
 
-                if (shouldApplyGlobalMerge) {
+                if (shouldApplyGlobalMerge && (!hasIntrinsicStat || canUseCanonicalBaseStat)) {
                     globalMergeMultiplier *= Math.pow(1.5, mergeLevel);
                 }
             }

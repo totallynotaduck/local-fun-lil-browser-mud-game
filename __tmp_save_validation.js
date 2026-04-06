@@ -308,6 +308,62 @@ context.recalculateAllPlayerStats();
 const formulaScenarioAtk = context.getTotalAtk();
 const expectedFormulaScenarioAtk = Math.floor((100 + (formulaWeaponBase.atk || 0)) * 1.1 * 1.5);
 
+context.__gameState.player = {
+    ...context.__gameState.player,
+    atk: 10,
+    def: 5,
+    baseAtk: 10,
+    baseDef: 5,
+    baseCrit: 0
+};
+context.__gameState.equipment.weapon = null;
+context.__gameState.equipment.shield = null;
+context.__gameState.equipment.armor = null;
+context.__gameState.equipment.helmet = null;
+context.__gameState.equipment.ring = null;
+context.__gameState.equipment.boots = null;
+context.__gameState.equipment.gloves = null;
+context.__gameState.equipment.cape = null;
+context.__gameState.equipment.amulet = { ...expectedAmulet, equipped: true };
+context.recalculateAllPlayerStats();
+const amuletGlobalAtkTotal = context.getTotalAtk();
+const amuletGlobalDefTotal = context.getTotalDef();
+const expectedAmuletGlobalAtk = Math.floor(10 * Math.pow(1.5, 2));
+const expectedAmuletGlobalDef = Math.floor(5 * Math.pow(1.5, 2));
+
+context.__gameState.player = {
+    ...context.__gameState.player,
+    level: 19,
+    atk: 10,
+    def: 5,
+    baseAtk: 10,
+    baseDef: 5,
+    hp: 100,
+    maxHp: 100,
+    baseMaxHp: 100,
+    mp: 50,
+    maxMp: 50,
+    baseMaxMp: 50
+};
+context.__gameState.inventory = [{ ...expectedAmulet, qty: 1, equipped: false }];
+context.__gameState.equipment = {
+    weapon: null,
+    armor: null,
+    helmet: null,
+    shield: null,
+    ring: null,
+    amulet: null,
+    boots: null,
+    gloves: null,
+    cape: null
+};
+context.equipItem(0);
+const amuletEquipAtk = context.getTotalAtk();
+const amuletEquipDef = context.getTotalDef();
+context.unequipItem('amulet');
+const amuletUnequipAtk = context.getTotalAtk();
+const amuletUnequipDef = context.getTotalDef();
+
 function summarizeItem(item) {
     if (!item) return null;
     return {
@@ -436,5 +492,23 @@ console.log(JSON.stringify({
         mergeLevel: 1,
         totalAtk: formulaScenarioAtk,
         expectedTotalAtk: expectedFormulaScenarioAtk
+    },
+    amuletGlobalMergeTotals: {
+        item: 'Amulet of Vitality',
+        mergeLevel: 2,
+        totalAtk: amuletGlobalAtkTotal,
+        expectedTotalAtk: expectedAmuletGlobalAtk,
+        totalDef: amuletGlobalDefTotal,
+        expectedTotalDef: expectedAmuletGlobalDef
+    },
+    amuletEquipFlow: {
+        afterEquipAtk: amuletEquipAtk,
+        expectedAfterEquipAtk: expectedAmuletGlobalAtk,
+        afterEquipDef: amuletEquipDef,
+        expectedAfterEquipDef: expectedAmuletGlobalDef,
+        afterUnequipAtk: amuletUnequipAtk,
+        expectedAfterUnequipAtk: 10,
+        afterUnequipDef: amuletUnequipDef,
+        expectedAfterUnequipDef: 5
     }
 }, null, 2));
