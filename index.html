@@ -1237,6 +1237,10 @@ function getTradableInventoryEquipmentIndices() {
         .filter(({ item }) => {
             const slot = resolveEquipSlot(item);
             return !!slot &&
+                item.rarity !== 'legendary' &&
+                item.rarity !== 'unique' &&
+                item.rarity !== 'uber_unique' &&
+                item.uberUnique !== true &&
                 item.type !== 'material' &&
                 item.type !== 'currency' &&
                 item.type !== 'consumable' &&
@@ -1282,7 +1286,7 @@ function tradeWithPlayer(idx) {
 
     const tradableIndices = getTradableInventoryEquipmentIndices();
     if (tradableIndices.length === 0) {
-        addChatMessage('SYSTEM', 'You need at least one unequipped equipment item in your inventory to trade.', true);
+        addChatMessage('SYSTEM', 'You need at least one unequipped Common, Uncommon, Rare, or Epic equipment item in your inventory to trade.', true);
         return;
     }
 
