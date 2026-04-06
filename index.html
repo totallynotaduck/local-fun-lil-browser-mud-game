@@ -3875,7 +3875,7 @@ function startWanderingExpedition() {
 }
 
 function addWanderingLog(msg, type = 'info') {
-    gameState.wandering.log.unshift({ msg, type });
+    gameState.wandering.log.push({ msg, type });
     if (gameState.wandering.log.length > 100) gameState.wandering.log.shift();
 }
 
@@ -4306,12 +4306,10 @@ function renderWandering() {
     // Expedition log
     html += `<div class="section-title">Expedition Log</div>`;
     html += `<div class="battle-log" style="max-height:200px; border-left-color: #00ffff;">`;
-    w.log.slice(0, 15).forEach(log => {
+    w.log.slice(-15).reverse().forEach(log => {
         html += `<p class="${log.type}">${log.msg}</p>`;
     });
     html += `</div>`;
-    html += `</div>`;
-
     html += `</div>`;
 
     container.innerHTML = html;
