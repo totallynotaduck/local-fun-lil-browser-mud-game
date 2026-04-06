@@ -6908,7 +6908,7 @@ function encodeItemForSave(item) {
 
     const catalogBase = getCatalogBaseForItem(item);
     if (catalogBase) {
-        const { id, baseName, base } = catalogBase;
+        const { baseName, base } = catalogBase;
         const overrides = encodeAliasedDiffObject(item, base, SAVE_ITEM_KEY_ALIASES, {
             omitKeys: ['desc', 'equipped', 'equippedAt']
         });
@@ -6919,8 +6919,12 @@ function encodeItemForSave(item) {
             overrides[SAVE_ITEM_KEY_ALIASES.name] = item.name;
         }
 
-        if (Object.keys(overrides).length === 0) return id;
-        return [id, overrides];
+        // Save stable base item names instead of numeric catalog ids.
+        // Numeric ids can shift whenever the item catalog changes between updates,
+        // which can cause equipped items (especially weapons) to load as the wrong
+        // item or disappear entirely after a refresh/update.
+        if (Object.keys(overrides).length === 0) return baseName;
+        return [baseName, overrides];
     }
 
     return ['c', encodeAliasedDiffObject(item, null, SAVE_ITEM_KEY_ALIASES, {
