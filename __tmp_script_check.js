@@ -1,5 +1,3 @@
-
-
 // GAME STATE
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0, permanentAtkBonus: 0, permanentDefBonus: 0 },
@@ -4995,9 +4993,21 @@ function startJob(idx) {
 
 // CRAFTING
 let craftingStatusMessage = null;
+let craftingCraftableFilter = 'all';
+let craftingSortMode = 'default';
 
 function setCraftingStatus(message, type = 'info') {
     craftingStatusMessage = { message, type };
+}
+
+function setCraftingCraftableFilter(filterValue) {
+    craftingCraftableFilter = filterValue === 'craftable' ? 'craftable' : 'all';
+    renderCrafting();
+}
+
+function setCraftingSortMode(sortMode) {
+    craftingSortMode = sortMode === 'craftable' ? 'craftable' : 'default';
+    renderCrafting();
 }
 
 function getInventoryItemQuantity(itemName) {
@@ -6652,9 +6662,24 @@ function unequipScrollSlot(slotIndex) {
 // CRAFTING RENDER
 function renderCrafting() {
     const container = document.getElementById('crafting-screen-content');
-    
     let html = `<div class="section-title">Crafting Recipes</div>`;
     html += `<div class="description">Item names are colour-coded by rarity. Crafting a Unique item has a ${Math.round((globalThis.UNIQUE_CRAFT_UBER_DROP_CHANCE || 0.10) * 100)}% chance to also drop a bonus Uber Unique.</div>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:10px 0 15px 0;padding:10px;background-color:#141414;border:1px solid #333;border-radius:6px;">
+        <label style="display:flex;flex-direction:column;gap:4px;color:#aaa;font-size:0.8em;">
+            <span>Filter</span>
+            <select onchange="setCraftingCraftableFilter(this.value)" style="background-color:#111;border:1px solid #444;color:#00ff00;padding:6px 8px;font-family:'Courier New', monospace;">
+                <option value="all" ${craftingCraftableFilter === 'all' ? 'selected' : ''}>All Recipes</option>
+                <option value="craftable" ${craftingCraftableFilter === 'craftable' ? 'selected' : ''}>Craftable Only</option>
+            </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;color:#aaa;font-size:0.8em;">
+            <span>Sort</span>
+            <select onchange="setCraftingSortMode(this.value)" style="background-color:#111;border:1px solid #444;color:#00ff00;padding:6px 8px;font-family:'Courier New', monospace;">
+                <option value="default" ${craftingSortMode === 'default' ? 'selected' : ''}>Default Order</option>
+                <option value="craftable" ${craftingSortMode === 'craftable' ? 'selected' : ''}>Craftable First</option>
+            </select>
+        </label>
+    </div>`;
     if (craftingStatusMessage && craftingStatusMessage.message) {
         const messageColor = craftingStatusMessage.type === 'reward'
             ? '#44ff44'
@@ -6664,9 +6689,27 @@ function renderCrafting() {
             : (craftingStatusMessage.type === 'damage' ? '#882222' : '#333388');
         html += `<div class="battle-log" style="border-left-color:${messageColor};border:1px solid ${borderColor};max-height:none;margin-bottom:15px;"><p style="color:${messageColor}">${craftingStatusMessage.message}</p></div>`;
     }
-    
-    craftingRecipes.forEach((recipe, idx) => {
-        const can = canCraft(recipe);
+
+    const craftingRecipeEntries = craftingRecipes.map((recipe, idx) => ({
+        recipe,
+        idx,
+        canCraft: canCraft(recipe)
+    }));
+
+    const visibleCraftingRecipes = craftingRecipeEntries
+        .filter(entry => craftingCraftableFilter !== 'craftable' || entry.canCraft)
+        .sort((a, b) => {
+            if (craftingSortMode === 'craftable') {
+                if (a.canCraft !== b.canCraft) return a.canCraft ? -1 : 1;
+            }
+            return a.idx - b.idx;
+        });
+
+    if (visibleCraftingRecipes.length === 0) {
+        html += `<div class="msg">No crafting recipes match the current filter.</div>`;
+    }
+
+    visibleCraftingRecipes.forEach(({ recipe, idx, canCraft: can }) => {
         const resultItem = recipe.result || {};
         const meetsLevel = meetsCraftLevelRequirement(recipe);
         const recipeBorderColor = can
@@ -8470,7 +8513,7 @@ function buildMergedDescription(baseDescription, mergeLevel) {
 }
 
 function stripWeaponLuckDescription(desc) {
-    return String(desc || '').replace(/\n☘ Weapon Luck: \+\d+/g, '');
+    return String(desc || '').replace(/\n☘ (?:Weapon )?Luck: \+\d+/g, '');
 }
 
 function buildWeaponLuckDescription(baseDescription, item) {
