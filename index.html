@@ -6662,6 +6662,19 @@ function renderInventoryItemComparison(item, equippedItem) {
     return html;
 }
 
+function renderItemStatSummary(item) {
+    const statKeys = getComparableItemStatKeys(item, null);
+    if (statKeys.length === 0) return '';
+
+    let html = `<div class="item-compare-header">Item Stats</div>`;
+    statKeys.forEach(statKey => {
+        const itemValue = typeof item[statKey] === 'number' ? item[statKey] : 0;
+        html += `<div class="item-stat-comparison item-stat-better">${formatItemStatLabel(statKey)}: ${formatItemStatValue(statKey, itemValue)}</div>`;
+    });
+
+    return `<div style="margin-top:8px;">${html}</div>`;
+}
+
 function renderPurchasableItemComparison(item) {
     const slot = resolveEquipSlot(item);
     if (!slot) return '';
@@ -7044,11 +7057,13 @@ function renderCrafting() {
         const levelRequirementHtml = resultItem.levelReq
             ? `<div class="craft-materials" style="color:${meetsLevel ? '#888' : '#ff6666'}">Requires Level ${resultItem.levelReq}${meetsLevel ? '' : ` (You are Level ${gameState.player.level})`}</div>`
             : '';
+        const resultStatsHtml = renderItemStatSummary(resultItem);
 
         html += `<div class="craft-recipe" style="border-color: ${recipeBorderColor}">
             <div style="${resultStyle};font-weight:bold">${recipe.name} (${Math.floor(recipe.chance * 100)}% success)</div>
             <div class="craft-materials">Requires: ${materialsHtml}</div>
             <div class="craft-result">Result: <span style="${resultStyle}">${recipe.result.name}</span><span style="color:#888"> (${formatRarityLabel(resultItem.rarity)})</span></div>
+            ${resultStatsHtml}
             ${levelRequirementHtml}
             ${uniqueBonusHtml}
             <button class="action-btn craft-btn" onclick="craftItem(${idx})" ${can ? '' : 'disabled'}>Craft</button>
