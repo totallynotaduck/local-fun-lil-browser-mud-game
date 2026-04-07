@@ -474,6 +474,7 @@ const ENCHANT_RARITY_ROLL_RANGES = {
 const ENCHANT_POSITIVE_BUFF_EFFECTS = ['strength', 'shield', 'regeneration', 'haste', 'berserk'];
 const ENCHANT_FLAT_STAT_KEYS = new Set(['maxHp', 'atk', 'def', 'healthRegen']);
 const ENCHANT_PERCENT_STAT_KEYS = new Set(['hpPercent', 'atkPercent', 'defPercent', 'crit', 'critDmg', 'dodge', 'dmgReduction', 'attackSpeed']);
+const ENCHANT_DIRECT_PERCENT_STATS = new Set(['crit', 'critDmg', 'dodge', 'dmgReduction', 'attackSpeed']);
 const ENCHANT_BONUS_DEFINITIONS = [
     { kind: 'flat', stat: 'maxHp', min: 20, max: 200 },
     { kind: 'flat', stat: 'atk', min: 10, max: 100 },
@@ -1137,6 +1138,11 @@ function getEnchantPercentBaseStat(statKey) {
         case 'hpPercent': return 'maxHp';
         case 'atkPercent': return 'atk';
         case 'defPercent': return 'def';
+        case 'crit': return 'crit';
+        case 'critDmg': return 'critDmg';
+        case 'dodge': return 'dodge';
+        case 'dmgReduction': return 'dmgReduction';
+        case 'attackSpeed': return 'attackSpeed';
         default: return null;
     }
 }
@@ -2210,6 +2216,33 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
                         percentMultiplier += (eq['mpPercent'] / 100);
                     }
                 }
+
+                getEnchantBonuses(eq).forEach(bonus => {
+                    if (!bonus) return;
+
+                    if (bonus.kind === 'flat') {
+                        if (bonus.stat === stat) {
+                            flatBonus += bonus.value || 0;
+                        }
+                        if (stat === 'maxHp' && bonus.stat === 'hp') {
+                            flatBonus += bonus.value || 0;
+                        }
+                        return;
+                    }
+
+                    if (bonus.kind === 'percent') {
+                        if (ENCHANT_DIRECT_PERCENT_STATS.has(bonus.stat)) {
+                            if (bonus.stat === stat) {
+                                flatBonus += bonus.value || 0;
+                            }
+                            return;
+                        }
+                        const mappedStat = getEnchantPercentBaseStat(bonus.stat);
+                        if (mappedStat === stat) {
+                            percentMultiplier += ((bonus.value || 0) / 100);
+                        }
+                    }
+                });
 
                 if (shouldApplyGlobalMerge && (!hasIntrinsicStat || canUseCanonicalBaseStat)) {
                     globalMergeMultiplier *= Math.pow(1.5, mergeLevel);
@@ -4799,9 +4832,12 @@ function recalculateAllPlayerStats() {
                 if (!percentBonuses[baseStatName]) percentBonuses[baseStatName] = 0;
                 percentBonuses[baseStatName] += value;
             } else {
+                const normalizedStatKey = statKey === 'hp'
+                    ? 'maxHp'
+                    : (statKey === 'mp' ? 'maxMp' : statKey);
                 // Flat bonus stat
-                if (finalStats[statKey] === undefined) finalStats[statKey] = 0;
-                finalStats[statKey] += value;
+                if (finalStats[normalizedStatKey] === undefined) finalStats[normalizedStatKey] = 0;
+                finalStats[normalizedStatKey] += value;
             }
         });
 
@@ -4810,6 +4846,11 @@ function recalculateAllPlayerStats() {
                 if (finalStats[bonus.stat] === undefined) finalStats[bonus.stat] = 0;
                 finalStats[bonus.stat] += bonus.value || 0;
             } else if (bonus.kind === 'percent') {
+                if (ENCHANT_DIRECT_PERCENT_STATS.has(bonus.stat)) {
+                    if (finalStats[bonus.stat] === undefined) finalStats[bonus.stat] = 0;
+                    finalStats[bonus.stat] += bonus.value || 0;
+                    return;
+                }
                 const baseStatName = getEnchantPercentBaseStat(bonus.stat);
                 if (!baseStatName) return;
                 if (!percentBonuses[baseStatName]) percentBonuses[baseStatName] = 0;

@@ -118,6 +118,11 @@ globalThis.__testApi = {
     attackWorldBoss,
     useItem,
     recalculateAllPlayerStats,
+    getTotalAtk,
+    getTotalDef,
+    getTotalCrit,
+    getTotalCritDmg,
+    getTotalMaxHp,
     getTotalHealthRegen,
     autoRegen
 };
@@ -497,11 +502,115 @@ function runRegenBehaviorTests() {
     assert.strictEqual(api.gameState.player.mp, 13, 'natural mana regen should still tick during world boss combat');
 }
 
+function runEnchantStatAggregationTests() {
+    const weaponWithEnchant = {
+        name: 'Test Enchanted Blade',
+        type: 'weapon',
+        equipSlot: 'weapon',
+        rarity: 'legendary',
+        atk: 10,
+        desc: 'Test weapon',
+        enchantBonusStats: []
+    };
+
+    const cases = [
+        {
+            label: 'ATK',
+            setup() {
+                api.gameState.equipment.weapon = {
+                    ...weaponWithEnchant,
+                    enchantBonusStats: [{ kind: 'flat', stat: 'atk', value: 25 }]
+                };
+            },
+            getter: () => api.getTotalAtk(),
+            expected: 45,
+            playerField: 'atk'
+        },
+        {
+            label: 'DEF',
+            setup() {
+                api.gameState.equipment.armor = {
+                    name: 'Test Enchanted Armor',
+                    type: 'armor',
+                    equipSlot: 'armor',
+                    rarity: 'legendary',
+                    def: 7,
+                    desc: 'Test armor',
+                    enchantBonusStats: [{ kind: 'flat', stat: 'def', value: 13 }]
+                };
+            },
+            getter: () => api.getTotalDef(),
+            expected: 25,
+            playerField: 'def'
+        },
+        {
+            label: 'HP',
+            setup() {
+                api.gameState.equipment.amulet = {
+                    name: 'Test Enchanted Amulet',
+                    type: 'amulet',
+                    equipSlot: 'amulet',
+                    rarity: 'legendary',
+                    hp: 40,
+                    desc: 'Test amulet',
+                    enchantBonusStats: [{ kind: 'percent', stat: 'hpPercent', value: 20 }]
+                };
+            },
+            getter: () => api.getTotalMaxHp(),
+            expected: 168,
+            playerField: 'maxHp'
+        },
+        {
+            label: 'CRIT',
+            setup() {
+                api.gameState.equipment.ring = {
+                    name: 'Test Enchanted Ring',
+                    type: 'ring',
+                    equipSlot: 'ring',
+                    rarity: 'legendary',
+                    crit: 5,
+                    desc: 'Test ring',
+                    enchantBonusStats: [{ kind: 'percent', stat: 'crit', value: 17 }]
+                };
+            },
+            getter: () => api.getTotalCrit(),
+            expected: 22
+        },
+        {
+            label: 'CRITDMG',
+            setup() {
+                api.gameState.equipment.gloves = {
+                    name: 'Test Enchanted Gloves',
+                    type: 'gloves',
+                    equipSlot: 'gloves',
+                    rarity: 'legendary',
+                    critDmg: 10,
+                    desc: 'Test gloves',
+                    enchantBonusStats: [{ kind: 'percent', stat: 'critDmg', value: 25 }]
+                };
+            },
+            getter: () => api.getTotalCritDmg(),
+            expected: 85
+        }
+    ];
+
+    for (const testCase of cases) {
+        resetState();
+        testCase.setup();
+        api.recalculateAllPlayerStats();
+        assert.strictEqual(testCase.getter(), testCase.expected, `${testCase.label} enchant bonus should apply to total stats`);
+        if (testCase.playerField) {
+            assert.strictEqual(api.gameState.player[testCase.playerField], testCase.expected, `${testCase.label} enchant bonus should apply to player field ${testCase.playerField}`);
+        }
+    }
+}
+
 function runAllTests() {
     runStatusTemplateCoverageTests();
     runCombatPathIntegrationTests();
     runItemPathIntegrationTests();
     runRegenBehaviorTests();
+    runEnchantStatAggregationTests();
 }
 
 try {
