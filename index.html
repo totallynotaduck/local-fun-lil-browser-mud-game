@@ -3664,7 +3664,7 @@ function generateEnemy(location, isBoss = false, options = {}) {
 }
 
 // ITEM DROP SYSTEM WITH RARITY RATES
-// Common: 62.04%, Uncommon: 25%, Rare: 10%, Epic: 1.83%, Legendary: 0.67%, Unique: 0.45%, Uber Unique: 0.01%
+// Common: 62.04%, Uncommon: 25%, Rare: 10%, Epic: 1.83%, Legendary: 0.67%, Unique: 0.0225%, Uber Unique: 0.0005%
 function getItemDropByRarity() {
     let targetRarity = getModifiedItemRarity({
         common: 62.04,
@@ -3672,11 +3672,11 @@ function getItemDropByRarity() {
         rare: 10,
         epic: 1.83,
         legendary: 0.67,
-        unique: 0.45,
-        uber_unique: 0.01
+        unique: 0.0225,
+        uber_unique: 0.0005
     }) || 'common';
 
-    if (targetRarity === 'unique' && Math.random() < 0.10) {
+    if (targetRarity === 'unique' && Math.random() < 0.005) {
         targetRarity = 'uber_unique';
     }
 
@@ -3686,19 +3686,32 @@ function getItemDropByRarity() {
 // Get item drop with level cap based on ENEMY TIER, not player level
 // Enemy tier 0-10 maps directly to maximum item level requirement
 // Tier 0 = max level 5, Tier 1 = max level 10, Tier 5 = max level 30, Tier 10 = max level 60
+function getPlayerItemDropLevelCap(enemyTier = Infinity) {
+    const enemyTierCap = Number.isFinite(enemyTier) ? Math.max(0, enemyTier) * 6 : Infinity;
+    const playerLevelCap = (gameState?.player?.level || 1) + 5;
+    return Math.min(enemyTierCap, playerLevelCap);
+}
+
+function isEligibleEquipmentDrop(item, maxItemLevel) {
+    return !!(
+        item &&
+        item.equipSlot &&
+        item.type !== 'material' &&
+        item.type !== 'currency' &&
+        item.type !== 'consumable' &&
+        (!item.levelReq || item.levelReq <= maxItemLevel)
+    );
+}
+
 function getLeveledItemDrop(targetRarity, enemyTier) {
-    // Calculate maximum allowed item level based on enemy tier
-    const maxItemLevel = enemyTier * 6;
+    // Items must satisfy both the encounter cap and the player level + 5 cap.
+    const maxItemLevel = getPlayerItemDropLevelCap(enemyTier);
     
     // Filter items by rarity and level requirement matching enemy strength
     const allItems = Object.values(itemPool);
     const matchingItems = allItems.filter(item => 
-        item.rarity === targetRarity && 
-        item.equipSlot &&
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable' &&
-        (!item.levelReq || item.levelReq <= maxItemLevel)
+        item.rarity === targetRarity &&
+        isEligibleEquipmentDrop(item, maxItemLevel)
     );
     
     if (matchingItems.length > 0) {
@@ -3711,12 +3724,8 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     
     for (let i = currentIdx + 1; i < rarityOrder.length; i++) {
         const fallbackItems = allItems.filter(item => 
-            item.rarity === rarityOrder[i] && 
-            item.equipSlot && 
-            item.type !== 'material' && 
-            item.type !== 'currency' &&
-            item.type !== 'consumable' &&
-            (!item.levelReq || item.levelReq <= maxItemLevel)
+            item.rarity === rarityOrder[i] &&
+            isEligibleEquipmentDrop(item, maxItemLevel)
         );
         
         if (fallbackItems.length > 0) {
@@ -3725,13 +3734,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     }
     
     // Final fallback: any item that fits level cap
-    const anyLevelItems = allItems.filter(item => 
-        item.equipSlot && 
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable' &&
-        (!item.levelReq || item.levelReq <= maxItemLevel)
-    );
+    const anyLevelItems = allItems.filter(item => isEligibleEquipmentDrop(item, maxItemLevel));
     
     if (anyLevelItems.length > 0) {
         return pick(anyLevelItems);
@@ -5054,6 +5057,7 @@ function generateGuildQuest(rarity) {
     
     const template = pick(templates);
     const playerLevel = gameState.player.level;
+    const location = getEnemyQuestLocationKey(template.target);
     
     // Scale count and rewards based on player level
     const levelScale = 1 + Math.floor(playerLevel / 10) * 0.2;
@@ -5065,6 +5069,7 @@ function generateGuildQuest(rarity) {
         name: template.name,
         desc: template.desc.replace('{count}', count),
         target: template.target,
+        location,
         count: count,
         reward,
         rarity: rarity,
@@ -5221,6 +5226,7 @@ function renderGuildQuests() {
         const progress = gameState.guildQuestProgress[quest.id || idx] || 0;
         const complete = quest.accepted && progress >= quest.count;
         const color = rarityColors[quest.rarity] || '#aaa';
+        const locationName = locations[quest.location]?.name || humanizeQuestTarget(quest.location || getEnemyQuestLocationKey(quest.target));
         
         html += `<div class="quest-item" style="border-color: ${color}">
             <div style="display:flex;justify-content:space-between;align-items:center">
@@ -5228,6 +5234,7 @@ function renderGuildQuests() {
                 <span style="color:${color};font-size:0.8em;font-weight:bold">[${quest.rarity.toUpperCase()}]</span>
             </div>
             <div class="description">${quest.desc}</div>
+            <div style="color:#888;font-size:0.85em">Target Zone: ${locationName}</div>
             <div style="color:#aaa;font-size:0.85em">
                 Reward: ${quest.reward.xp} XP, ${quest.reward.gold} Gold
                 ${quest.reward.soulGem ? '<span style="color:#ff00ff;font-weight:bold"> + 1 Soul Gem</span>' : ''}
@@ -6136,8 +6143,8 @@ function generateMerchantItems() {
         let item;
         let price;
         
-        if (rarityRoll < 0.01 && uniqueItems.length > 0) {
-            // 1% chance for unique
+        if (rarityRoll < 0.0005 && uniqueItems.length > 0) {
+            // 0.05% chance for unique
             item = pick(uniqueItems);
             price = getVendorPriceForRarity('unique');
         } else if (rarityRoll < 0.06 && legendaryItems.length > 0) {
@@ -6224,14 +6231,13 @@ function getWanderItemDrop(rankMultiplier = 1) {
         legendary: 2 * safeMultiplier
     }) || 'common';
     
+    const maxItemLevel = getPlayerItemDropLevelCap(Infinity);
+
     // Filter items of this rarity (equipment only, not materials/consumables/currency)
     const allItems = Object.values(itemPool);
     const matchingItems = allItems.filter(item => 
-        item.rarity === targetRarity && 
-        item.equipSlot && 
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable'
+        item.rarity === targetRarity &&
+        isEligibleEquipmentDrop(item, maxItemLevel)
     );
     
     if (matchingItems.length > 0) {
@@ -6239,7 +6245,9 @@ function getWanderItemDrop(rankMultiplier = 1) {
     }
     
     // Fallback to any item of that rarity
-    const fallbackItems = allItems.filter(item => item.rarity === targetRarity);
+    const fallbackItems = allItems.filter(item => 
+        item.rarity === targetRarity && isEligibleEquipmentDrop(item, maxItemLevel)
+    );
     if (fallbackItems.length > 0) {
         return { ...pick(fallbackItems) };
     }
@@ -6391,8 +6399,8 @@ function getRankScaledItemRarity(rankMultiplier = 1) {
         rare: 10 * Math.sqrt(safeMultiplier),
         epic: 1.83 * safeMultiplier,
         legendary: 0.67 * safeMultiplier,
-        unique: 0.45 * safeMultiplier,
-        uber_unique: 0.01 * safeMultiplier
+        unique: 0.0225 * safeMultiplier,
+        uber_unique: 0.0005 * safeMultiplier
     }) || 'common';
 }
 
@@ -10607,9 +10615,9 @@ function distributeWorldBossRewards() {
             rare: 25,
             epic: 20,
             legendary: 5,
-            unique: 1
+            unique: 0.05
         }) || 'uncommon';
-        if (targetRarity === 'unique' && Math.random() < 0.10) {
+        if (targetRarity === 'unique' && Math.random() < 0.005) {
             targetRarity = 'uber_unique';
         }
         const droppedItem = getLeveledItemDrop(targetRarity, boss.tier);

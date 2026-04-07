@@ -283,7 +283,7 @@ const SPECIAL_CRAFTING_RECIPES = [
 ];
 
 const craftingRecipes = [];
-const UNIQUE_CRAFT_UBER_DROP_CHANCE = 0.10;
+const UNIQUE_CRAFT_UBER_DROP_CHANCE = 0.005;
 
 const CRAFTABLE_EQUIP_TYPES = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape', 'charm'];
 const RECIPE_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique', 'uber_unique'];
@@ -579,9 +579,9 @@ const rarityMultipliers = { common: 1, uncommon: 1.5, rare: 2, epic: 3, legendar
         if (r < 0.92) return 'rare';
         if (r < 0.99) return 'epic';
         if (r < 0.998) return 'legendary';
-        // When unique would drop, 1/10 chance it becomes Uber Unique
+        // Unique / Uber Unique generation is heavily nerfed
         if (r < 0.9998) {
-            return Math.random() < 0.1 ? 'uber_unique' : 'unique';
+            return Math.random() < 0.005 ? 'uber_unique' : 'unique';
         }
         return 'uber_unique';
     }
