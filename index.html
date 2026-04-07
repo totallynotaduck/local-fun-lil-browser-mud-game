@@ -157,6 +157,13 @@
         .quicksell-level-field { display: flex; flex-direction: column; gap: 4px; color: #aaa; font-size: 0.8em; }
         .quicksell-level-field input { width: 100px; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 6px 8px; font-family: 'Courier New', monospace; }
         .quicksell-summary { color: #888; font-size: 0.85em; margin-bottom: 8px; }
+        .inventory-filter-panel { background-color: #1a1a1a; border: 1px solid #444; padding: 12px; margin: 0 0 15px 0; border-radius: 6px; }
+        .inventory-filter-title { color: #00ffff; font-weight: bold; margin-bottom: 8px; }
+        .inventory-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+        .inventory-filter-field { display: flex; flex-direction: column; gap: 4px; color: #aaa; font-size: 0.8em; }
+        .inventory-filter-field input, .inventory-filter-field select { width: 100%; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 6px 8px; font-family: 'Courier New', monospace; }
+        .inventory-filter-summary { color: #888; font-size: 0.85em; }
+        .inventory-filter-actions { display: flex; justify-content: flex-end; }
         .progress-bar { width: 150px; height: 15px; background-color: #333; overflow: hidden; }
         .progress-fill { height: 100%; background-color: #4444ff; }
         .log-entry { padding: 4px 0; border-bottom: 1px solid #222; font-size: 0.8em; color: #aaa; }
@@ -499,6 +506,19 @@ const WANDER_COMPLETION_CONGRATS = [
     'I would have folded halfway through that {rank} expedition, {player}.',
     '{player} finished the whole {rank} wander? That build is filthy.'
 ];
+
+const LEGACY_ITEM_NAME_ALIASES = {
+    'Void Reaper': 'Void Scythe'
+};
+
+const INVENTORY_FILTER_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique', 'uber_unique'];
+let inventoryViewFilters = {
+    search: '',
+    rarity: 'all',
+    type: 'all',
+    minLevel: '',
+    maxLevel: ''
+};
 
 // Transient per-battle scroll usage state
 let combatScrollState = {
@@ -3314,6 +3334,86 @@ function getInventoryQuicksellRarities() {
     return [...orderedRarities, ...extraRarities];
 }
 
+function normalizeInventoryViewFilters() {
+    const normalizeBound = value => {
+        if (value === '' || value === null || value === undefined) return '';
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return '';
+        return Math.max(0, parsed);
+    };
+
+    inventoryViewFilters = {
+        search: String(inventoryViewFilters?.search || ''),
+        rarity: inventoryViewFilters?.rarity || 'all',
+        type: inventoryViewFilters?.type || 'all',
+        minLevel: normalizeBound(inventoryViewFilters?.minLevel),
+        maxLevel: normalizeBound(inventoryViewFilters?.maxLevel)
+    };
+
+    return inventoryViewFilters;
+}
+
+function getInventoryFilterTypeOptions() {
+    const types = new Set();
+    gameState.inventory.forEach(item => {
+        const type = resolveEquipSlot(item) || item?.type;
+        if (type) types.add(String(type));
+    });
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+}
+
+function getInventoryFilterRarityOptions() {
+    const raritySet = new Set(gameState.inventory.map(item => item?.rarity).filter(Boolean));
+    const ordered = INVENTORY_FILTER_RARITY_ORDER.filter(rarity => raritySet.has(rarity));
+    const extras = Array.from(raritySet).filter(rarity => !ordered.includes(rarity)).sort((a, b) => a.localeCompare(b));
+    return [...ordered, ...extras];
+}
+
+function doesInventoryItemMatchFilters(item) {
+    if (!item) return false;
+
+    const filters = normalizeInventoryViewFilters();
+    const search = filters.search.trim().toLowerCase();
+    const itemType = String(resolveEquipSlot(item) || item.type || '').toLowerCase();
+    const itemLevel = Number.isFinite(item.levelReq) ? item.levelReq : 0;
+    const haystack = [item.name, item.desc, item.rarity, item.type, item.equipSlot]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    if (search && !haystack.includes(search)) return false;
+    if (filters.rarity !== 'all' && item.rarity !== filters.rarity) return false;
+    if (filters.type !== 'all' && itemType !== String(filters.type).toLowerCase()) return false;
+    if (filters.minLevel !== '' && itemLevel < filters.minLevel) return false;
+    if (filters.maxLevel !== '' && itemLevel > filters.maxLevel) return false;
+
+    return true;
+}
+
+function getFilteredInventoryEntries() {
+    return gameState.inventory
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => doesInventoryItemMatchFilters(item));
+}
+
+function setInventoryViewFilter(key, value) {
+    if (!['search', 'rarity', 'type', 'minLevel', 'maxLevel'].includes(key)) return;
+    inventoryViewFilters[key] = value;
+    normalizeInventoryViewFilters();
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) renderInventory();
+}
+
+function resetInventoryViewFilters() {
+    inventoryViewFilters = {
+        search: '',
+        rarity: 'all',
+        type: 'all',
+        minLevel: '',
+        maxLevel: ''
+    };
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) renderInventory();
+}
+
 function normalizeInventoryQuicksellFilters() {
     const nextFilters = {};
     getInventoryQuicksellRarities().forEach(rarity => {
@@ -4636,6 +4736,7 @@ function addToInventory(item, options = {}) {
     delete copy.marketId;
     delete copy.merchantPrice;
     if (copy.type && typeof copy.type === 'string') copy.type = copy.type.trim().toLowerCase();
+    copy.name = getCanonicalItemName(copy.name);
     if (copy.luck && !allowedLuckTypes.includes(copy.type)) {
         delete copy.luck;
     }
@@ -6693,11 +6794,51 @@ function renderPurchasableItemComparison(item) {
 // INVENTORY RENDER
 function renderInventory() {
     const container = document.getElementById('inventory-screen-content');
+    const inventoryFilters = normalizeInventoryViewFilters();
     const quicksellRarities = getInventoryQuicksellRarities();
     const quicksellAvailability = getInventoryQuicksellAvailability();
     const quicksellSummary = getInventoryQuicksellSummary();
+    const filteredInventory = getFilteredInventoryEntries();
+    const rarityOptions = getInventoryFilterRarityOptions();
+    const typeOptions = getInventoryFilterTypeOptions();
     
-    let html = `<div class="section-title">Inventory (${gameState.inventory.length} items)</div>`;
+    let html = `<div class="section-title">Inventory (${filteredInventory.length}/${gameState.inventory.length} items shown)</div>`;
+
+    html += `<div class="inventory-filter-panel">
+        <div class="inventory-filter-title">Inventory Filters</div>
+        <div class="inventory-filter-grid">
+            <label class="inventory-filter-field">
+                <span>Search</span>
+                <input type="text" value="${escapeHtml(inventoryFilters.search)}" oninput="setInventoryViewFilter('search', this.value)" placeholder="Search name, desc, rarity...">
+            </label>
+            <label class="inventory-filter-field">
+                <span>Rarity</span>
+                <select onchange="setInventoryViewFilter('rarity', this.value)">
+                    <option value="all" ${inventoryFilters.rarity === 'all' ? 'selected' : ''}>All Rarities</option>
+                    ${rarityOptions.map(rarity => `<option value="${rarity}" ${inventoryFilters.rarity === rarity ? 'selected' : ''}>${formatRarityLabel(rarity)}</option>`).join('')}
+                </select>
+            </label>
+            <label class="inventory-filter-field">
+                <span>Item Type</span>
+                <select onchange="setInventoryViewFilter('type', this.value)">
+                    <option value="all" ${inventoryFilters.type === 'all' ? 'selected' : ''}>All Types</option>
+                    ${typeOptions.map(type => `<option value="${type}" ${inventoryFilters.type === type ? 'selected' : ''}>${formatItemTypeLabel({ type })}</option>`).join('')}
+                </select>
+            </label>
+            <label class="inventory-filter-field">
+                <span>Min Level</span>
+                <input type="number" min="0" step="1" value="${inventoryFilters.minLevel}" oninput="setInventoryViewFilter('minLevel', this.value)" placeholder="Any">
+            </label>
+            <label class="inventory-filter-field">
+                <span>Max Level</span>
+                <input type="number" min="0" step="1" value="${inventoryFilters.maxLevel}" oninput="setInventoryViewFilter('maxLevel', this.value)" placeholder="Any">
+            </label>
+        </div>
+        <div class="inventory-filter-actions">
+            <button class="action-btn" onclick="resetInventoryViewFilters()">Clear Filters</button>
+        </div>
+        <div class="inventory-filter-summary">Showing ${filteredInventory.length} of ${gameState.inventory.length} inventory entr${gameState.inventory.length === 1 ? 'y' : 'ies'}.</div>
+    </div>`;
 
     if (quicksellRarities.length > 0) {
         normalizeInventoryQuicksellFilters();
@@ -6742,9 +6883,11 @@ function renderInventory() {
     
     if (gameState.inventory.length === 0) {
         html += `<div class="msg">Inventory is empty</div>`;
+    } else if (filteredInventory.length === 0) {
+        html += `<div class="msg">No inventory items match the current filters</div>`;
     }
     
-    gameState.inventory.forEach((item, idx) => {
+    filteredInventory.forEach(({ item, idx }) => {
         const slot = resolveEquipSlot(item);
         const equippedItem = slot ? gameState.equipment[slot] : null;
         const canEquip = slot && (!item.levelReq || gameState.player.level >= item.levelReq);
@@ -8674,14 +8817,22 @@ SAVE_ITEM_CATALOG.forEach((name, index) => {
     SAVE_ITEM_ID_TO_NAME[id] = name;
 });
 
+function getCanonicalItemName(name) {
+    if (!name) return name;
+    const { baseName, mergeLevel } = parseMergeLevelFromItemName(String(name));
+    const canonicalBaseName = LEGACY_ITEM_NAME_ALIASES[baseName] || baseName;
+    return mergeLevel > 0 ? `${canonicalBaseName} +${mergeLevel}` : canonicalBaseName;
+}
+
 function getCanonicalItemByName(name) {
     if (!name) return null;
-    return itemPool[name] || scrollPool[name] || SAVE_ITEM_BASE_EXTRAS[name] || null;
+    const canonicalName = getCanonicalItemName(name);
+    return itemPool[canonicalName] || scrollPool[canonicalName] || SAVE_ITEM_BASE_EXTRAS[canonicalName] || null;
 }
 
 function getCatalogBaseForItem(item) {
     if (!item || !item.name) return null;
-    const baseName = item.name.replace(/ \+\d+$/, '');
+    const baseName = getCanonicalItemName(item.name.replace(/ \+\d+$/, ''));
     const base = getCanonicalItemByName(baseName);
     if (!base) return null;
     return { id: baseName, baseName, base };
@@ -8783,6 +8934,8 @@ function rebuildMergedItemFromBase(baseName, mergeLevel, preservedItem = null) {
 
 function recoverMergeLevelFromItemName(item) {
     if (!item || typeof item.name !== 'string') return item;
+
+    item.name = getCanonicalItemName(item.name);
 
     const { baseName, mergeLevel } = parseMergeLevelFromItemName(item.name);
     if (mergeLevel <= 0) return item;
@@ -9047,6 +9200,7 @@ function normalizeScrollItemData(item) {
     if (!item) return null;
 
     item = recoverMergeLevelFromItemName(item);
+    item.name = getCanonicalItemName(item.name);
     item.enchantBonusStats = normalizeEnchantBonuses(item.enchantBonusStats);
     if (!item.enchantBonusStats.length) delete item.enchantBonusStats;
 
@@ -9268,6 +9422,14 @@ function sanitizeLoadedStateData(state) {
     state.forceRefreshCost = normalizeFiniteNumber(state.forceRefreshCost, INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCost, { min: 0 });
     state.forceRefreshCount = normalizeFiniteNumber(state.forceRefreshCount, INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCount, { min: 0 });
     state.marketForceRefreshCost = normalizeFiniteNumber(state.marketForceRefreshCost, INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCost, { min: 0 });
+    state.inventory = (Array.isArray(state.inventory) ? state.inventory : [])
+        .map(item => item ? normalizeScrollItemData(item) : null)
+        .filter(Boolean);
+    SAVE_EQUIPMENT_SLOT_KEYS.forEach(slot => {
+        if (state.equipment?.[slot]) state.equipment[slot] = normalizeScrollItemData(state.equipment[slot]);
+    });
+    state.equippedScrolls = (Array.isArray(state.equippedScrolls) ? state.equippedScrolls : [])
+        .map(scroll => scroll ? normalizeScrollItemData(scroll) : null);
     state.marketForceRefreshCount = normalizeFiniteNumber(state.marketForceRefreshCount, INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCount, { min: 0 });
     state.scrollSlots = normalizeFiniteNumber(state.scrollSlots, INITIAL_GAME_STATE_SNAPSHOT.scrollSlots, { min: 1, max: INITIAL_GAME_STATE_SNAPSHOT.scrollSlots });
     state.unlockedScrollSlots = normalizeFiniteNumber(state.unlockedScrollSlots, INITIAL_GAME_STATE_SNAPSHOT.unlockedScrollSlots, { min: 1, max: state.scrollSlots });

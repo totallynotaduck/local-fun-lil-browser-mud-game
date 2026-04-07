@@ -67,7 +67,7 @@ const itemPool = {
     // WEAPONS - Level 35-50 (Epic)
     'Shadow Staff': { name: 'Shadow Staff', type: 'weapon', equipSlot: 'weapon', atk: 50, levelReq: 35, desc: '+50 ATK | 35% chance to Silence target', rarity: 'epic', onHitDebuff: { effect: 'silence', chance: 35 } },
     'Infernal Blade': { name: 'Infernal Blade', type: 'weapon', equipSlot: 'weapon', atk: 65, levelReq: 40, desc: '+65 ATK | 50% chance to Burn target', rarity: 'epic', onHitDebuff: { effect: 'burn', chance: 50 } },
-    'Void Reaper': { name: 'Void Reaper', type: 'weapon', equipSlot: 'weapon', atk: 80, levelReq: 45, desc: '+80 ATK | 40% chance to Exhaust target', rarity: 'epic', onHitDebuff: { effect: 'exhaustion', chance: 40 } },
+    'Void Scythe': { name: 'Void Scythe', type: 'weapon', equipSlot: 'weapon', atk: 80, levelReq: 45, desc: '+80 ATK | 40% chance to Exhaust target', rarity: 'epic', onHitDebuff: { effect: 'exhaustion', chance: 40 } },
     'Doom Bringer': { name: 'Doom Bringer', type: 'weapon', equipSlot: 'weapon', atk: 100, levelReq: 50, desc: '+100 ATK | 30% chance to make target Vulnerable', rarity: 'epic', onHitDebuff: { effect: 'vulnerability', chance: 30 } },
     
     // WEAPONS - Level 50-60 (Legendary)
