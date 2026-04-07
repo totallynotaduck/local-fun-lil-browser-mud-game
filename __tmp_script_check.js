@@ -1,301 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Realm of Shadows - Text MUD</title>
-    <svg style="position: absolute; width: 0; height: 0;">
-        <defs>
-            <linearGradient id="rainbow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#ff0000" />
-                <stop offset="16%" stop-color="#ff7700" />
-                <stop offset="33%" stop-color="#ffff00" />
-                <stop offset="50%" stop-color="#00ff00" />
-                <stop offset="66%" stop-color="#00ffff" />
-                <stop offset="83%" stop-color="#0077ff" />
-                <stop offset="100%" stop-color="#ff00ff" />
-            </linearGradient>
-        </defs>
-    </svg>
-    <style>
-        /* SVG definitions for gradients */
-        .svg-defs { position: absolute; width: 0; height: 0; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background-color: #0a0a0a; color: #00ff00; font-family: 'Courier New', monospace; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 10px; }
-        #game-container { width: 100%; max-width: 950px; background-color: #111; border: 2px solid #00ff00; border-radius: 5px; overflow: hidden; display: flex; flex-direction: column; height: calc(100vh - 20px); }
-        #header { background: linear-gradient(to right, #003300, #006600, #003300); padding: 15px; text-align: center; border-bottom: 2px solid #00ff00; }
-        #header h1 { font-size: 1.8em; text-shadow: 0 0 10px #00ff00; }
-        #stats-bar { display: flex; justify-content: space-between; padding: 10px 15px; background-color: #1a1a1a; border-bottom: 1px solid #333; font-size: 0.85em; flex-wrap: wrap; }
-        .stat { display: flex; gap: 5px; }
-        .stat-label { color: #888; }
-        .stat-value { color: #00ff00; }
-        .stat-value.hp { color: #ff4444; }
-        .stat-value.mp { color: #4444ff; }
-        .stat-value.gold { color: #ffd700; }
-        .stat-value.xp { color: #ff66ff; }
-        .stat-value.soul { color: #ff00ff; }
-        #navigation { display: flex; flex-wrap: wrap; background-color: #1a1a1a; border-bottom: 1px solid #333; }
-        .nav-btn { flex: 1 0 auto; width: calc(100% / 6); padding: 8px 5px; background: none; border: none; color: #666; font-family: 'Courier New', monospace; font-size: 0.75em; cursor: pointer; transition: all 0.3s; border-right: 1px solid #333; border-bottom: 1px solid #333; white-space: nowrap; text-align: center; }
-        .nav-btn:nth-child(6n) { border-right: none; }
-        .nav-btn:hover { background-color: #2a2a2a; color: #00ff00; }
-        .nav-btn.active { background-color: #003300; color: #00ff00; }
-        .nav-btn.alert { animation: alertPulse 1s infinite; background-color: #663300; color: #ffd700; }
-        .nav-btn:disabled { background-color: #222; color: #555; cursor: not-allowed; }
-        @keyframes alertPulse { 0%,100% { background-color: #663300; } 50% { background-color: #996600; } }
-        #status-banner { display: none; background-color: #330000; border-bottom: 1px solid #ff4444; color: #ffaaaa; padding: 8px 12px; font-size: 0.8em; text-align: center; }
-        #item-announcement { display: none; background: linear-gradient(135deg, #221100, #442200); border-bottom: 1px solid #ffaa00; color: #ffe0a3; padding: 10px 14px; text-align: center; }
-        #item-announcement-title { color: #ffd700; font-size: 0.95em; font-weight: bold; margin-bottom: 4px; }
-        #item-announcement-body { font-size: 0.85em; }
-        .profile-input { width: 100%; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 8px 10px; font-family: 'Courier New', monospace; margin-top: 6px; }
-        .profile-field { margin-bottom: 14px; }
-        .profile-label { color: #aaa; font-size: 0.85em; }
-        #game-layout { display: flex; gap: 0; flex: 1; min-height: 0; overflow: hidden; }
-        #left-panel { width: 200px; background-color: #0d0d0d; border-right: 1px solid #333; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
-        #left-panel-content { flex: 1; overflow-y: auto; min-height: 0; }
-        #main-content { flex: 1; background-color: #0d0d0d; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; overflow-x: hidden; min-width: 0; }
-        .screen { display: none; flex-direction: column; height: 100%; overflow-y: auto; overflow-x: hidden; min-height: 0; }
-        .screen.active { display: flex; }
-        .screen > div { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overflow-x: hidden; }
-        .screen > div > .screen-content { flex: 1 1 auto; overflow-y: visible; overflow-x: visible; min-height: 0; padding-bottom: 5px; }
-        .fixed-buttons { background-color: #0d0d0d; padding: 10px 0; border-top: 1px solid #333; margin-top: 0; flex-shrink: 0; }
-        #right-panel { width: 200px; background-color: #0d0d0d; border-left: 1px solid #333; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
-        #right-panel-content { flex: 1; overflow-y: auto; min-height: 0; }
-        .side-panel-content { padding: 10px; }
-        .side-panel-header { color: #00ffff; font-weight: bold; font-size: 0.9em; padding: 8px; background-color: #1a1a1a; border-bottom: 1px solid #333; text-align: center; cursor: pointer; }
-        .side-panel-header:hover { background-color: #2a2a2a; }
-        .equip-mini { padding: 6px; border-bottom: 1px solid #222; font-size: 0.75em; }
-        .equip-mini-name { color: #ff44ff; font-weight: bold; margin-bottom: 2px; }
-        .equip-mini-stats { color: #888; }
-        .equip-mini-slot { color: #666; font-size: 0.85em; }
-        .inv-mini { padding: 6px; border-bottom: 1px solid #222; font-size: 0.75em; display: flex; justify-content: space-between; align-items: center; }
-        .inv-mini-info { flex: 1; }
-        .inv-mini-name { color: #00ff00; }
-        .inv-mini-qty { color: #888; margin-left: 5px; }
-        .inv-mini-btn { background-color: #003300; border: 1px solid #00ff00; color: #00ff00; padding: 2px 6px; cursor: pointer; font-size: 0.8em; margin-left: 3px; }
-        .inv-mini-btn:hover { background-color: #006600; }
-        .inv-mini-btn:disabled { background-color: #333; border-color: #555; color: #555; cursor: not-allowed; }
-        .panel-collapsed { display: none; }
-        .expand-btn { width: 100%; padding: 5px; background-color: #1a1a1a; border: none; color: #00ff00; cursor: pointer; font-size: 0.75em; }
-        .expand-btn:hover { background-color: #2a2a2a; }
-        .location-header { color: #00ffff; font-size: 1.2em; margin-bottom: 10px; }
-        .description { color: #aaa; line-height: 1.6; margin-bottom: 15px; }
-        .action-btn { background-color: #003300; border: 1px solid #00ff00; color: #00ff00; padding: 8px 15px; margin: 5px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 0.85em; }
-        .action-btn:hover { background-color: #006600; }
-        .action-btn:disabled { background-color: #333; border-color: #555; color: #555; cursor: not-allowed; }
-        .action-btn.danger { background-color: #330000; border-color: #ff4444; color: #ff4444; }
-        .action-btn.danger:hover { background-color: #660000; }
-        .action-btn.quest { background-color: #000033; border-color: #4444ff; color: #4444ff; }
-        .action-btn.gold-btn { background-color: #333300; border-color: #ffd700; color: #ffd700; }
-        .action-btn.equip-btn { background-color: #330033; border-color: #ff44ff; color: #ff44ff; }
-        .action-btn.equip-btn:hover { background-color: #660066; }
-        .action-btn.soul-btn { background-color: #330033; border-color: #ff00ff; color: #ff00ff; }
-        .action-btn.soul-btn:hover { background-color: #660066; }
-        .action-btn.scroll-btn { background-color: #003333; border-color: #00ffff; color: #00ffff; }
-        .action-btn.scroll-btn:hover { background-color: #006666; }
-        .action-btn.premium-btn { background: linear-gradient(135deg, #330033, #660066); border-color: #ff00ff; color: #ff00ff; font-weight: bold; }
-        .action-btn.premium-btn:hover { background: linear-gradient(135deg, #660066, #990099); }
-        .action-btn.craft-btn { background-color: #332200; border-color: #ffaa00; color: #ffaa00; }
-        .action-btn.craft-btn:hover { background-color: #664400; }
-        .action-btn.craft-btn:disabled {
-            background: repeating-linear-gradient(135deg, #262626, #262626 8px, #1a1a1a 8px, #1a1a1a 16px);
-            border-color: #666;
-            color: #888;
-            opacity: 0.55;
-            cursor: not-allowed;
-            text-shadow: none;
-            box-shadow: none;
-            filter: grayscale(100%);
-        }
-        .action-btn.craft-btn:disabled:hover { background: repeating-linear-gradient(135deg, #262626, #262626 8px, #1a1a1a 8px, #1a1a1a 16px); }
-        .action-btn.dungeon-btn { background-color: #002233; border-color: #0088ff; color: #0088ff; }
-        .action-btn.dungeon-btn:hover { background-color: #004466; }
-        .action-btn.boss-btn { background-color: #330000; border-color: #ff6600; color: #ff6600; font-weight: bold; }
-        .action-btn.boss-btn:hover { background-color: #660000; }
-        .action-btn.temple-btn { background-color: #333300; border-color: #ffff00; color: #ffff00; }
-        .action-btn.temple-btn:hover { background-color: #666600; }
-        .location-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; }
-        .location-card { background-color: #1a1a1a; border: 1px solid #333; padding: 12px; cursor: pointer; }
-        .location-card:hover { border-color: #00ff00; }
-        .location-card.current { border-color: #00ff00; background-color: #001a00; }
-        .location-card.locked { opacity: 0.5; cursor: not-allowed; }
-        .location-name { color: #00ffff; font-weight: bold; margin-bottom: 5px; }
-        .location-info { color: #666; font-size: 0.8em; }
-        .battle-log { background-color: #1a1a1a; padding: 10px; margin: 10px 0; border-left: 3px solid #ff4444; max-height: 150px; overflow-y: auto; }
-        .battle-log p { margin: 5px 0; line-height: 1.4; }
-        .damage { color: #ff4444; }
-        .heal { color: #44ff44; }
-        .info { color: #4444ff; }
-        .reward { color: #ffd700; }
-        .quest-item, .job-item { background-color: #1a1a1a; border: 1px solid #4444ff; padding: 12px; margin: 10px 0; }
-        .job-item { border-color: #ffd700; }
-        .quest-title, .job-title { color: #00ffff; font-weight: bold; margin-bottom: 5px; }
-        .job-title { color: #ffd700; }
-        .job-info { display: flex; justify-content: space-between; color: #aaa; font-size: 0.85em; margin-bottom: 8px; }
-        .msg { color: #888; font-style: italic; margin: 10px 0; }
-        .section-title { color: #00ffff; border-bottom: 1px solid #333; padding-bottom: 5px; margin: 15px 0 10px 0; }
-        .inv-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; align-items: center; }
-        .inv-item button { background-color: #003300; border: 1px solid #00ff00; color: #00ff00; padding: 3px 8px; cursor: pointer; margin-left: 5px; }
-        .equip-slot-card { background-color: #1a1a1a; border: 2px solid #ff44ff; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        .equip-slot-card.empty { border-color: #555; }
-        .equip-slot-title { color: #ff44ff; font-weight: bold; font-size: 1em; margin-bottom: 8px; }
-        .equip-slot-stats { color: #00ff00; font-size: 0.9em; margin-bottom: 10px; }
-        .item-compare-header { color: #666; font-size: 0.75em; margin: 6px 0 2px 0; }
-        .item-stat-comparison { font-size: 0.8em; margin: 2px 0; }
-        .item-stat-better { color: #44ff44; }
-        .item-stat-worse { color: #ff4444; }
-        .item-stat-equal { color: #aaa; }
-        .quicksell-panel { background-color: #1a1a1a; border: 1px solid #444; padding: 12px; margin: 10px 0 15px 0; border-radius: 6px; }
-        .quicksell-title { color: #ffd700; font-weight: bold; margin-bottom: 6px; }
-        .quicksell-description { color: #aaa; font-size: 0.85em; margin-bottom: 10px; }
-        .quicksell-options { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-        .quicksell-option { display: flex; align-items: center; gap: 6px; background-color: #111; border: 1px solid #333; padding: 6px 8px; border-radius: 4px; font-size: 0.85em; cursor: pointer; }
-        .quicksell-option.disabled { opacity: 0.55; }
-        .quicksell-option input { cursor: pointer; }
-        .quicksell-level-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-        .quicksell-level-field { display: flex; flex-direction: column; gap: 4px; color: #aaa; font-size: 0.8em; }
-        .quicksell-level-field input { width: 100px; background-color: #111; border: 1px solid #444; color: #00ff00; padding: 6px 8px; font-family: 'Courier New', monospace; }
-        .quicksell-summary { color: #888; font-size: 0.85em; margin-bottom: 8px; }
-        .progress-bar { width: 150px; height: 15px; background-color: #333; overflow: hidden; }
-        .progress-fill { height: 100%; background-color: #4444ff; }
-        .log-entry { padding: 4px 0; border-bottom: 1px solid #222; font-size: 0.8em; color: #aaa; }
-        .log-source { color: #ffd700; }
-        .log-item { color: #00ffff; }
-        .reward-pool { background-color: #1a1a1a; border: 2px solid #ffd700; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        .reward-pool-title { color: #ffd700; font-weight: bold; font-size: 1.1em; margin-bottom: 10px; }
-        .scroll-slot { background-color: #1a1a1a; border: 2px solid #00ffff; padding: 12px; margin: 8px 0; border-radius: 5px; }
-        .scroll-slot.locked { border-color: #555; opacity: 0.6; }
-        .scroll-slot-title { color: #00ffff; font-weight: bold; margin-bottom: 5px; }
-        .scroll-item { background-color: #0a0a0a; border: 1px solid #00ffff; padding: 8px; margin: 5px 0; }
-        .scroll-item.common { border-color: #aaa; }
-        .scroll-item.uncommon { border-color: #44ff44; }
-        .scroll-item.rare { border-color: #4444ff; }
-        .scroll-item.epic { border-color: #ff00ff; }
-        .scroll-item.legendary { border-color: #ffd700; }
-        .premium-actions { display: flex; gap: 10px; margin: 10px 0; }
-        .premium-action { flex: 1; text-align: center; }
-        .premium-action-title { color: #ff00ff; font-weight: bold; margin-bottom: 5px; }
-        .premium-action-cost { color: #ffd700; font-size: 0.8em; }
-        #chat-container { background-color: #1a1a1a; border-top: 1px solid #333; padding: 10px; max-height: 150px; overflow-y: auto; }
-        .chat-message { padding: 5px; margin: 3px 0; border-left: 2px solid #555; padding-left: 8px; }
-        .chat-player { color: #00ff00; font-weight: bold; }
-        .chat-fake { color: #ff8800; }
-        .chat-system { color: #ffff00; font-style: italic; }
-        .chat-time { color: #555; font-size: 0.75em; margin-right: 5px; }
-        .player-card { background-color: #1a1a1a; border: 1px solid #00ff00; padding: 10px; margin: 5px 0; display: flex; justify-content: space-between; align-items: center; }
-        .player-card.hostile { border-color: #ff4444; }
-        .player-name { font-weight: bold; }
-        .player-level { color: #888; font-size: 0.85em; }
-        .auction-item { background-color: #1a1a1a; border: 2px solid #ffd700; padding: 12px; margin: 10px 0; }
-        .auction-timer { color: #ff4444; font-weight: bold; }
-        .auction-bidders { color: #888; font-size: 0.85em; margin-top: 5px; }
-        .dungeon-info { background-color: #002233; border: 2px solid #0088ff; padding: 15px; margin: 10px 0; }
-        .dungeon-stage { color: #0088ff; font-size: 1.3em; font-weight: bold; }
-        .dungeon-rewards { color: #ffd700; }
-        .boss-alert { background-color: #330000; border: 3px solid #ff6600; padding: 15px; margin: 10px 0; animation: bossPulse 2s infinite; }
-        @keyframes bossPulse { 0%,100% { box-shadow: 0 0 5px #ff6600; } 50% { box-shadow: 0 0 20px #ff6600; } }
-        .boss-name { color: #ff6600; font-size: 1.4em; font-weight: bold; }
-        .boss-hp-bar { width: 100%; height: 20px; background-color: #333; margin: 10px 0; }
-        .boss-hp-fill { height: 100%; background: linear-gradient(to right, #ff0000, #ff6600); }
-        .craft-recipe { background-color: #1a1a1a; border: 1px solid #ffaa00; padding: 12px; margin: 8px 0; }
-        .craft-materials { color: #aaa; margin: 5px 0; }
-        .craft-result { color: #00ff00; font-weight: bold; }
-        .encounter-info { color: #888; font-size: 0.8em; margin: 5px 0; }
-        .wandering-screen-shell { position: relative; min-height: 100%; }
-        .wandering-battle-card { width: 100%; background: #111; border: 2px solid #ff4444; border-radius: 8px; box-shadow: 0 0 24px rgba(255, 68, 68, 0.28); padding: 16px; margin-top: 10px; }
-        .wandering-battle-card .section-title:first-child { margin-top: 0; }
-        .wandering-battle-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-        .wandering-primary-action { flex: 1 1 0; font-size: 1.2em; padding: 15px 30px; }
-        .wandering-secondary-action { font-size: 1em; padding: 15px 20px; }
-        .wandering-battle-card .battle-log { max-height: 200px; }
-        
-        @media (max-width: 900px) {
-            #left-panel, #right-panel { width: 150px; }
-            .nav-btn { font-size: 0.65em; padding: 6px 3px; }
-            #header h1 { font-size: 1.4em; }
-            #stats-bar { font-size: 0.75em; padding: 8px 10px; }
-        }
-        @media (max-width: 700px) {
-            #left-panel, #right-panel { display: none; }
-            .nav-btn { font-size: 0.6em; width: calc(100% / 4); }
-            #main-content { padding: 10px; }
-        }
-        @media (max-width: 500px) {
-            .nav-btn { font-size: 0.55em; width: calc(100% / 3); }
-            #header h1 { font-size: 1.1em; }
-            #stats-bar { font-size: 0.65em; }
-            .location-grid { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-<div id="game-container">
-    <div id="header"><h1>[S] Realm of Shadows [S]</h1></div>
-    <div id="stats-bar">
-        <div class="stat"><span class="stat-label">HP:</span><span class="stat-value hp" id="stat-hp">100/100</span></div>
-        <div class="stat"><span class="stat-label">MP:</span><span class="stat-value mp" id="stat-mp">50/50</span></div>
-        <div class="stat"><span class="stat-label">ATK:</span><span class="stat-value" id="stat-atk">10</span></div>
-        <div class="stat"><span class="stat-label">DEF:</span><span class="stat-value" id="stat-def">5</span></div>
-        <div class="stat"><span class="stat-label">CRIT:</span><span class="stat-value" id="stat-crit" style="color:#ff00ff">0%</span></div>
-        <div class="stat"><span class="stat-label">LVL:</span><span class="stat-value" id="stat-lvl">1</span></div>
-        <div class="stat"><span class="stat-label">XP:</span><span class="stat-value xp" id="stat-xp">0/100</span></div>
-        <div class="stat"><span class="stat-label">GOLD:</span><span class="stat-value gold" id="stat-gold">50</span></div>
-        <div class="stat"><span class="stat-label">SOUL GEMS:</span><span class="stat-value soul" id="stat-soul">0</span></div>
-    </div>
-    <div id="navigation">
-        <button class="nav-btn active" onclick="attemptShowScreen('travel')">Map Travel</button>
-        <button class="nav-btn" onclick="attemptShowScreen('battle')">[/] Battle</button>
-        <button class="nav-btn" onclick="attemptShowScreen('quest')">~ Quest</button>
-        <button class="nav-btn" onclick="attemptShowScreen('job')">$ Job</button>
-<button class="nav-btn" onclick="attemptShowScreen('wandering')" id="wander-tab">[?] Wander</button>
-        <button class="nav-btn" onclick="attemptShowScreen('inventory')">[] Inventory</button>
-        <button class="nav-btn" onclick="attemptShowScreen('equipment')">[=] Equipment</button>
-        <button class="nav-btn" onclick="attemptShowScreen('scrolls')">[*] Scrolls</button>
-        <button class="nav-btn" onclick="attemptShowScreen('crafting')">[+] Crafting</button>
-        <button class="nav-btn" onclick="attemptShowScreen('auction')" id="auction-tab">[$] Auction</button>
-        <button class="nav-btn" onclick="attemptShowScreen('players')">[@] Players</button>
-        <button class="nav-btn" onclick="attemptShowScreen('merge')">[#] Merge</button>
-        <button class="nav-btn" onclick="attemptShowScreen('save')">{*} Save</button>
-    </div>
-    <div id="status-banner"></div>
-    <div id="item-announcement">
-        <div id="item-announcement-title"></div>
-        <div id="item-announcement-body"></div>
-    </div>
-    <div id="game-layout">
-        <div id="left-panel">
-            <div class="side-panel-header" onclick="attemptShowScreen('equipment')">[=] Equipment</div>
-            <div id="left-panel-content" class="side-panel-content"></div>
-        </div>
-        <div id="main-content">
-            <div id="travel-screen" class="screen active"><div id="travel-content"></div></div>
-            <div id="battle-screen" class="screen"><div id="battle-content"></div></div>
-            <div id="dungeon-screen" class="screen"><div id="dungeon-content"></div></div>
-            <div id="quest-screen" class="screen"><div id="quest-content"></div></div>
-            <div id="job-screen" class="screen"><div id="job-content"></div></div>
-            <div id="inventory-screen" class="screen"><div id="inventory-screen-content"></div></div>
-            <div id="equipment-screen" class="screen"><div id="equipment-screen-content"></div></div>
-            <div id="scrolls-screen" class="screen"><div id="scrolls-screen-content"></div></div>
-            <div id="crafting-screen" class="screen"><div id="crafting-screen-content"></div></div>
-            <div id="auction-screen" class="screen"><div id="auction-screen-content"></div></div>
-            <div id="players-screen" class="screen"><div id="players-screen-content"></div></div>
-            <div id="save-screen" class="screen"><div id="save-screen-content"></div></div>
-            <div id="merge-screen" class="screen"><div id="merge-screen-content"></div></div>
-            <div id="wandering-screen" class="screen"><div id="wandering-content"></div></div>
-        </div>
-        <div id="right-panel">
-            <div class="side-panel-header" onclick="attemptShowScreen('inventory')">[] Inventory</div>
-            <div id="right-panel-content" class="side-panel-content"></div>
-        </div>
-    </div>
-    <div id="chat-container"></div>
-</div>
-<script src="items.js"></script>
-<script src="uberUniqueItems.js"></script>
-<script src="normalUniqueItems.js"></script>
-<script src="level55UberUniques.js"></script>
-<script src="enemies.js"></script>
-<script src="uberUniqueMergeSystem.js"></script>
-<script>
+﻿
 
 // GAME STATE
 const gameState = {
@@ -410,35 +113,23 @@ const WANDER_RANK_MAP = WANDER_RANKS.reduce((map, rank) => {
     return map;
 }, {});
 const WANDER_HIGH_RANK_KEYS = new Set(['S', 'SS', 'SSS']);
-const COMBAT_STATUS_TEMPLATES = {
-    burn: { id: 'burn', name: 'Burning', type: 'debuff', icon: '🔥', color: '#ff4444', duration: 3, dotFlat: 15 },
-    poison: { id: 'poison', name: 'Poisoned', type: 'debuff', icon: '☠️', color: '#2ecc71', duration: 4, dotPercentMaxHp: 0.03 },
-    bleed: { id: 'bleed', name: 'Bleeding', type: 'debuff', icon: '🩸', color: '#c0392b', duration: 5, dotFlat: 8, stackIncrease: 4 },
-    frostbite: { id: 'frostbite', name: 'Frostbite', type: 'debuff', icon: '❄️', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
-    paralysis: { id: 'paralysis', name: 'Paralyzed', type: 'debuff', icon: '⚡', color: '#f1c40f', duration: 1, missChance: 100, cannotUseItems: true },
-    freeze: { id: 'freeze', name: 'Frozen', type: 'debuff', icon: '🧊', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
-    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, cannotAttack: true, defenseMultiplier: 0.5 },
-    root: { id: 'root', name: 'Rooted', type: 'debuff', icon: '🌿', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
-    silence: { id: 'silence', name: 'Silenced', type: 'debuff', icon: '🔇', color: '#95a5a6', duration: 2, cannotUseItems: true, cannotUseAbilities: true },
-    slow: { id: 'slow', name: 'Slowed', type: 'debuff', icon: '🐌', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
-    weakness: { id: 'weakness', name: 'Weakened', type: 'debuff', icon: '😔', color: '#6c5ce7', duration: 3, damageDealtMultiplier: 0.5 },
-    curse: { id: 'curse', name: 'Cursed', type: 'debuff', icon: '👻', color: '#2d3436', duration: 4, damageTakenMultiplier: 1.5 },
-    vulnerability: { id: 'vulnerability', name: 'Vulnerable', type: 'debuff', icon: '💔', color: '#e17055', duration: 2, defenseMultiplier: 0.5 },
-    exhaustion: { id: 'exhaustion', name: 'Exhausted', type: 'debuff', icon: '😫', color: '#fdcb6e', duration: 3, dodgeMultiplier: 0.5, critMultiplier: 0.5 },
-    strength: { id: 'strength', name: 'Strength', type: 'buff', icon: '💪', color: '#e74c3c', duration: 3, damageDealtMultiplier: 1.35 },
-    shield: { id: 'shield', name: 'Shielded', type: 'buff', icon: '🛡️', color: '#3498db', duration: 4, absorbDamage: 150 },
-    regeneration: { id: 'regeneration', name: 'Regeneration', type: 'buff', icon: '💚', color: '#00b894', duration: 4, healPercentMaxHp: 0.05 },
-    haste: { id: 'haste', name: 'Haste', type: 'buff', icon: '⚡', color: '#fdcb6e', duration: 2, attackTwice: true, dodgeBonus: 0.25 },
-    berserk: { id: 'berserk', name: 'Berserk', type: 'buff', icon: '😡', color: '#d63031', duration: 3, damageDealtMultiplier: 2, damageTakenMultiplier: 1.5 },
-    invulnerability: { id: 'invulnerability', name: 'Invulnerable', type: 'buff', icon: '✨', color: '#ffeaa7', duration: 1, immuneToDamage: true, immuneToDebuffs: true }
+const PLAYER_DEBUFF_TEMPLATES = {
+    burn: { id: 'burn', name: 'Burning', icon: '馃敟', color: '#ff4444', duration: 3, dotFlat: 15 },
+    poison: { id: 'poison', name: 'Poisoned', icon: '鈽狅笍', color: '#2ecc71', duration: 4, dotPercentMaxHp: 0.03 },
+    bleed: { id: 'bleed', name: 'Bleeding', icon: '馃└', color: '#c0392b', duration: 4, dotFlat: 12 },
+    frostbite: { id: 'frostbite', name: 'Frostbite', icon: '鉂勶笍', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
+    paralysis: { id: 'paralysis', name: 'Paralyzed', icon: '鈿?, color: '#f1c40f', duration: 1, skipTurn: true },
+    freeze: { id: 'freeze', name: 'Frozen', icon: '馃', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
+    stun: { id: 'stun', name: 'Stunned', icon: '馃挮', color: '#9b59b6', duration: 1, cannotAttack: true },
+    root: { id: 'root', name: 'Rooted', icon: '馃尶', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
+    silence: { id: 'silence', name: 'Silenced', icon: '馃攪', color: '#95a5a6', duration: 2, cannotUseItems: true },
+    slow: { id: 'slow', name: 'Slowed', icon: '馃悓', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
+    weakness: { id: 'weakness', name: 'Weakened', icon: '馃様', color: '#6c5ce7', duration: 3, damageDealtMultiplier: 0.5 },
+    curse: { id: 'curse', name: 'Cursed', icon: '馃懟', color: '#2d3436', duration: 4, damageTakenMultiplier: 1.5 },
+    vulnerability: { id: 'vulnerability', name: 'Vulnerable', icon: '馃挃', color: '#e17055', duration: 2, defenseMultiplier: 0.5 },
+    exhaustion: { id: 'exhaustion', name: 'Exhausted', icon: '馃槴', color: '#fdcb6e', duration: 3, dodgeMultiplier: 0.5, critMultiplier: 0.5 }
 };
-const COMBAT_STATUS_RULES = {
-    stackable: new Set(['burn', 'poison', 'bleed']),
-    refreshOnReapply: new Set(['frostbite', 'slow', 'weakness', 'curse', 'vulnerability', 'exhaustion', 'root', 'silence', 'strength', 'shield', 'regeneration', 'haste', 'berserk']),
-    unique: new Set(['paralysis', 'freeze', 'stun', 'invulnerability'])
-};
-const PLAYER_DEBUFF_TEMPLATES = COMBAT_STATUS_TEMPLATES;
-const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(COMBAT_STATUS_TEMPLATES).filter(effectId => COMBAT_STATUS_TEMPLATES[effectId].type === 'debuff');
+const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(PLAYER_DEBUFF_TEMPLATES);
 const WANDER_COMPLETION_CONGRATS = [
     '{player} actually cleared a {rank} wandering expedition. That is absurd.',
     'Respect, {player}. A full {rank} wander clear is not normal.',
@@ -1585,7 +1276,7 @@ function summarizeFakePlayerEquipment(equipment) {
         equipment.armor?.name,
         equipment.ring?.name || equipment.amulet?.name
     ].filter(Boolean);
-    return highlights.join(' • ');
+    return highlights.join(' 鈥?');
 }
 
 function buildFakePlayerRoster(count = 80) {
@@ -1968,7 +1659,7 @@ function applyCombatHealthRegen(playerObj, logCallback = addBattleMsg) {
     const healAmt = Math.min(maxHp - playerObj.hp, Math.floor(maxHp * regenPercent / 100));
     if (healAmt > 0) {
         playerObj.hp += healAmt;
-        logCallback(`💚 Health Regen restores ${healAmt} HP! (${regenPercent}% Max HP)`, 'heal');
+        logCallback(`馃挌 Health Regen restores ${healAmt} HP! (${regenPercent}% Max HP)`, 'heal');
     }
 
     return healAmt;
@@ -2055,287 +1746,82 @@ function buildCeaselessVoidEnemy(template, options = {}) {
     };
 }
 
-function getStatusEffectCollection(target) {
-    if (!target) return [];
-    if (target === gameState.player) {
-        if (!Array.isArray(gameState.activeStatusEffects)) gameState.activeStatusEffects = [];
-        return gameState.activeStatusEffects;
-    }
-    if (!Array.isArray(target.activeStatusEffects)) target.activeStatusEffects = [];
-    return target.activeStatusEffects;
+function getActivePlayerStatusEffects() {
+    return (gameState.activeStatusEffects || []).filter(effect => effect && effect.remainingTurns > 0);
 }
 
-function getActiveStatusEffectsForTarget(target) {
-    return getStatusEffectCollection(target).filter(effect => effect && effect.remainingTurns > 0);
-}
-
-function getStatusTargetName(target) {
-    return target === gameState.player ? 'you' : (target?.name || 'the target');
-}
-
-function getStatusTargetDisplayName(target) {
-    return target === gameState.player ? 'You' : (target?.name || 'Target');
-}
-
-function createStatusEffectInstance(effectId, options = {}) {
-    const template = COMBAT_STATUS_TEMPLATES[effectId];
-    if (!template) return null;
-
-    const instance = {
-        ...template,
-        source: options.source || null,
-        stacks: Math.max(1, Number(options.stacks) || 1),
-        remainingTurns: Math.max(1, Number(options.duration) || template.duration || 1)
-    };
-
-    if (template.absorbDamage !== undefined) {
-        instance.absorbDamageRemaining = Math.max(0, Number(options.absorbDamageRemaining) || template.absorbDamage);
-    }
-
-    return instance;
-}
-
-function getStatusSnapshot(target) {
+function getPlayerStatusSnapshot() {
     const snapshot = {
         damageDealtMultiplier: 1,
         damageTakenMultiplier: 1,
         defenseMultiplier: 1,
         dodgeMultiplier: 1,
-        dodgeBonus: 0,
         critMultiplier: 1,
         missChance: 0,
         skipTurn: false,
         cannotAttack: false,
         cannotUseItems: false,
-        cannotUseAbilities: false,
-        cannotEscape: false,
-        attackTwice: false,
-        immuneToDamage: false,
-        immuneToDebuffs: false
+        cannotEscape: false
     };
 
-    getActiveStatusEffectsForTarget(target).forEach(effect => {
+    getActivePlayerStatusEffects().forEach(effect => {
         if (effect.damageDealtMultiplier !== undefined) snapshot.damageDealtMultiplier *= effect.damageDealtMultiplier;
         if (effect.damageTakenMultiplier !== undefined) snapshot.damageTakenMultiplier *= effect.damageTakenMultiplier;
         if (effect.defenseMultiplier !== undefined) snapshot.defenseMultiplier *= effect.defenseMultiplier;
         if (effect.dodgeMultiplier !== undefined) snapshot.dodgeMultiplier *= effect.dodgeMultiplier;
-        if (effect.dodgeBonus !== undefined) snapshot.dodgeBonus += effect.dodgeBonus;
         if (effect.critMultiplier !== undefined) snapshot.critMultiplier *= effect.critMultiplier;
         if (effect.missChance !== undefined) snapshot.missChance = Math.max(snapshot.missChance, effect.missChance);
         if (effect.skipTurn) snapshot.skipTurn = true;
         if (effect.cannotAttack) snapshot.cannotAttack = true;
         if (effect.cannotUseItems) snapshot.cannotUseItems = true;
-        if (effect.cannotUseAbilities) snapshot.cannotUseAbilities = true;
         if (effect.cannotEscape) snapshot.cannotEscape = true;
-        if (effect.attackTwice) snapshot.attackTwice = true;
-        if (effect.immuneToDamage) snapshot.immuneToDamage = true;
-        if (effect.immuneToDebuffs) snapshot.immuneToDebuffs = true;
     });
 
     return snapshot;
 }
 
-function getActivePlayerStatusEffects() {
-    return getActiveStatusEffectsForTarget(gameState.player);
-}
-
-function getPlayerStatusSnapshot() {
-    return getStatusSnapshot(gameState.player);
-}
-
-function getEnemyStatusSnapshot(enemyObj) {
-    return getStatusSnapshot(enemyObj);
-}
-
-function addStatusEffectToTarget(target, effectId, options = {}) {
-    const template = COMBAT_STATUS_TEMPLATES[effectId];
-    if (!target || !template) return false;
-
-    if (target === gameState.player && template.type === 'debuff' && hasEquippedSpecialAbility('status_immunity')) {
-        return false;
-    }
-
-    if (template.type === 'debuff' && getStatusSnapshot(target).immuneToDebuffs) {
-        return false;
-    }
-
-    const collection = getStatusEffectCollection(target);
-    const existing = collection.find(effect => effect && effect.id === effectId);
-    if (existing) {
-        if (COMBAT_STATUS_RULES.unique.has(effectId)) {
-            return false;
-        }
-
-        if (COMBAT_STATUS_RULES.stackable.has(effectId)) {
-            existing.stacks = Math.max(1, existing.stacks || 1) + Math.max(1, Number(options.stacks) || 1);
-            existing.remainingTurns = Math.max(existing.remainingTurns || 0, template.duration || 1);
-            return true;
-        }
-
-        existing.remainingTurns = Math.max(existing.remainingTurns || 0, template.duration || 1);
-        if (template.absorbDamage !== undefined) {
-            existing.absorbDamageRemaining = Math.max(existing.absorbDamageRemaining || 0, template.absorbDamage);
-        }
-        return true;
-    }
-
-    const instance = createStatusEffectInstance(effectId, options);
-    if (!instance) return false;
-    collection.push(instance);
-    return true;
-}
-
 function addPlayerStatusEffect(effectId, options = {}) {
-    return addStatusEffectToTarget(gameState.player, effectId, options);
-}
+    const template = PLAYER_DEBUFF_TEMPLATES[effectId];
+    if (!template) return false;
+    if (hasEquippedSpecialAbility('status_immunity')) return false;
 
-function addEnemyStatusEffect(enemyObj, effectId, options = {}) {
-    return addStatusEffectToTarget(enemyObj, effectId, options);
-}
-
-function decrementStatusEffectsForTarget(target, logCallback = addBattleMsg) {
-    const remainingEffects = getActiveStatusEffectsForTarget(target).filter(effect => {
-        effect.remainingTurns--;
-        if (effect.remainingTurns <= 0) {
-            const message = target === gameState.player
-                ? `${effect.icon || '⚠️'} ${effect.name} wore off.`
-                : `${effect.icon || '⚠️'} ${effect.name} on ${getStatusTargetDisplayName(target)} wore off.`;
-            logCallback(message, 'info');
-            return false;
-        }
+    const existing = (gameState.activeStatusEffects || []).find(effect => effect && effect.id === effectId);
+    if (existing) {
+        existing.remainingTurns = Math.max(existing.remainingTurns || 0, template.duration || 1);
         return true;
-    });
+    }
 
-    if (target === gameState.player) gameState.activeStatusEffects = remainingEffects;
-    else target.activeStatusEffects = remainingEffects;
+    gameState.activeStatusEffects.push({
+        ...template,
+        source: options.source || null,
+        remainingTurns: template.duration || 1
+    });
+    return true;
 }
 
 function decrementPlayerStatusEffects(logCallback = addBattleMsg) {
-    decrementStatusEffectsForTarget(gameState.player, logCallback);
-}
-
-function removeStatusEffectFromTarget(target, effectId) {
-    if (!target || !effectId) return false;
-    const collection = getStatusEffectCollection(target);
-    const next = collection.filter(effect => effect && effect.id !== effectId);
-    if (next.length === collection.length) return false;
-    if (target === gameState.player) gameState.activeStatusEffects = next;
-    else target.activeStatusEffects = next;
-    return true;
-}
-
-function absorbDamageWithStatusEffects(target, damage, logCallback = addBattleMsg) {
-    let remainingDamage = Math.max(0, Math.floor(damage));
-    if (remainingDamage <= 0) return 0;
-
-    getActiveStatusEffectsForTarget(target).forEach(effect => {
-        if (remainingDamage <= 0 || effect.absorbDamage === undefined) return;
-        if (!Number.isFinite(effect.absorbDamageRemaining)) {
-            effect.absorbDamageRemaining = Math.max(0, effect.absorbDamage || 0);
+    gameState.activeStatusEffects = getActivePlayerStatusEffects().filter(effect => {
+        effect.remainingTurns--;
+        if (effect.remainingTurns <= 0) {
+            logCallback(`${effect.icon || '鈿狅笍'} ${effect.name} wore off.`, 'info');
+            return false;
         }
-        if (effect.absorbDamageRemaining <= 0) return;
-
-        const absorbed = Math.min(remainingDamage, effect.absorbDamageRemaining);
-        effect.absorbDamageRemaining -= absorbed;
-        remainingDamage -= absorbed;
-        logCallback(`${effect.icon || '🛡️'} ${effect.name} absorbs ${absorbed} damage on ${getStatusTargetName(target)}!`, 'reward');
-
-        if (effect.absorbDamageRemaining <= 0) {
-            effect.remainingTurns = 0;
-            logCallback(`${effect.icon || '🛡️'} ${effect.name} shatters on ${getStatusTargetName(target)}!`, 'info');
-        }
+        return true;
     });
-
-    return remainingDamage;
-}
-
-function applyDamageToTarget(target, damage, logCallback = addBattleMsg, options = {}) {
-    if (!target) return 0;
-
-    let finalDamage = Math.max(0, Math.floor(damage));
-    if (finalDamage <= 0) return 0;
-
-    const snapshot = getStatusSnapshot(target);
-    if (snapshot.immuneToDamage) {
-        logCallback(`✨ ${getStatusTargetDisplayName(target)} is immune to damage right now!`, 'info');
-        return 0;
-    }
-
-    if (options.applyTakenMultiplier !== false) {
-        finalDamage = Math.max(1, Math.ceil(finalDamage * snapshot.damageTakenMultiplier));
-    }
-
-    finalDamage = absorbDamageWithStatusEffects(target, finalDamage, logCallback);
-    if (finalDamage <= 0) return 0;
-
-    target.hp = Math.max(0, target.hp - finalDamage);
-    return finalDamage;
-}
-
-function applyHealingToTarget(target, amount, maxHp, logCallback = addBattleMsg, sourceLabel = 'Healing') {
-    if (!target) return 0;
-    const actualMaxHp = Math.max(1, Number(maxHp) || Number(target.maxHp) || (target === gameState.player ? getTotalMaxHp() : 1));
-    const healAmount = Math.min(Math.max(0, Math.floor(amount)), Math.max(0, actualMaxHp - target.hp));
-    if (healAmount <= 0) return 0;
-
-    target.hp += healAmount;
-    if (removeStatusEffectFromTarget(target, 'bleed')) {
-        logCallback(`🩹 ${sourceLabel} closes ${target === gameState.player ? 'your' : `${getStatusTargetDisplayName(target)}'s`} bleeding wounds.`, 'heal');
-    }
-    return healAmount;
-}
-
-function applyEndOfTurnStatusEffects(target, logCallback = addBattleMsg) {
-    let targetDied = false;
-    const maxHp = Math.max(1, Number(target?.maxHp) || (target === gameState.player ? getTotalMaxHp() : 1));
-
-    getActiveStatusEffectsForTarget(target).forEach(effect => {
-        const stacks = Math.max(1, effect.stacks || 1);
-        let damage = 0;
-        let healing = 0;
-
-        if (effect.dotFlat) {
-            damage += effect.stackIncrease
-                ? effect.dotFlat + (effect.stackIncrease * (stacks - 1))
-                : effect.dotFlat * stacks;
-        }
-        if (effect.dotPercentMaxHp) damage += Math.floor(maxHp * effect.dotPercentMaxHp * stacks);
-        if (effect.healFlat) healing += effect.healFlat * stacks;
-        if (effect.healPercentMaxHp) healing += Math.floor(maxHp * effect.healPercentMaxHp);
-
-        if (damage > 0 && target.hp > 0) {
-            const appliedDamage = applyDamageToTarget(target, damage, logCallback, { applyTakenMultiplier: false });
-            if (appliedDamage > 0) {
-                const message = target === gameState.player
-                    ? `${effect.icon || '⚠️'} ${effect.name} deals ${appliedDamage} damage to you!`
-                    : `${effect.icon || '⚠️'} ${effect.name} deals ${appliedDamage} damage to ${target.name}!`;
-                logCallback(message, 'damage');
-                if (target === gameState.currentWorldBoss) recordWorldBossPlayerDamage(appliedDamage);
-            }
-            if (target.hp <= 0) targetDied = true;
-        }
-
-        if (healing > 0 && target.hp > 0) {
-            const healed = applyHealingToTarget(target, healing, maxHp, logCallback, effect.name);
-            if (healed > 0) {
-                const message = target === gameState.player
-                    ? `${effect.icon || '✨'} ${effect.name} restores ${healed} HP to you!`
-                    : `${effect.icon || '✨'} ${effect.name} restores ${healed} HP to ${target.name}!`;
-                logCallback(message, 'heal');
-            }
-        }
-    });
-
-    decrementStatusEffectsForTarget(target, logCallback);
-    return { targetDied };
 }
 
 function applyEndOfTurnPlayerStatusEffects(playerObj, logCallback = addBattleMsg) {
-    return applyEndOfTurnStatusEffects(playerObj || gameState.player, logCallback);
-}
-
-function applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback = addBattleMsg) {
-    return applyEndOfTurnStatusEffects(enemyObj, logCallback);
+    getActivePlayerStatusEffects().forEach(effect => {
+        let damage = 0;
+        if (effect.dotFlat) damage += effect.dotFlat;
+        if (effect.dotPercentMaxHp) damage += Math.floor(getTotalMaxHp() * effect.dotPercentMaxHp);
+        if (damage > 0) {
+            damage = Math.max(1, damage);
+            playerObj.hp = Math.max(0, playerObj.hp - damage);
+            logCallback(`${effect.icon || '鈿狅笍'} ${effect.name} deals ${damage} damage to you!`, 'damage');
+        }
+    });
+    decrementPlayerStatusEffects(logCallback);
 }
 
 function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
@@ -2344,11 +1830,6 @@ function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
     const pending = [];
     if (enemyObj.inflictDebuff && Math.random() * 100 < (enemyObj.inflictDebuff.chance || 0)) {
         pending.push(enemyObj.inflictDebuff.inflict);
-    }
-
-    const weaponDebuff = enemyObj?.equipment?.weapon?.onHitDebuff;
-    if (weaponDebuff && Math.random() * 100 < (weaponDebuff.chance || 0)) {
-        pending.push(weaponDebuff.effect);
     }
 
     if (enemyObj.randomDebuffChance && Math.random() < enemyObj.randomDebuffChance) {
@@ -2369,35 +1850,7 @@ function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
     Array.from(new Set(pending.filter(Boolean))).forEach(effectId => {
         if (addPlayerStatusEffect(effectId, { source: enemyObj.name })) {
             const effect = PLAYER_DEBUFF_TEMPLATES[effectId];
-            logCallback(`${effect.icon || '⚠️'} ${enemyObj.name} afflicted you with ${effect.name}!`, 'damage');
-        }
-    });
-}
-
-function tryApplyPlayerOnHitEffects(enemyObj, logCallback = addBattleMsg, options = {}) {
-    if (!enemyObj || enemyObj.hp <= 0) return;
-    if (getPlayerStatusSnapshot().cannotUseAbilities) return;
-
-    const hitCount = Math.max(1, Number(options.hitCount) || 1);
-    const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
-    const procSources = eqSlots
-        .map(slot => gameState.equipment[slot])
-        .filter(item => item && item.onHitDebuff && item.onHitDebuff.effect);
-
-    procSources.forEach(source => {
-        const proc = source.onHitDebuff;
-        let triggered = false;
-        for (let i = 0; i < hitCount; i++) {
-            if (Math.random() * 100 < (proc.chance || 0)) {
-                triggered = true;
-                break;
-            }
-        }
-        if (!triggered) return;
-
-        if (addEnemyStatusEffect(enemyObj, proc.effect, { source: source.name })) {
-            const effect = COMBAT_STATUS_TEMPLATES[proc.effect];
-            logCallback(`${effect?.icon || '✨'} ${source.name} afflicts ${enemyObj.name} with ${effect?.name || proc.effect}!`, 'reward');
+            logCallback(`${effect.icon || '鈿狅笍'} ${enemyObj.name} afflicted you with ${effect.name}!`, 'damage');
         }
     });
 }
@@ -2530,7 +1983,7 @@ function tryConsumeReviveScroll(playerObj, logCallback = addBattleMsg) {
 
     const reviveHp = Math.max(1, Math.floor(getTotalMaxHp() * (reviveEffect.value || 0.5)));
     playerObj.hp = reviveHp;
-    logCallback(`🔥 ${reviveEffect.name} revives you with ${reviveHp} HP!`, 'heal');
+    logCallback(`馃敟 ${reviveEffect.name} revives you with ${reviveHp} HP!`, 'heal');
     return true;
 }
 
@@ -2540,24 +1993,18 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     const totalDef = options.totalDef === undefined ? getEffectivePlayerDefense() : options.totalDef;
     const defenseMitigationFactor = options.defenseMitigationFactor === undefined ? 1 : options.defenseMitigationFactor;
     const playerStatus = getPlayerStatusSnapshot();
-    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
 
-    if (invulnerable || playerStatus.immuneToDamage) {
+    if (invulnerable) {
         logCallback(`${enemyObj.name} attacks, but you are invulnerable!`, 'info');
         return { enemyDied, damageTaken: 0 };
     }
 
-    if (isEnemyFrozenByScroll() || enemyStatus.skipTurn || enemyStatus.cannotAttack) {
-        logCallback(`❄️ ${enemyObj.name} is frozen and cannot act!`, 'reward');
+    if (isEnemyFrozenByScroll()) {
+        logCallback(`鉂勶笍 ${enemyObj.name} is frozen and cannot act!`, 'reward');
         return { enemyDied, damageTaken: 0, skipped: true };
     }
 
-    if (enemyStatus.missChance > 0 && Math.random() * 100 < enemyStatus.missChance) {
-        logCallback(`${enemyObj.name} falters and misses the attack!`, 'info');
-        return { enemyDied, damageTaken: 0, missed: true };
-    }
-
-    const playerDodgeChance = Math.min(0.95, (getEffectivePlayerDodgeChance() * playerStatus.dodgeMultiplier) + playerStatus.dodgeBonus);
+    const playerDodgeChance = Math.min(0.95, getEffectivePlayerDodgeChance() * playerStatus.dodgeMultiplier);
     if (Math.random() < playerDodgeChance) {
         logCallback(`You DODGED the attack! (Dodge: ${(playerDodgeChance * 100).toFixed(1)}%)`, 'heal');
         return { enemyDied, damageTaken: 0, dodged: true };
@@ -2565,12 +2012,12 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
 
     const blockChance = Math.min(getTotalBlock(), 95);
     if (Math.random() * 100 < blockChance) {
-        logCallback(`🛡️ You BLOCKED the attack! (Block: ${blockChance.toFixed(1)}%)`, 'heal');
+        logCallback(`馃洝锔?You BLOCKED the attack! (Block: ${blockChance.toFixed(1)}%)`, 'heal');
 
         if (hasEquippedSpecialAbility('heal_on_block')) {
             const healAmt = enemyObj.atk;
             playerObj.hp = Math.min(getTotalMaxHp(), playerObj.hp + healAmt);
-            logCallback(`💚 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
+            logCallback(`馃挌 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
             if (healCallback) healCallback(healAmt);
         }
 
@@ -2580,21 +2027,24 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     const effectiveDefense = Math.max(0, Math.floor(totalDef * playerStatus.defenseMultiplier));
     let enemyDmg = Math.max(1, enemyObj.atk - Math.floor(effectiveDefense * defenseMitigationFactor) + rand(-2, 2));
     enemyDmg = Math.ceil(enemyDmg * getScrollEnemyDamageMultiplier());
-    enemyDmg = Math.max(1, Math.ceil(enemyDmg * enemyStatus.damageDealtMultiplier));
 
     const drPercent = Math.min(gameState.player.dmgReduction || gameState.player.damageReduction || 0, 95) / 100;
     if (gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75')) {
         enemyDmg = Math.ceil(enemyDmg * 0.25);
+        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (75% DR ACTIVE)`, 'damage');
     } else {
         enemyDmg = Math.ceil(enemyDmg * (1 - drPercent));
+        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (DR: ${(drPercent * 100).toFixed(1)}%)`, 'damage');
     }
+
+    enemyDmg = Math.max(1, Math.ceil(enemyDmg * playerStatus.damageTakenMultiplier));
 
     const reflectChance = Math.min(getTotalReflect(), 95);
     if (reflectChance > 0 && Math.random() * 100 < reflectChance) {
         const reflectDamage = enemyDmg;
         enemyObj.hp = Math.max(0, enemyObj.hp - reflectDamage);
         if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(reflectDamage);
-        logCallback(`⚡ DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
+        logCallback(`鈿?DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
 
         if (enemyObj.hp <= 0) {
             logCallback(`${enemyObj.name} was killed by reflected damage!`, 'reward');
@@ -2606,7 +2056,7 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     if (thornsDamage > 0 && enemyObj.hp > 0) {
         enemyObj.hp = Math.max(0, enemyObj.hp - thornsDamage);
         if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(thornsDamage);
-        logCallback(`🌵 THORNS! ${enemyObj.name} takes ${thornsDamage} damage!`, 'reward');
+        logCallback(`馃尩 THORNS! ${enemyObj.name} takes ${thornsDamage} damage!`, 'reward');
 
         if (enemyObj.hp <= 0) {
             logCallback(`${enemyObj.name} was slain by thorns damage!`, 'reward');
@@ -2614,16 +2064,15 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
         }
     }
 
-    const actualDamageTaken = applyDamageToTarget(playerObj, enemyDmg, logCallback);
-    if (actualDamageTaken > 0) {
-        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, 'damage');
+    playerObj.hp = Math.max(0, playerObj.hp - enemyDmg);
+    if (enemyDmg > 0) {
         tryApplyEnemyOnHitEffects(enemyObj, logCallback);
     }
     if (playerObj.hp <= 0 && tryConsumeReviveScroll(playerObj, logCallback)) {
-        return { enemyDied, damageTaken: actualDamageTaken, revived: true };
+        return { enemyDied, damageTaken: enemyDmg, revived: true };
     }
 
-    return { enemyDied, damageTaken: actualDamageTaken };
+    return { enemyDied, damageTaken: enemyDmg };
 }
 
 function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattleMsg) {
@@ -2633,7 +2082,7 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
         const healAmt = Math.min(effect.value || 0, getTotalMaxHp() - playerObj.hp);
         if (healAmt > 0) {
             playerObj.hp += healAmt;
-            logCallback(`✨ ${effect.name} restores ${healAmt} HP!`, 'heal');
+            logCallback(`鉁?${effect.name} restores ${healAmt} HP!`, 'heal');
         }
     });
 
@@ -2645,7 +2094,7 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
             enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
             if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(dmg);
 
-            const icon = type === 'burn' ? '🔥' : '☠️';
+            const icon = type === 'burn' ? '馃敟' : '鈽狅笍';
             logCallback(`${icon} ${effect.name} deals ${dmg} ${type} damage to ${enemyObj.name}!`, 'damage');
 
             if (enemyObj.hp <= 0) {
@@ -2938,7 +2387,7 @@ function formatInventoryQuicksellLevelFilterText() {
     }
 
     if (levelFilter.max !== '') {
-        return ` | Level ≤ ${levelFilter.max}`;
+        return ` | Level 鈮?${levelFilter.max}`;
     }
 
     return '';
@@ -3302,7 +2751,7 @@ function startBattle(location) {
         const alertDiv = document.createElement('div');
         alertDiv.className = 'battle-log no-enemies-alert';
         alertDiv.style.borderLeftColor = '#4444ff';
-        alertDiv.innerHTML = `<p class="info">🔍 No enemies found here right now! Try again.</p>`;
+        alertDiv.innerHTML = `<p class="info">馃攳 No enemies found here right now! Try again.</p>`;
         
         // Insert alert at top of travel screen
         container.insertBefore(alertDiv, container.firstChild);
@@ -3390,15 +2839,16 @@ function useScroll(slotIndex, options = {}) {
     
     // Immediate effects
     if (scroll.effect === 'heal') {
-        const actualHeal = applyHealingToTarget(gameState.player, scroll.value, getTotalMaxHp(), logCallback, scroll.name);
-        logCallback(`Used ${scroll.name}: Healed ${actualHeal} HP!`, 'heal');
+        gameState.player.hp = Math.min(getTotalMaxHp(), gameState.player.hp + scroll.value);
+        logCallback(`Used ${scroll.name}: Healed ${scroll.value} HP!`, 'heal');
     } else if (scroll.effect === 'nuke') {
         if (!target) {
             logCallback(`${scroll.name} fizzles with no target.`, 'damage');
         } else {
-            const actualDamage = applyDamageToTarget(target, scroll.value, logCallback);
+            const actualDamage = Math.min(scroll.value, target.hp);
+            target.hp = Math.max(0, target.hp - scroll.value);
             if (context === 'worldboss') recordWorldBossPlayerDamage(actualDamage);
-            logCallback(`💥 Used ${scroll.name}: Dealt ${actualDamage} damage instantly!`, 'reward');
+            logCallback(`馃挜 Used ${scroll.name}: Dealt ${actualDamage} damage instantly!`, 'reward');
         }
     } else if (scroll.effect === 'invulnerable') {
         logCallback(`Used ${scroll.name}: Invulnerable for ${scroll.duration} turn${scroll.duration > 1 ? 's' : ''}!`, 'reward');
@@ -3451,7 +2901,7 @@ function useScroll(slotIndex, options = {}) {
 }
 
 // ==============================================
-// ✅ UNIVERSAL SINGLE COMBAT ENGINE
+// 鉁?UNIVERSAL SINGLE COMBAT ENGINE
 // ==============================================
 // This is the ONLY combat system in the entire game.
 // EVERY SINGLE COMBAT IN THE GAME GOES THROUGH THIS FUNCTION.
@@ -3472,9 +2922,8 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     const critBonus = getScrollCritBonus();
     const invulnerable = isInvulnerable();
     const playerStatus = getPlayerStatusSnapshot();
-    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
     
-    // ✅ UBER UNIQUE SPECIAL ABILITIES CHECK - RUNS FOR ALL ACTIONS
+    // 鉁?UBER UNIQUE SPECIAL ABILITIES CHECK - RUNS FOR ALL ACTIONS
     let has75DamageReduction = false;
     let hasGuaranteedExtraDrop = false;
     let has100EscapeSuccess = false;
@@ -3523,11 +2972,11 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 break;
             }
 
-            // ✅ DODGE CHANCE CHECK
+            // 鉁?DODGE CHANCE CHECK
             const dodgeChance = enemyObj.dodge || 0;
-            const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus)); // HARD CAP 95% MAX DODGE
+            const cappedDodge = Math.min(dodgeChance, 0.95); // HARD CAP 95% MAX DODGE
             if (Math.random() < cappedDodge) {
-                logCallback(`${enemyObj.name} DODGED your attack! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
+                logCallback(`${enemyObj.name} DODGED your attack! (Dodge: ${(cappedDodge*100).toFixed(1)}%)`, 'damage');
                 break;
             }
             
@@ -3543,10 +2992,10 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             dmg = Math.floor(dmg * damageMult);
             dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
 
-            // ✅ UBER UNIQUE SPECIAL ABILITIES SYSTEM - ATTACK SPECIFIC
+            // 鉁?UBER UNIQUE SPECIAL ABILITIES SYSTEM - ATTACK SPECIFIC
             let bonusDmg = 0;
             let specialMsg = '';
-            let attackCount = playerStatus.attackTwice ? 2 : 1;
+            let attackCount = 1;
             let trueDamage = false;
             let guaranteedCrit = false;
             
@@ -3606,27 +3055,19 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             // Handle multiple attacks
             const totalAttackInstances = getTotalAttackInstances(attackCount);
             let totalDamageDealt = 0;
-            let landedHits = 0;
             for (let i = 0; i < totalAttackInstances; i++) {
-                const appliedDamage = applyDamageToTarget(enemyObj, dmg, logCallback);
-                if (appliedDamage > 0) {
-                    totalDamageDealt += appliedDamage;
-                    landedHits++;
-                }
-                if (enemyObj.hp <= 0) break;
+                totalDamageDealt += dmg;
+                enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
             }
             
             const multiHitMsg = totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : '';
             logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, crit ? 'reward' : 'info');
-
-            if (landedHits > 0) {
-                tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
-            }
             
             // Apply lifesteal healing
             const healAmt = calculateDamageBasedHealing(totalDamageDealt);
             if (healAmt > 0) {
-                const actualHeal = applyHealingToTarget(playerObj, healAmt, getTotalMaxHp(), logCallback, 'Lifesteal');
+                const actualHeal = Math.min(healAmt, getTotalMaxHp() - playerObj.hp);
+                playerObj.hp += actualHeal;
                 if (actualHeal > 0) {
                     logCallback(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
                     if (healCallback) healCallback(actualHeal);
@@ -3646,7 +3087,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 logCallback('You are rooted and cannot escape!', 'damage');
                 break;
             }
-            // ✅ Apply 100% escape success special ability
+            // 鉁?Apply 100% escape success special ability
             if (gameState.has100EscapeSuccess) {
                 fled = true;
                 break;
@@ -3679,19 +3120,9 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
         enemyDied = true;
     }
 
-    if (!enemyDied && enemyObj && enemyObj.hp > 0) {
-        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback);
-        if (enemyStatusResult.targetDied) {
-            enemyDied = true;
-        }
-    }
-
-    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
-    if (playerStatusResult.targetDied) {
-        playerDied = true;
-    }
+    applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
     
-    if (!playerDied && playerObj.hp <= 0) {
+    if (playerObj.hp <= 0) {
         if (!tryConsumeReviveScroll(playerObj, logCallback)) {
             playerDied = true;
         }
@@ -3709,140 +3140,6 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     if (afterHitCallback) afterHitCallback();
     
     return { playerDied, enemyDied, fled };
-}
-
-function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, options = {}) {
-    if (!playerObj) playerObj = gameState.player;
-    if (!enemyObj) return { playerDied: false, enemyDied: false, aborted: true };
-
-    const manaCost = Math.max(0, Number(options.manaCost) || 15);
-    if (playerObj.mp < manaCost) {
-        logCallback(`Not enough mana! Requires ${manaCost} MP to cast spell.`, 'damage');
-        return { playerDied: false, enemyDied: false, aborted: true };
-    }
-
-    const damageMult = getScrollDamageMultiplier() * 2;
-    const critBonus = getScrollCritBonus() * 2;
-    const invulnerable = isInvulnerable();
-    const playerStatus = getPlayerStatusSnapshot();
-    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
-    const totalDef = getEffectivePlayerDefense();
-
-    let playerDied = false;
-    let enemyDied = false;
-
-    if (playerStatus.skipTurn || playerStatus.cannotAttack || playerStatus.cannotUseAbilities) {
-        logCallback('You are unable to cast a spell this turn!', 'damage');
-    } else {
-        playerObj.mp -= manaCost;
-
-        if (playerStatus.missChance > 0 && Math.random() * 100 < playerStatus.missChance) {
-            logCallback('Your debuffs cause the spell to fizzle!', 'damage');
-        } else {
-            const dodgeChance = enemyObj.dodge || 0;
-            const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus));
-            if (Math.random() < cappedDodge) {
-                logCallback(`${enemyObj.name} DODGED your spell! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
-            } else {
-                const spellMultiplier = 0.5 + Math.random() * 2.5;
-                const totalAtk = getTotalAtk();
-                const totalCrit = getTotalCrit();
-                const totalCritDmg = getTotalCritDmg();
-                const effectiveEnemyDefense = getEffectiveEnemyDefense(enemyObj, options.enemyDefenseMultiplier === undefined ? 1 : options.enemyDefenseMultiplier);
-                const totalAttackInstances = getTotalAttackInstances();
-
-                let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
-                let crit = Math.random() * 100 < ((totalCrit + critBonus) * playerStatus.critMultiplier);
-                if (crit) dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
-
-                dmg = Math.floor(dmg * spellMultiplier * damageMult);
-                dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
-
-                let totalDamageDealt = 0;
-                let landedHits = 0;
-                for (let i = 0; i < totalAttackInstances; i++) {
-                    const appliedDamage = applyDamageToTarget(enemyObj, dmg, logCallback);
-                    if (appliedDamage > 0) {
-                        totalDamageDealt += appliedDamage;
-                        landedHits++;
-                    }
-                    if (enemyObj.hp <= 0) break;
-                }
-
-                logCallback(`You cast a spell for ${totalDamageDealt} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
-
-                if (landedHits > 0) {
-                    tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
-                }
-
-                const spellHeal = calculateDamageBasedHealing(totalDamageDealt);
-                if (spellHeal > 0) {
-                    const actualHeal = applyHealingToTarget(playerObj, spellHeal, getTotalMaxHp(), logCallback, 'Lifesteal');
-                    if (actualHeal > 0) {
-                        logCallback(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
-                        if (options.healCallback) options.healCallback(actualHeal);
-                    }
-                }
-
-                if (typeof options.onDamageDealt === 'function' && totalDamageDealt > 0) {
-                    options.onDamageDealt(totalDamageDealt);
-                }
-
-                tryTriggerActiveExecute(enemyObj, logCallback);
-                if (enemyObj.hp <= 0) {
-                    enemyDied = true;
-                }
-            }
-        }
-    }
-
-    if (!enemyDied) {
-        const counterResult = resolveEnemyCounterAttack(playerObj, enemyObj, logCallback, options.healCallback, {
-            invulnerable,
-            totalDef,
-            defenseMitigationFactor: options.defenseMitigationFactor
-        });
-        if (counterResult.enemyDied) {
-            enemyDied = true;
-        } else if (tryTriggerActiveExecute(enemyObj, logCallback)) {
-            enemyDied = true;
-        }
-    }
-
-    const endOfTurnResult = applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback);
-    if (endOfTurnResult.enemyDied) {
-        enemyDied = true;
-    }
-
-    if (!enemyDied && enemyObj && enemyObj.hp > 0) {
-        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback);
-        if (enemyStatusResult.targetDied) {
-            enemyDied = true;
-        }
-    }
-
-    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
-    if (playerStatusResult.targetDied) {
-        playerDied = true;
-    }
-
-    if (!playerDied && playerObj.hp <= 0) {
-        if (!tryConsumeReviveScroll(playerObj, logCallback)) {
-            playerDied = true;
-        }
-    }
-
-    decrementScrollEffects(logCallback);
-
-    const maxMp = getTotalMaxMp();
-    const manaRegenAmount = getCombatManaRegenAmount();
-    gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
-
-    if (typeof options.afterTurnCallback === 'function') {
-        options.afterTurnCallback();
-    }
-
-    return { playerDied, enemyDied, aborted: false };
 }
 
 // Get active scroll effect values
@@ -3901,7 +3198,7 @@ function tryTriggerExecuteFromEffect(enemyObj, logCallback = addBattleMsg, effec
         recordWorldBossPlayerDamage(remainingHp);
     }
 
-    logCallback(`⚔️ ${effect.name || 'Execution Scroll'} executes ${enemyObj.name} instantly!`, 'reward');
+    logCallback(`鈿旓笍 ${effect.name || 'Execution Scroll'} executes ${enemyObj.name} instantly!`, 'reward');
     return true;
 }
 
@@ -3932,17 +3229,72 @@ function battleAction(action) {
     }
     
     if (action === 'spell') {
-        const result = runSpellCombatTurn(gameState.player, gameState.currentEnemy, addBattleMsg);
-        if (result.aborted) {
+        // Spell attack: 0.5-3x damage at cost of 15 mana
+        if (gameState.player.mp < 15) {
+            addBattleMsg('Not enough mana! Requires 15 MP to cast spell.', 'damage');
             renderBattle();
-            updateStats();
             return;
         }
-        if (result.enemyDied) {
+        
+        gameState.player.mp -= 15;
+        
+        // Get scroll effect values (DOUBLE EFFECT FOR SPELLS)
+        const damageMult = getScrollDamageMultiplier() * 2;
+        const critBonus = getScrollCritBonus() * 2;
+        const invulnerable = isInvulnerable();
+        const totalDef = getEffectivePlayerDefense();
+        
+        // Calculate spell damage multiplier between 0.5x and 3x
+        const spellMultiplier = 0.5 + Math.random() * 2.5;
+        const totalAtk = getTotalAtk();
+        const totalCrit = getTotalCrit();
+        const effectiveEnemyDefense = getEffectiveEnemyDefense(gameState.currentEnemy);
+        const totalAttackInstances = getTotalAttackInstances();
+        
+        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
+        let crit = Math.random() * 100 < (totalCrit + critBonus);
+        if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
+        
+        // Apply spell multiplier + scroll damage multiplier
+        dmg = Math.floor(dmg * spellMultiplier * damageMult);
+        dmg *= totalAttackInstances;
+        
+        gameState.currentEnemy.hp = Math.max(0, gameState.currentEnemy.hp - dmg);
+        
+        addBattleMsg(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+
+        const spellHeal = calculateDamageBasedHealing(dmg);
+        if (spellHeal > 0) {
+            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - gameState.player.hp);
+            if (actualHeal > 0) {
+                gameState.player.hp += actualHeal;
+                addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+            }
+        }
+        
+        tryTriggerActiveExecute(gameState.currentEnemy, addBattleMsg);
+        
+        if (gameState.currentEnemy.hp <= 0) {
             enemyDefeated();
             return;
         }
-        if (result.playerDied) {
+        
+        const counterResult = resolveEnemyCounterAttack(gameState.player, gameState.currentEnemy, addBattleMsg, null, {
+            invulnerable,
+            totalDef
+        });
+        if (counterResult.enemyDied) {
+            enemyDefeated();
+            return;
+        }
+
+        const endOfTurnResult = applyEndOfTurnScrollEffects(gameState.player, gameState.currentEnemy, addBattleMsg);
+        if (endOfTurnResult.enemyDied) {
+            enemyDefeated();
+            return;
+        }
+        
+        if (gameState.player.hp <= 0) {
             triggerDefeatRecovery(addBattleMsg);
             gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
             resetCombatScrollSession();
@@ -3951,7 +3303,15 @@ function battleAction(action) {
             showScreen('travel');
             return;
         }
-
+        
+        // Decrement scroll effects at end of turn
+        decrementScrollEffects(addBattleMsg);
+        
+        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
+        const maxMp = getTotalMaxMp();
+        const manaRegenAmount = getCombatManaRegenAmount();
+        gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
+        
         renderBattle();
         updateStats();
         return;
@@ -4041,7 +3401,7 @@ function enemyDefeated() {
         }
     }
     
-    // ✅ Apply guaranteed extra item drop special ability
+    // 鉁?Apply guaranteed extra item drop special ability
     if (gameState.hasGuaranteedExtraDrop) {
         // Guaranteed extra item drop - always drop an additional equipment item
         const targetRarity = getItemDropByRarity();
@@ -4052,7 +3412,7 @@ function enemyDefeated() {
             const rarityColor = getRarityColor(extraItem.rarity);
             const isUber = isUberUnique(extraItem);
             const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
-            addBattleMsg(`✅ BONUS DROP: <span style="${itemColorStyle}">${extraItem.name}</span> (${extraItem.rarity})!`, 'reward');
+            addBattleMsg(`鉁?BONUS DROP: <span style="${itemColorStyle}">${extraItem.name}</span> (${extraItem.rarity})!`, 'reward');
             addItemLog('battle', extraItem.name);
             addChatMessage('SYSTEM', `${p.name} got BONUS DROP: ${formatChatItemMention(extraItem)}!`, true);
         }
@@ -4086,7 +3446,7 @@ function checkLevelUp() {
         p.xp -= p.xpToNext;
         p.level++;
         
-        // ✅ HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
+        // 鉁?HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
         // Base stats are ALWAYS recalculated from level 1 formula
         const BASE_HP = 100;
         const BASE_MP = 50;
@@ -4188,19 +3548,13 @@ function removeFromInventory(index, qty = 1) {
 function useItem(index) {
     const item = gameState.inventory[index];
     if (!item) return;
-
-    if (getPlayerStatusSnapshot().cannotUseItems) {
-        addBattleMsg('You are unable to use items right now!', 'damage');
-        renderInventory();
-        return;
-    }
     
     if (item.type === 'consumable') {
         if (item.effect === 'heal') {
-            const actualHeal = applyHealingToTarget(gameState.player, item.value, getTotalMaxHp(), addBattleMsg, item.name);
-            addBattleMsg(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
+            gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + item.value);
+            addBattleMsg(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
         } else if (item.effect === 'mana') {
-            gameState.player.mp = Math.min(getTotalMaxMp(), gameState.player.mp + item.value);
+            gameState.player.mp = Math.min(gameState.player.maxMp, gameState.player.mp + item.value);
             addBattleMsg(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
         } else if (item.effect === 'blessing') {
             addBattleMsg(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -4211,7 +3565,7 @@ function useItem(index) {
                 return;
             }
             spawnWorldBoss();
-            addBattleMsg(`✅ World Boss summoned! Go to the Battle tab to fight!`, 'reward');
+            addBattleMsg(`鉁?World Boss summoned! Go to the Battle tab to fight!`, 'reward');
             addChatMessage('SYSTEM', `${gameState.player.name} used a World Boss Ticket!`, true);
         }
         removeFromInventory(index);
@@ -4238,7 +3592,7 @@ function equipItem(index) {
 
     const currentlyEquipped = gameState.equipment[slot];
 
-    // ✅ Full stat recalculation system
+    // 鉁?Full stat recalculation system
     // Remove old item stats first if something is equipped
     if (currentlyEquipped) {
         // Return previously equipped item to inventory with ALL stats preserved
@@ -4259,7 +3613,7 @@ function equipItem(index) {
         equippedAt: Date.now()
     };
 
-    // ✅ Recalculate ALL player derived stats from equipment
+    // 鉁?Recalculate ALL player derived stats from equipment
     recalculateAllPlayerStats();
 
     // Update UI
@@ -4341,7 +3695,7 @@ function recalculateAllPlayerStats() {
         }
     });
 
-    // ✅ Apply stat hard caps
+    // 鉁?Apply stat hard caps
     finalStats.crit = Math.min(finalStats.crit, 95);              // 95% max crit chance
     finalStats.dodge = Math.min(finalStats.dodge, 95);            // 95% max dodge
     finalStats.dmgReduction = Math.min(finalStats.dmgReduction, 95); // 95% max damage reduction
@@ -4905,7 +4259,7 @@ function renderTravel() {
     // Show wandering status if active
     if (gameState.wandering.active) {
         html += `<div class="battle-log" style="border-left-color: #00ffff; margin-top: 10px;">
-            <p class="info">🔄 Wandering expedition is active... You are exploring the area.</p>
+            <p class="info">馃攧 Wandering expedition is active... You are exploring the area.</p>
         </div>`;
     }
     
@@ -4930,14 +4284,14 @@ function showLockedLocationMessage(locKey) {
     const loc = locations[locKey];
     const requiredLevel = loc.minLevel;
     const currentLevel = gameState.player.level;
-    addBattleMsg(`🔒 ${loc.name} is locked! Requires Level ${requiredLevel} (Your Level: ${currentLevel})`, 'damage');
+    addBattleMsg(`馃敀 ${loc.name} is locked! Requires Level ${requiredLevel} (Your Level: ${currentLevel})`, 'damage');
     
     // Show a more prominent alert
     const container = document.getElementById('travel-content');
     const alertDiv = document.createElement('div');
     alertDiv.className = 'battle-log';
     alertDiv.style.borderLeftColor = '#ff4444';
-    alertDiv.innerHTML = `<p class="damage">🔒 <strong>${loc.name} is locked!</strong></p>
+    alertDiv.innerHTML = `<p class="damage">馃敀 <strong>${loc.name} is locked!</strong></p>
         <p class="info">Required Level: ${requiredLevel}</p>
         <p class="info">Your Level: ${currentLevel}</p>
         <p class="info">Defeat enemies and complete quests to gain XP and level up!</p>`;
@@ -4987,7 +4341,7 @@ function startWanderingExpedition() {
     addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${rankData.multiplier}x scaling)`, 'reward');
     addWanderingLog(`This journey will have ${totalEvents} events.`, 'info');
     if (WANDER_HIGH_RANK_KEYS.has(rankData.key)) {
-        addWanderingLog('⚠️ High-rank rules active: 50-150 stages, no expedition escape after stage 2, enemies may inflict extra debuffs.', 'damage');
+        addWanderingLog('鈿狅笍 High-rank rules active: 50-150 stages, no expedition escape after stage 2, enemies may inflict extra debuffs.', 'damage');
     }
     
     // Show wandering screen
@@ -5310,8 +4664,8 @@ function completeWanderingExpedition() {
     if (WANDER_HIGH_RANK_KEYS.has(w.rankKey)) {
         p.permanentAtkBonus = (p.permanentAtkBonus || 0) + 3;
         p.permanentDefBonus = (p.permanentDefBonus || 0) + 3;
-        addWanderingLog(`🏆 ${rankData.key} expedition reward: permanent +3 ATK and +3 DEF!`, 'reward');
-        addChatMessage('SYSTEM', `🌈 ${p.name} completed a full ${rankData.key} wandering expedition and earned permanent +3 ATK / +3 DEF!`, true);
+        addWanderingLog(`馃弳 ${rankData.key} expedition reward: permanent +3 ATK and +3 DEF!`, 'reward');
+        addChatMessage('SYSTEM', `馃寛 ${p.name} completed a full ${rankData.key} wandering expedition and earned permanent +3 ATK / +3 DEF!`, true);
         ensureFakePlayerRoster(100).slice(0, 3).forEach(fake => {
             const msg = pick(WANDER_COMPLETION_CONGRATS)
                 .replace(/\{player\}/g, p.name)
@@ -5333,7 +4687,7 @@ function renderWandering() {
     const combatLocked = combatCooldownRemaining > 0;
     
     if (!w.active) {
-        container.innerHTML = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>
+        container.innerHTML = `<div class="location-header" style="color:#00ffff;">鈿旓笍 Wandering Expedition 鈿旓笍</div>
             <div class="description">Embark on a random adventure! Each expedition has 5-50 events with various encounters including battles, treasure, and exploration rewards.</div>
             <div class="section-title">Start New Expedition</div>
             <button class="action-btn" onclick="startWanderingExpedition()" style="font-size:1.2em; padding:15px 30px;">Begin Wandering</button>
@@ -5342,7 +4696,7 @@ function renderWandering() {
     }
     
     let html = `<div class="wandering-screen-shell">`;
-    html += `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>`;
+    html += `<div class="location-header" style="color:#00ffff;">鈿旓笍 Wandering Expedition 鈿旓笍</div>`;
     html += `<div style="margin-bottom:10px; padding:8px; background-color:#112211; border:1px solid #004400; border-radius:4px;">
         <span style="color:#888;">Current Location: </span>
         <span style="color:#00ffff; font-weight:bold;">${locations[p.location].name}</span>
@@ -5370,7 +4724,7 @@ function renderWandering() {
     
     // Merchant section if merchant is active
     if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
-        html += `<div class="section-title" style="color:#ffd700;">🧙 Wandering Merchant</div>`;
+        html += `<div class="section-title" style="color:#ffd700;">馃 Wandering Merchant</div>`;
         html += `<div class="description">A mysterious merchant with rare and powerful wares. These items won't last long!</div>`;
         
         w.merchantItems.forEach((item, idx) => {
@@ -5396,7 +4750,7 @@ function renderWandering() {
         });
         
         html += `<div style="margin-top:15px;">
-            <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
+            <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">馃憢 Wave goodbye to the merchant</button>
         </div>`;
     } else if (w.inBattle && w.currentEnemy) {
         activateCombatScrollsForCurrentBattle('wandering');
@@ -5404,10 +4758,10 @@ function renderWandering() {
         const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
 
         html += `<div class="wandering-battle-card">`;
-        html += `<div class="section-title" style="color:#ff4444;">⚔️ Ambushed During Wandering - ${e.name}</div>`;
+        html += `<div class="section-title" style="color:#ff4444;">鈿旓笍 Ambushed During Wandering - ${e.name}</div>`;
         html += `<div class="wandering-battle-actions">`;
-        html += `<button class="action-btn wandering-primary-action" onclick="wanderingBattle('attack')" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
-        html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingBattle('flee')" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
+        html += `<button class="action-btn wandering-primary-action" onclick="wanderingBattle('attack')" ${combatLocked ? 'disabled' : ''}>鈿旓笍 Attack</button>`;
+        html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingBattle('flee')" ${combatLocked ? 'disabled' : ''}>馃弮 Flee</button>`;
         html += `</div>`;
         html += `<div class="description" style="margin-top:10px;">The expedition remains active underneath this encounter. Defeat or flee from the enemy to continue exploring.</div>`;
         html += `<div class="boss-hp-bar"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>`;
@@ -5439,12 +4793,12 @@ function renderWandering() {
         // Continue/Escape buttons - Make them prominent!
         html += `<div class="section-title">Continue Your Expedition</div>`;
         if (w.currentEvent >= w.totalEvents) {
-            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">🎉 Complete Expedition</button>`;
+            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">馃帀 Complete Expedition</button>`;
         } else {
             html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-            html += `<button class="action-btn wandering-primary-action" onclick="wanderingContinue()">▶️ Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
+            html += `<button class="action-btn wandering-primary-action" onclick="wanderingContinue()">鈻讹笍 Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
             const escapeLocked = WANDER_HIGH_RANK_KEYS.has(w.rankKey) && w.currentEvent > 2;
-            html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingEscape()" ${escapeLocked ? 'disabled' : ''}>${escapeLocked ? '🔒 Escape Sealed' : '🚪 Escape (Lose Half Rewards)'}</button>`;
+            html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingEscape()" ${escapeLocked ? 'disabled' : ''}>${escapeLocked ? '馃敀 Escape Sealed' : '馃毆 Escape (Lose Half Rewards)'}</button>`;
             html += `</div>`;
         }
     }
@@ -5469,17 +4823,17 @@ function wanderingUseItem(idx) {
     if (!item || item.type !== 'consumable') return;
 
     if (getPlayerStatusSnapshot().cannotUseItems) {
-        addWanderingLog('You are unable to use items right now!', 'damage');
+        addWanderingLog('You are silenced and cannot use items right now!', 'damage');
         return;
     }
     
     const p = gameState.player;
     
     if (item.effect === 'heal') {
-        const actualHeal = applyHealingToTarget(p, item.value, getTotalMaxHp(), addWanderingLog, item.name);
-        addWanderingLog(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
+        p.hp = Math.min(p.maxHp, p.hp + item.value);
+        addWanderingLog(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
     } else if (item.effect === 'mana') {
-        p.mp = Math.min(getTotalMaxMp(), p.mp + item.value);
+        p.mp = Math.min(p.maxMp, p.mp + item.value);
         addWanderingLog(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
     } else if (item.effect === 'blessing') {
         addWanderingLog(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -5765,11 +5119,6 @@ function renderBattle() {
 
 function battleUseItem(idx) {
     if (!gameState.inBattle || !gameState.currentEnemy) return;
-    if (getPlayerStatusSnapshot().cannotUseItems) {
-        addBattleMsg('You are unable to use items right now!', 'damage');
-        renderBattle();
-        return;
-    }
     useItem(idx);
     renderBattle();
 }
@@ -5865,14 +5214,14 @@ function renderJobs() {
     
     // Max Job Points Upgrade
     html += `<div style="background:#1a1a1a;border:2px solid #ff00ff;padding:12px;margin:10px 0;border-radius:5px;">
-        <div style="color:#ff00ff;font-weight:bold">⬆️ Increase Max Job Points</div>
+        <div style="color:#ff00ff;font-weight:bold">猬嗭笍 Increase Max Job Points</div>
         <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Permanently increase your maximum Job Points capacity by 1</div>
         <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Current: ${gameState.maxJobPoints} Max Points</div>
         <button class="action-btn soul-btn" onclick="increaseMaxJobPoints()" ${gameState.soulGems >= 1 ? '' : 'disabled'} style="margin-top:8px;">Upgrade Max Job Points</button>
     </div>`;
 
     html += `<div style="background:#1a1a1a;border:2px solid #ff00ff;padding:12px;margin:10px 0;border-radius:5px;">
-        <div style="color:#ff00ff;font-weight:bold">🔮 Refill Job Points</div>
+        <div style="color:#ff00ff;font-weight:bold">馃敭 Refill Job Points</div>
         <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Instantly restore your Job Points to maximum</div>
         <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Missing: ${missingJobPoints} Point${missingJobPoints === 1 ? '' : 's'}</div>
         <button class="action-btn soul-btn" onclick="refillJobPointsToMax()" ${(gameState.soulGems >= 1 && gameState.jobPoints < gameState.maxJobPoints) ? '' : 'disabled'} style="margin-top:8px;">Refill Job Points to Max</button>
@@ -6027,7 +5376,7 @@ function renderInventory() {
         const quicksellLevelFilter = normalizeInventoryQuicksellLevelFilter();
         const rewardText = formatInventoryQuicksellRewardText(quicksellSummary);
         const quicksellSummaryText = quicksellSummary.items > 0
-            ? `Selected: ${quicksellSummary.items} item${quicksellSummary.items === 1 ? '' : 's'} across ${quicksellSummary.stacks} stack${quicksellSummary.stacks === 1 ? '' : 's'}${formatInventoryQuicksellLevelFilterText()} → ${rewardText}`
+            ? `Selected: ${quicksellSummary.items} item${quicksellSummary.items === 1 ? '' : 's'} across ${quicksellSummary.stacks} stack${quicksellSummary.stacks === 1 ? '' : 's'}${formatInventoryQuicksellLevelFilterText()} 鈫?${rewardText}`
             : 'Selected: no matching unequipped equipment';
 
         html += `<div class="quicksell-panel">
@@ -6628,7 +5977,7 @@ function startNewAuction() {
     // Highlight auction tab
     setAuctionTabAlert(true);
     
-    addChatMessage('SYSTEM', `⚠️ NEW AUCTION STARTED: ${item.name} (${formatAuctionRarityLabel(rarity)})! Click Auction tab to view.`, true);
+    addChatMessage('SYSTEM', `鈿狅笍 NEW AUCTION STARTED: ${item.name} (${formatAuctionRarityLabel(rarity)})! Click Auction tab to view.`, true);
     
     scheduleAuctionEndAt(auctionState.endTime);
     scheduleSilentPersist();
@@ -6738,7 +6087,7 @@ function endAuction() {
             announcementTitle: 'Auction Victory!',
             announcementBody: `${gameState.player.name} won ${completedAuction.currentItem.name} from the auction house.`
         });
-        addChatMessage('SYSTEM', `🎉 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
+        addChatMessage('SYSTEM', `馃帀 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
         addItemLog('auction', completedAuction.currentItem.name);
     } else {
         if (completedAuction.highestBidder) {
@@ -6765,7 +6114,7 @@ function endAuction() {
 function renderAuction() {
     const container = document.getElementById('auction-screen-content');
     
-    let html = `<div class="section-title">🏛️ Auction House</div>`;
+    let html = `<div class="section-title">馃彌锔?Auction House</div>`;
     
     if (!auctionState.active) {
         html += `<div class="msg">No auction currently active. Check back soon! New auctions appear every 10-60 minutes.</div>`;
@@ -6797,7 +6146,7 @@ function renderAuction() {
     </div>`;
     
     html += `<div class="section-title">Auction Status</div>`;
-    html += `<div class="auction-timer">⏱️ Time Remaining: ${mins}m ${secs}s</div>`;
+    html += `<div class="auction-timer">鈴憋笍 Time Remaining: ${mins}m ${secs}s</div>`;
     html += `<div style="margin:10px 0;">
         <div>Current Price: <span style="color:#ffd700;font-weight:bold;font-size:1.1em">${auctionState.currentPrice} Gold</span></div>
         <div>Minimum Bid: <span style="color:#ffd700">${auctionState.minimumBid} Gold</span></div>
@@ -7029,7 +6378,7 @@ function applyWeaponLuckOil() {
             } else {
                 equip.weapon_luck = (equip.weapon_luck || 0) + 1;
                 addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
-                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+                addChatMessage('SYSTEM', `鉁?Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
             }
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -7038,13 +6387,13 @@ function applyWeaponLuckOil() {
     } else if (roll < 0.7) {
         // 30% chance: do nothing
         addBattleMsg('Blessing Oil does nothing. The oil shimmers and fades...', 'info');
-        addChatMessage('SYSTEM', `✨ Blessing Oil fizzles and does nothing. Try again!`, true);
+        addChatMessage('SYSTEM', `鉁?Blessing Oil fizzles and does nothing. Try again!`, true);
     } else if (roll < 0.9) {
         // 20% chance: decrease weapon luck by 1
         if (hasWeapon) {
             equip.weapon_luck = Math.max(0, (equip.weapon_luck || 0) - 1);
             addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${equip.weapon_luck})`, 'damage');
-            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+            addChatMessage('SYSTEM', `鉂?Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
             addChatMessage('SYSTEM', `Sacred Blessing Oil: No weapon equipped. Luck unchanged.`, true);
@@ -7052,7 +6401,7 @@ function applyWeaponLuckOil() {
     } else {
         // 10% remainder: do nothing
         addBattleMsg('Blessing Oil does nothing. The oil shimmers and fades...', 'info');
-        addChatMessage('SYSTEM', `✨ Sacred Blessing Oil shimmers... nothing happened.`, true);
+        addChatMessage('SYSTEM', `鉁?Sacred Blessing Oil shimmers... nothing happened.`, true);
     }
     updateStats();
     renderTemple();
@@ -7307,7 +6656,7 @@ function generateDungeonEncounter() {
     
     // Generate enemy with scaled stats
     const enemy = {
-        name: isMiniboss ? `⚔️ ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
+        name: isMiniboss ? `鈿旓笍 ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
         hp: Math.floor(template.hp * totalMultiplier),
         maxHp: Math.floor(template.hp * totalMultiplier),
         atk: Math.floor(template.atk * totalMultiplier),
@@ -7323,7 +6672,7 @@ function generateDungeonEncounter() {
     dungeonState.inBattle = true;
     
     if (isMiniboss) {
-        addDungeonLog(`⚔️ A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
+        addDungeonLog(`鈿旓笍 A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
         addChatMessage('SYSTEM', `${p.name} encountered a Miniboss at Dungeon Stage ${stage}!`, true);
     } else {
         addDungeonLog(`A ${template.name} appears! (Stage ${stage})`);
@@ -7348,37 +6697,98 @@ function dungeonAction(action) {
     p.hp = dungeonState.hp;
     
     if (action === 'spell') {
-        const result = runSpellCombatTurn(p, e, addDungeonLog, {
-            healCallback: (healAmt) => {
-                dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
-            },
-            afterTurnCallback: () => {
-                dungeonState.hp = p.hp;
-            }
-        });
-        dungeonState.hp = p.hp;
-        if (result.aborted) {
+        // Spell attack: 0.5-3x damage at cost of 15 mana
+        if (p.mp < 15) {
+            addDungeonLog('Not enough mana! Requires 15 MP to cast spell.', 'damage');
             renderDungeon();
-            updateStats();
             return;
         }
-        if (result.enemyDied) {
+        
+        p.mp -= 15;
+        
+        // Get scroll effect values (DOUBLE EFFECT FOR SPELLS)
+        const damageMult = getScrollDamageMultiplier() * 2;
+        const critBonus = getScrollCritBonus() * 2;
+        const invulnerable = isInvulnerable();
+        const totalDef = getEffectivePlayerDefense();
+        
+        // Calculate spell damage multiplier between 0.5x and 3x
+        const spellMultiplier = 0.5 + Math.random() * 2.5;
+        const totalAtk = getTotalAtk();
+        const totalCrit = getTotalCrit();
+        const effectiveEnemyDefense = getEffectiveEnemyDefense(e);
+        const totalAttackInstances = getTotalAttackInstances();
+        
+        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
+        let crit = Math.random() * 100 < (totalCrit + critBonus);
+        if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
+        
+        // Apply spell multiplier + scroll damage multiplier
+        dmg = Math.floor(dmg * spellMultiplier * damageMult);
+        dmg *= totalAttackInstances;
+        
+        e.hp = Math.max(0, e.hp - dmg);
+        
+        addDungeonLog(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+
+        const spellHeal = calculateDamageBasedHealing(dmg);
+        if (spellHeal > 0) {
+            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - p.hp);
+            if (actualHeal > 0) {
+                p.hp += actualHeal;
+                dungeonState.hp = p.hp;
+                addDungeonLog(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+            }
+        }
+        
+        tryTriggerActiveExecute(e, addDungeonLog);
+        
+        if (e.hp <= 0) {
             dungeonEnemyDefeated();
             return;
         }
-        if (result.playerDied) {
+        
+        const counterResult = resolveEnemyCounterAttack(p, e, addDungeonLog, (healAmt) => {
+            dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
+        }, {
+            invulnerable,
+            totalDef
+        });
+        dungeonState.hp = p.hp;
+
+        if (counterResult.enemyDied) {
+            dungeonEnemyDefeated();
+            return;
+        }
+
+        const endOfTurnResult = applyEndOfTurnScrollEffects(p, e, addDungeonLog);
+        dungeonState.hp = p.hp;
+        if (endOfTurnResult.enemyDied) {
+            dungeonEnemyDefeated();
+            return;
+        }
+        
+        if (p.hp <= 0) {
             addDungeonLog('You have fallen in the dungeon!', 'damage');
             triggerDefeatRecovery(addDungeonLog);
             endDungeon();
             return;
         }
-
+        
+        // Decrement scroll effects at end of turn
+        decrementScrollEffects(addDungeonLog);
+        
+        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
+        const maxMp = getTotalMaxMp();
+        const manaRegenAmount = getCombatManaRegenAmount();
+        p.mp = Math.min(maxMp, p.mp + manaRegenAmount);
+        
         renderDungeon();
         updateStats();
         return;
     }
 
-    // ✅ CALL UNIVERSAL COMBAT ENGINE - SAME EXACT CODE AS BATTLE SYSTEM!
+    // 鉁?CALL UNIVERSAL COMBAT ENGINE - SAME EXACT CODE AS BATTLE SYSTEM!
     const result = runUniversalCombatTurn(action, p, e, addDungeonLog, (healAmt) => {
         dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
     });
@@ -7488,7 +6898,7 @@ function dungeonEnemyDefeated() {
     if (dungeonState.stage > 0 && dungeonState.stage % 5 === 0) {
         p.atk += 1;
         p.def += 1;
-        addDungeonLog(`🏆 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
+        addDungeonLog(`馃弳 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
         addChatMessage('SYSTEM', `${p.name} reached Stage ${dungeonState.stage} in the Dungeon and gained permanent +1 ATK and +1 DEF!`, true);
     }
 
@@ -7498,7 +6908,7 @@ function dungeonEnemyDefeated() {
     // Track highest dungeon stage reached
     if (dungeonState.stage > gameState.highestDungeonStage) {
         gameState.highestDungeonStage = dungeonState.stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
+        addDungeonLog(`馃弳 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
         // Auto-save when new highest stage is achieved so it persists across refresh
         saveGame();
     }
@@ -7521,7 +6931,7 @@ function endDungeon() {
     // Track highest dungeon stage reached
     if (stage > gameState.highestDungeonStage) {
         gameState.highestDungeonStage = stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${stage}!`, 'reward');
+        addDungeonLog(`馃弳 New record! Highest dungeon stage: ${stage}!`, 'reward');
     }
     
     addDungeonLog(`Dungeon complete! You reached Stage ${stage}.`, 'info');
@@ -7569,7 +6979,7 @@ function renderDungeon() {
     let html = `<div class="dungeon-info">
         <div class="dungeon-stage">Dungeon - Stage ${dungeonState.stage}</div>
         <div class="dungeon-rewards">Rewards so far: ${dungeonState.rewards.length} victories</div>
-        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
+        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">馃弳 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
     </div>`;
     
     html += `<div class="section-title">Battle - ${e.name}</div>`;
@@ -7618,18 +7028,17 @@ function dungeonUseItem(idx) {
     if (!item || item.type !== 'consumable') return;
 
     if (getPlayerStatusSnapshot().cannotUseItems) {
-        addDungeonLog('You are unable to use items right now!', 'damage');
+        addDungeonLog('You are silenced and cannot use items right now!', 'damage');
         return;
     }
     
     if (item.type === 'consumable') {
         if (item.effect === 'heal') {
-            const actualHeal = applyHealingToTarget(gameState.player, item.value, dungeonState.maxHp, addDungeonLog, item.name);
-            dungeonState.hp = Math.min(dungeonState.maxHp, gameState.player.hp);
+            dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + item.value);
             gameState.player.hp = dungeonState.hp;
-            addDungeonLog(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
+            addDungeonLog(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
         } else if (item.effect === 'mana') {
-            gameState.player.mp = Math.min(getTotalMaxMp(), gameState.player.mp + item.value);
+            gameState.player.mp = Math.min(gameState.player.maxMp, gameState.player.mp + item.value);
             addDungeonLog(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
         } else if (item.effect === 'blessing') {
             addDungeonLog(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -8029,17 +7438,17 @@ function buildFallbackItemDescription(item) {
     let desc = parts.join(', ');
     if (item.mergeLevel > 0) {
         const totalPercent = Math.round((Math.pow(1.5, item.mergeLevel) - 1) * 100);
-        desc += `${desc ? '\n' : ''}✨ Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+        desc += `${desc ? '\n' : ''}鉁?Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
     }
 
     return desc;
 }
 
 function buildMergedDescription(baseDescription, mergeLevel) {
-    const rootDescription = String(baseDescription || '').split('\n✨')[0];
+    const rootDescription = String(baseDescription || '').split('\n鉁?)[0];
     if (!(mergeLevel > 0)) return rootDescription;
     const totalPercent = Math.round((Math.pow(1.5, mergeLevel) - 1) * 100);
-    return `${rootDescription}${rootDescription ? '\n' : ''}✨ Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+    return `${rootDescription}${rootDescription ? '\n' : ''}鉁?Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
 }
 
 function ensureItemDescription(item) {
@@ -9117,20 +8526,20 @@ async function saveGame() {
         const result = await persistCurrentGameState();
 
         if (result.usedIndexedDbFallback) {
-            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage (localStorage quota workaround)!', true);
+            addChatMessage('SYSTEM', '鉁?Game saved using extended browser storage (localStorage quota workaround)!', true);
             console.warn('localStorage quota exceeded, save stored in IndexedDB instead', result.localError);
         } else if (result.localSaved && result.indexedDbSaved) {
-            addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
+            addChatMessage('SYSTEM', '鉁?Game saved successfully!', true);
         } else if (result.localSaved) {
-            addChatMessage('SYSTEM', '✅ Game saved locally!', true);
+            addChatMessage('SYSTEM', '鉁?Game saved locally!', true);
         } else {
-            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage!', true);
+            addChatMessage('SYSTEM', '鉁?Game saved using extended browser storage!', true);
         }
     } catch (e) {
         console.log('Save failed', e);
         addChatMessage('SYSTEM', isQuotaExceededError(e)
-            ? '❌ Browser storage quota exceeded and fallback save also failed!'
-            : '❌ Failed to save game!', true);
+            ? '鉂?Browser storage quota exceeded and fallback save also failed!'
+            : '鉂?Failed to save game!', true);
     }
 }
 
@@ -9142,14 +8551,14 @@ async function loadGame() {
             showScreen('travel');
             updateSidePanels();
             addChatMessage('SYSTEM', restored.source === 'indexedDB'
-                ? '✅ Game loaded from extended browser storage!'
-                : '✅ Game loaded successfully!', true);
+                ? '鉁?Game loaded from extended browser storage!'
+                : '鉁?Game loaded successfully!', true);
         } else {
-            addChatMessage('SYSTEM', '⚠️ No save file found!', true);
+            addChatMessage('SYSTEM', '鈿狅笍 No save file found!', true);
         }
     } catch (e) {
         console.log('Load failed', e);
-        addChatMessage('SYSTEM', '❌ Failed to load game!', true);
+        addChatMessage('SYSTEM', '鉂?Failed to load game!', true);
     }
 }
 
@@ -9220,8 +8629,8 @@ function autoRegen() {
     if (Math.random() < 1/12000) {
         const gems = rand(1, 3);
         gameState.soulGems += gems;
-        addChatMessage('SYSTEM', `✨ You found ${gems} Soul Gem${gems > 1 ? 's' : ''} while exploring!`, true);
-        addBattleMsg(`✨ Found ${gems} Soul Gem${gems > 1 ? 's' : ''}!`, 'reward');
+        addChatMessage('SYSTEM', `鉁?You found ${gems} Soul Gem${gems > 1 ? 's' : ''} while exploring!`, true);
+        addBattleMsg(`鉁?Found ${gems} Soul Gem${gems > 1 ? 's' : ''}!`, 'reward');
         updateStats();
     }
     
@@ -9417,7 +8826,7 @@ function spawnWorldBoss() {
         maxHp: Math.floor(bossTemplate.hp * levelScale * WORLD_BOSS_HEALTH_MULTIPLIER),
         atk: Math.floor(bossTemplate.atk * levelScale * 0.7),
         def: Math.floor(bossTemplate.def * levelScale * 0.7),
-        name: `⚔️ WORLD BOSS: ${bossTemplate.name} ⚔️`
+        name: `鈿旓笍 WORLD BOSS: ${bossTemplate.name} 鈿旓笍`
     };
     
     gameState.worldBossActive = true;
@@ -9428,8 +8837,8 @@ function spawnWorldBoss() {
     
     setWorldBossBattleTabAlert(true);
     
-    addChatMessage('SYSTEM', `⚠️ WORLD BOSS ${bossTemplate.name} HAS APPEARED! Go to the Battle tab!`, true);
-    addChatMessage('SYSTEM', `⚠️ World Boss has ${gameState.currentWorldBoss.maxHp.toLocaleString()} HP! All players can attack!`, true);
+    addChatMessage('SYSTEM', `鈿狅笍 WORLD BOSS ${bossTemplate.name} HAS APPEARED! Go to the Battle tab!`, true);
+    addChatMessage('SYSTEM', `鈿狅笍 World Boss has ${gameState.currentWorldBoss.maxHp.toLocaleString()} HP! All players can attack!`, true);
     
     // Start fake player attacks
     startFakePlayerBossAttacks();
@@ -9452,7 +8861,7 @@ function despawnWorldBoss(defeated) {
     }
     
     if (defeated) {
-        addChatMessage('SYSTEM', `🎉 WORLD BOSS ${gameState.currentWorldBoss.name} HAS BEEN DEFEATED! Rewards distributed!`, true);
+        addChatMessage('SYSTEM', `馃帀 WORLD BOSS ${gameState.currentWorldBoss.name} HAS BEEN DEFEATED! Rewards distributed!`, true);
     } else {
         addChatMessage('SYSTEM', `World Boss has escaped! Better luck next time!`, true);
     }
@@ -9480,139 +8889,72 @@ function attackWorldBoss() {
     }
     
     const boss = gameState.currentWorldBoss;
-    const p = gameState.player;
     const totalAtk = getTotalAtk();
     const totalCrit = getTotalCrit();
-    const totalCritDmg = getTotalCritDmg();
     const damageMult = getScrollDamageMultiplier();
     const critBonus = getScrollCritBonus();
     const invulnerable = isInvulnerable();
     const playerStatus = getPlayerStatusSnapshot();
-    const enemyStatus = getEnemyStatusSnapshot(boss);
     const totalDef = getEffectivePlayerDefense();
+    
+    // Calculate damage
+    const effectiveEnemyDefense = getEffectiveEnemyDefense(boss, 0.3);
+    const totalAttackInstances = getTotalAttackInstances();
+    let dmg = Math.max(5, totalAtk - effectiveEnemyDefense + rand(-5, 10));
+    let crit = Math.random() * 100 < (totalCrit + critBonus);
+    if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
+    dmg = Math.floor(dmg * damageMult);
 
-    let playerDied = false;
-    let enemyDied = false;
-
-    if (playerStatus.skipTurn || playerStatus.cannotAttack) {
-        addBattleMsg('You are unable to attack this turn!', 'damage');
-    } else if (playerStatus.missChance > 0 && Math.random() * 100 < playerStatus.missChance) {
-        addBattleMsg('Your debuffs cause your attack to miss completely!', 'damage');
-    } else {
-        const dodgeChance = boss.dodge || 0;
-        const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus));
-        if (Math.random() < cappedDodge) {
-            addBattleMsg(`${boss.name} DODGED your attack! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
-        } else {
-            const effectiveEnemyDefense = getEffectiveEnemyDefense(boss, 0.3);
-            let dmg = Math.max(5, totalAtk - effectiveEnemyDefense + rand(-5, 10));
-            let crit = Math.random() * 100 < ((totalCrit + critBonus) * playerStatus.critMultiplier);
-            if (crit) dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
-            dmg = Math.floor(dmg * damageMult);
-            dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
-
-            let bonusDmg = 0;
-            let specialMsg = '';
-            let attackCount = playerStatus.attackTwice ? 2 : 1;
-            let trueDamage = false;
-            let guaranteedCrit = false;
-            const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
-
-            if (typeof gameState.attackCounter === 'undefined') {
-                gameState.attackCounter = 0;
+    // Apply special ability bonus damage
+    let bonusDmg = 0;
+    let specialMsg = '';
+    const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
+    eqSlots.forEach(slot => {
+        const eq = gameState.equipment[slot];
+        if (eq) {
+            if (eq.specialAbility === 'half_current_hp') {
+                bonusDmg += Math.floor(boss.hp * 0.5);
+                specialMsg += ' (Reaper Scythe bonus)';
             }
-            gameState.attackCounter++;
+        }
+    });
+    dmg += bonusDmg;
+    dmg *= totalAttackInstances;
 
-            eqSlots.forEach(slot => {
-                const eq = gameState.equipment[slot];
-                if (!eq || !eq.specialAbility) return;
+    boss.hp = Math.max(0, boss.hp - dmg);
 
-                switch(eq.specialAbility) {
-                    case 'half_current_hp':
-                        bonusDmg += Math.floor(boss.hp * 0.5);
-                        specialMsg += ' (Reaper Scythe)';
-                        break;
-                    case 'crit_guaranteed':
-                        guaranteedCrit = true;
-                        crit = true;
-                        break;
-                    case 'low_hp_damage_buff':
-                        if (p.hp < (getTotalMaxHp() * 0.1)) {
-                            dmg = Math.floor(dmg * 2);
-                            specialMsg += ' (Low HP Bonus x2)';
-                        }
-                        break;
-                    case 'triple_attack_every_4':
-                        if (gameState.attackCounter % 4 === 0) {
-                            attackCount = 3;
-                            specialMsg += ' (Triple Attack!)';
-                        }
-                        break;
-                    case 'true_damage_every_3':
-                        if (gameState.attackCounter % 3 === 0) {
-                            trueDamage = true;
-                            specialMsg += ' (True Damage!)';
-                        }
-                        break;
-                }
-            });
+    // Record player damage
+    recordWorldBossPlayerDamage(dmg);
+    scheduleSilentPersist();
+    
+    addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
 
-            if (guaranteedCrit) {
-                crit = true;
-                dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
-            }
+    tryTriggerActiveExecute(boss, addBattleMsg);
 
-            if (trueDamage) {
-                dmg = totalAtk + bonusDmg;
-            } else {
-                dmg += bonusDmg;
-            }
-
-            const totalAttackInstances = getTotalAttackInstances(attackCount);
-            let totalDamageDealt = 0;
-            let landedHits = 0;
-            for (let i = 0; i < totalAttackInstances; i++) {
-                const appliedDamage = applyDamageToTarget(boss, dmg, addBattleMsg);
-                if (appliedDamage > 0) {
-                    totalDamageDealt += appliedDamage;
-                    landedHits++;
-                }
-                if (boss.hp <= 0) break;
-            }
-
-            recordWorldBossPlayerDamage(totalDamageDealt);
-            scheduleSilentPersist();
-            addBattleMsg(`You hit the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
-
-            if (landedHits > 0) {
-                tryApplyPlayerOnHitEffects(boss, addBattleMsg, { hitCount: landedHits });
-            }
-
-            const healAmt = calculateDamageBasedHealing(totalDamageDealt);
-            if (healAmt > 0) {
-                const actualHeal = applyHealingToTarget(p, healAmt, getTotalMaxHp(), addBattleMsg, 'Lifesteal');
-                if (actualHeal > 0) {
-                    addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
-                }
-            }
-
-            tryTriggerActiveExecute(boss, addBattleMsg);
-            if (boss.hp <= 0) {
-                enemyDied = true;
-            }
+    // Apply lifesteal
+    let healAmt = calculateDamageBasedHealing(dmg);
+    if (healAmt > 0) {
+        const p = gameState.player;
+        const actualHeal = Math.min(healAmt, getTotalMaxHp() - p.hp);
+        p.hp += actualHeal;
+        if (actualHeal > 0) {
+            addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
         }
     }
 
-    if (enemyDied) {
+    // Check if boss is dead
+    if (boss.hp <= 0) {
         despawnWorldBoss(true);
         return;
     }
-
+    
+    const p = gameState.player;
     const counterResult = resolveEnemyCounterAttack(p, boss, addBattleMsg, null, {
         invulnerable,
         totalDef,
         defenseMitigationFactor: 0.4
     });
+
     if (counterResult.enemyDied) {
         despawnWorldBoss(true);
         return;
@@ -9624,36 +8966,13 @@ function attackWorldBoss() {
         return;
     }
 
-    if (boss.hp > 0) {
-        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(boss, addBattleMsg);
-        if (enemyStatusResult.targetDied) {
-            despawnWorldBoss(true);
-            return;
-        }
-    }
-
-    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(p, addBattleMsg);
-    if (playerStatusResult.targetDied) {
-        playerDied = true;
-    }
-
-    if (!playerDied && p.hp <= 0) {
-        if (!tryConsumeReviveScroll(p, addBattleMsg)) {
-            playerDied = true;
-        }
-    }
-
     decrementScrollEffects(addBattleMsg);
-
-    const maxMp = getTotalMaxMp();
-    const manaRegenAmount = getCombatManaRegenAmount();
-    gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
-
-    if (playerDied) {
+    
+    if (p.hp <= 0) {
         triggerDefeatRecovery(addBattleMsg);
         resetCombatScrollSession();
     }
-
+    
     renderBattle();
     updateStats();
 }
@@ -9793,7 +9112,7 @@ renderBattle = function() {
                 <div class="boss-hp-fill" style="width:${hpPct}%"></div>
             </div>
             <div style="color:#ff6600;margin:5px 0">HP: ${boss.hp.toLocaleString()} / ${boss.maxHp.toLocaleString()} (${hpPct}%)</div>
-            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `RECOVERING (${formatPvpCooldown(combatCooldownRemaining)})` : '⚔️ ATTACK WORLD BOSS'}</button>
+            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `RECOVERING (${formatPvpCooldown(combatCooldownRemaining)})` : '鈿旓笍 ATTACK WORLD BOSS'}</button>
         </div>`;
 
         const visibleScrolls = getVisibleCombatScrolls();
@@ -9812,7 +9131,7 @@ renderBattle = function() {
         
         if (playerRank > 0) {
             html += `<div style="background:#1a1a1a;padding:10px;margin:10px 0;border:1px solid #ffaa00;">
-                <div style="color:#ffaa00;font-weight:bold">📊 Your Contribution</div>
+                <div style="color:#ffaa00;font-weight:bold">馃搳 Your Contribution</div>
                 <div>Rank: #${playerRank} / ${damageSorted.length} participants</div>
                 <div>Damage Dealt: ${playerDamage.toLocaleString()}</div>
                 <div>Damage %: ${(playerDamage / gameState.worldBossTotalDamage * 100).toFixed(1)}%</div>
@@ -9834,6 +9153,4 @@ renderBattle = function() {
 // Start the game
 init();
 
-</script>
-</body>
-</html>
+

@@ -67,8 +67,9 @@ const STATUS_EFFECTS = {
         name: 'Paralyzed',
         type: 'debuff',
         category: 'control',
-        description: 'Completely lose your turn - cannot attack or use items',
-        skipTurn: true,
+        description: 'Attacks always miss and items cannot be used this turn',
+        missChance: 100,
+        cannotUseItems: true,
         duration: 1,
         icon: '⚡',
         color: '#f1c40f'

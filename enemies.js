@@ -10,7 +10,8 @@ const ENEMY_TIERS = {
     7: { hp: 500, atk: 50, def: 30, xp: 1000, gold: 500, rarity: 'legendary' },
     8: { hp: 800, atk: 65, def: 40, xp: 2000, gold: 800, rarity: 'legendary' },
     9: { hp: 1200, atk: 85, def: 55, xp: 3500, gold: 1200, rarity: 'legendary' },
-    10: { hp: 1800, atk: 110, def: 70, xp: 5000, gold: 1800, rarity: 'legendary' }
+    10: { hp: 1800, atk: 110, def: 70, xp: 5000, gold: 1800, rarity: 'legendary' },
+    11: { hp: 2600, atk: 150, def: 95, xp: 7200, gold: 2600, rarity: 'legendary' }
 };
 
 // ENEMY NAME DATABASE - More enemies for variety
@@ -78,7 +79,14 @@ const ENEMY_NAME_DB = {
     'apocalypse': { tier: 10, rarity: 'legendary', drops: ['Void Crystal', 'Soul Gem', 'Soul Gem'] },
     'void_emperor': { tier: 10, rarity: 'legendary', drops: ['Void Crystal', 'Void Crystal', 'Phoenix Feather'] },
     'eternal_dragon': { tier: 10, rarity: 'legendary', drops: ['Dragon Heart', 'Phoenix Feather', 'Dragon Scale'] },
-    'primordial_demon': { tier: 10, rarity: 'legendary', drops: ['Demon Horn', 'Infernal Blade', 'Void Crystal'] }
+    'primordial_demon': { tier: 10, rarity: 'legendary', drops: ['Demon Horn', 'Infernal Blade', 'Void Crystal'] },
+
+    // TIER 11: Ceaseless Void (Level 60+ endgame horrors)
+    'void_seraph': { tier: 11, rarity: 'legendary', drops: ['Void Crystal', 'Celestial Core', 'Starweave Fiber'] },
+    'entropy_behemoth': { tier: 11, rarity: 'legendary', drops: ['Abyssal Shard', 'Celestial Core', 'Mythril Ore'] },
+    'null_watcher': { tier: 11, rarity: 'legendary', drops: ['Void Crystal', 'Shadow Essence', 'Runic Thread'] },
+    'ceaseless_maw': { tier: 11, rarity: 'legendary', drops: ['Demon Horn', 'Void Crystal', 'Aethersteel Ingot'] },
+    'paradox_harbinger': { tier: 11, rarity: 'legendary', drops: ['Soul Gem', 'Celestial Core', 'Void Crystal'] }
 };
 
 // WORLD BOSSES
@@ -203,6 +211,14 @@ Object.keys(ENEMY_NAME_DB).forEach(key => {
         'shadow_demon_lord': { inflict: 'curse', chance: 65 }
     };
 
+    const enemySpecialOverrides = {
+        'void_seraph': { randomDebuffChance: 0.45, randomDebuffCountRange: [1, 3], debuffPool: ['silence', 'freeze', 'curse', 'exhaustion', 'vulnerability'] },
+        'entropy_behemoth': { randomDebuffChance: 0.5, randomDebuffCountRange: [2, 4], debuffPool: ['stun', 'weakness', 'root', 'vulnerability', 'slow'] },
+        'null_watcher': { randomDebuffChance: 0.4, randomDebuffCountRange: [1, 4], debuffPool: ['paralysis', 'silence', 'exhaustion', 'curse', 'freeze'] },
+        'ceaseless_maw': { randomDebuffChance: 0.5, randomDebuffCountRange: [2, 4], debuffPool: ['bleed', 'burn', 'poison', 'weakness', 'curse'] },
+        'paradox_harbinger': { randomDebuffChance: 0.55, randomDebuffCountRange: [2, 4], debuffPool: ['freeze', 'paralysis', 'silence', 'vulnerability', 'exhaustion', 'curse'] }
+    };
+
     enemies[key] = { 
         name: key.replace(/_/g, ' '), 
         hp: t.hp, 
@@ -214,7 +230,8 @@ Object.keys(ENEMY_NAME_DB).forEach(key => {
         drops: e.drops, 
         tier: e.tier, 
         rarity: e.rarity || t.rarity,
-        inflictDebuff: enemyDebuffMap[key] || null
+        inflictDebuff: enemyDebuffMap[key] || null,
+        ...(enemySpecialOverrides[key] || {})
     };
 });
 
