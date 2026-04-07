@@ -1,4 +1,5 @@
 
+
 // GAME STATE
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0, permanentAtkBonus: 0, permanentDefBonus: 0 },
@@ -52,12 +53,18 @@ const gameState = {
     forceRefreshCount: 0,
     // Grand Market force refresh cost tracking
     marketForceRefreshCost: 150,
-    marketForceRefreshCount: 0
+    marketForceRefreshCount: 0,
+    enchanting: {
+        selectedSlot: null,
+        lockedIndices: [],
+        lastBefore: [],
+        lastAfter: []
+    }
 };
 
 // LOCATIONS
 const locations = {
-    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple'] },
+    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple', 'enchantment_altar'] },
     forest: { name: 'Enchanted Forest', desc: 'A mystical forest teeming with life.', connections: ['town', 'mountains'], levelRange: [1, 10], minLevel: 1, enemies: ['rat', 'slime', 'wolf', 'goblin', 'forest_sprite', 'giant_bat'] },
     dark_forest: { name: 'Dark Forest', desc: 'A shadowy forest filled with danger.', connections: ['town', 'swamp'], levelRange: [10, 25], minLevel: 10, enemies: ['dark_wolf', 'wraith', 'rock_golem', 'harpy', 'orc_warrior'] },
     mountains: { name: 'Dragon Mountains', desc: 'Treacherous peaks inhabited by dragons.', connections: ['town', 'forest', 'dragon_lair'], levelRange: [8, 30], minLevel: 8, enemies: ['skeleton_knight', 'forest_troll', 'pixie_swarm', 'wolf_alpha', 'young_dragon'] },
@@ -66,7 +73,8 @@ const locations = {
     ceaseless_void: { name: 'Ceaseless Void', desc: 'A collapsing abyss where reality tears and cursed horrors strike with layered debuffs.', connections: ['dragon_lair'], levelRange: [55, 70], minLevel: 55, enemies: ['void_seraph', 'entropy_behemoth', 'null_watcher', 'ceaseless_maw', 'paradox_harbinger'], wanderRewardMultiplier: 3 },
     market: { name: 'Grand Market', desc: 'A marketplace for trading and shopping.', connections: ['town'], minLevel: 1 },
     guild: { name: "Adventurer's Guild", desc: 'Where quests and jobs are undertaken.', connections: ['town'], minLevel: 1 },
-    temple: { name: 'Sacred Temple', desc: 'A place of healing and spiritual renewal.', connections: ['town'], minLevel: 1 }
+    temple: { name: 'Sacred Temple', desc: 'A place of healing and spiritual renewal.', connections: ['town'], minLevel: 1 },
+    enchantment_altar: { name: 'Enchantment Altar', desc: 'Runes drift above a silent altar where legendary gear can be reshaped with dangerous magic.', connections: ['town'], minLevel: 1 }
 };
 
 // BLESSING OIL
@@ -92,7 +100,7 @@ let currentPvpEnemy = null;
 const PVP_COOLDOWN_MS = 15 * 60 * 1000;
 const TRADE_COOLDOWN_MS = 15 * 60 * 1000;
 const DEFEAT_COMBAT_COOLDOWN_MS = 5 * 60 * 1000;
-const DEFEAT_NAVIGATION_COOLDOWN_MS = 30 * 1000;
+const DEFEAT_SCREEN_LOCKOUT_MS = 5 * 60 * 1000;
 const WORLD_BOSS_HEALTH_MULTIPLIER = 50;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN = 500;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX = 2000;
@@ -142,6 +150,31 @@ const COMBAT_STATUS_RULES = {
 };
 const PLAYER_DEBUFF_TEMPLATES = COMBAT_STATUS_TEMPLATES;
 const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(COMBAT_STATUS_TEMPLATES).filter(effectId => COMBAT_STATUS_TEMPLATES[effectId].type === 'debuff');
+const ENCHANT_RARITY_ROLL_RANGES = {
+    legendary: { min: 1, max: 3 },
+    unique: { min: 2, max: 4 },
+    uber_unique: { min: 3, max: 5 }
+};
+const ENCHANT_POSITIVE_BUFF_EFFECTS = ['strength', 'shield', 'regeneration', 'haste', 'berserk'];
+const ENCHANT_FLAT_STAT_KEYS = new Set(['maxHp', 'atk', 'def', 'healthRegen']);
+const ENCHANT_PERCENT_STAT_KEYS = new Set(['hpPercent', 'atkPercent', 'defPercent', 'crit', 'critDmg', 'dodge', 'dmgReduction', 'attackSpeed']);
+const ENCHANT_DIRECT_PERCENT_STATS = new Set(['crit', 'critDmg', 'dodge', 'dmgReduction', 'attackSpeed']);
+const ENCHANT_BONUS_DEFINITIONS = [
+    { kind: 'flat', stat: 'maxHp', min: 20, max: 200 },
+    { kind: 'flat', stat: 'atk', min: 10, max: 100 },
+    { kind: 'flat', stat: 'def', min: 15, max: 150 },
+    { kind: 'percent', stat: 'hpPercent', min: 5, max: 30 },
+    { kind: 'percent', stat: 'atkPercent', min: 5, max: 30 },
+    { kind: 'percent', stat: 'defPercent', min: 5, max: 30 },
+    { kind: 'percent', stat: 'crit', min: 1, max: 20 },
+    { kind: 'percent', stat: 'critDmg', min: 5, max: 20 },
+    { kind: 'onHitDebuff', min: 20, max: 80 },
+    { kind: 'onHitBuff', min: 20, max: 80 },
+    { kind: 'percent', stat: 'dodge', min: 1, max: 10 },
+    { kind: 'percent', stat: 'dmgReduction', min: 1, max: 10 },
+    { kind: 'flat', stat: 'healthRegen', min: 1, max: 10 },
+    { kind: 'percent', stat: 'attackSpeed', min: 5, max: 25 }
+];
 const WANDER_COMPLETION_CONGRATS = [
     '{player} actually cleared a {rank} wandering expedition. That is absurd.',
     'Respect, {player}. A full {rank} wander clear is not normal.',
@@ -180,7 +213,7 @@ function getCombatCooldownRemainingMs() {
     return Math.max(0, (gameState.combatCooldownUntil || 0) - Date.now());
 }
 
-function getNavigationCooldownRemainingMs() {
+function getDefeatScreenLockRemainingMs() {
     return Math.max(0, (gameState.navigationCooldownUntil || 0) - Date.now());
 }
 
@@ -193,12 +226,12 @@ function formatPvpCooldown(ms) {
 
 function getDefeatStatusMessage() {
     const combatRemaining = getCombatCooldownRemainingMs();
-    const navigationRemaining = getNavigationCooldownRemainingMs();
-    if (combatRemaining <= 0 && navigationRemaining <= 0) return '';
+    const screenLockRemaining = getDefeatScreenLockRemainingMs();
+    if (combatRemaining <= 0 && screenLockRemaining <= 0) return '';
 
     const details = [];
     if (combatRemaining > 0) details.push(`Combat cooldown: ${formatPvpCooldown(combatRemaining)}`);
-    if (navigationRemaining > 0) details.push(`Navigation cooldown: ${formatPvpCooldown(navigationRemaining)}`);
+    if (screenLockRemaining > 0) details.push(`Battle/Wander locked: ${formatPvpCooldown(screenLockRemaining)}`);
     return `You have been defeated. Reviving... ${details.join(' | ')}`;
 }
 
@@ -212,18 +245,23 @@ function updateStatusBanner() {
 }
 
 function updateNavigationCooldownState() {
-    const remaining = getNavigationCooldownRemainingMs();
+    const remaining = getDefeatScreenLockRemainingMs();
     const isActive = remaining > 0;
-    document.querySelectorAll('#navigation .nav-btn').forEach(btn => {
+    const lockedButtons = [
+        document.getElementById('battle-tab'),
+        document.getElementById('wander-tab')
+    ].filter(Boolean);
+
+    lockedButtons.forEach(btn => {
         btn.disabled = isActive;
-        btn.title = isActive ? `Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.` : '';
+        btn.title = isActive ? `Unavailable after defeat for ${formatPvpCooldown(remaining)}.` : '';
     });
 }
 
 function refreshCooldownUi() {
     const combatSeconds = Math.ceil(getCombatCooldownRemainingMs() / 1000);
-    const navigationSeconds = Math.ceil(getNavigationCooldownRemainingMs() / 1000);
-    const signature = `${combatSeconds}:${navigationSeconds}`;
+    const screenLockSeconds = Math.ceil(getDefeatScreenLockRemainingMs() / 1000);
+    const signature = `${combatSeconds}:${screenLockSeconds}`;
     if (signature === lastCooldownUiSignature) return;
     lastCooldownUiSignature = signature;
 
@@ -252,9 +290,10 @@ function attemptShowScreen(screenName) {
         (combatContext === 'worldboss' && targetScreen === 'battle') ||
         (combatContext === 'wandering' && targetScreen === 'wandering');
 
-    const remaining = getNavigationCooldownRemainingMs();
-    if (remaining > 0 && !canBypassCooldown) {
-        addBattleMsg(`Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.`, 'damage');
+    const remaining = getDefeatScreenLockRemainingMs();
+    const isLockedScreen = targetScreen === 'battle' || targetScreen === 'wandering';
+    if (remaining > 0 && isLockedScreen && !canBypassCooldown) {
+        addBattleMsg(`Battle and Wander are unavailable after defeat for ${formatPvpCooldown(remaining)}.`, 'damage');
         refreshCooldownUi();
         return;
     }
@@ -274,7 +313,7 @@ function triggerDefeatRecovery(logCallback = addBattleMsg) {
     const now = Date.now();
     gameState.player.hp = Math.max(1, Math.floor(getTotalMaxHp() * 0.5));
     gameState.combatCooldownUntil = Math.max(gameState.combatCooldownUntil || 0, now + DEFEAT_COMBAT_COOLDOWN_MS);
-    gameState.navigationCooldownUntil = Math.max(gameState.navigationCooldownUntil || 0, now + DEFEAT_NAVIGATION_COOLDOWN_MS);
+    gameState.navigationCooldownUntil = Math.max(gameState.navigationCooldownUntil || 0, now + DEFEAT_SCREEN_LOCKOUT_MS);
     logCallback('You have been defeated. Reviving...', 'damage');
     addChatMessage('SYSTEM', 'You have been defeated. Reviving...', true);
     scheduleSilentPersist();
@@ -750,6 +789,351 @@ function resolveEquipSlot(item) {
 
 function isEquipable(item) {
     return !!resolveEquipSlot(item);
+}
+
+function normalizeEnchantingState() {
+    if (!gameState.enchanting || typeof gameState.enchanting !== 'object') {
+        gameState.enchanting = { selectedSlot: null, lockedIndices: [], lastBefore: [], lastAfter: [] };
+    }
+    if (!Array.isArray(gameState.enchanting.lockedIndices)) gameState.enchanting.lockedIndices = [];
+    if (!Array.isArray(gameState.enchanting.lastBefore)) gameState.enchanting.lastBefore = [];
+    if (!Array.isArray(gameState.enchanting.lastAfter)) gameState.enchanting.lastAfter = [];
+    return gameState.enchanting;
+}
+
+function getEnchantBonuses(item) {
+    return Array.isArray(item?.enchantBonusStats) ? item.enchantBonusStats.filter(Boolean) : [];
+}
+
+function hasEnchantBonuses(item) {
+    return getEnchantBonuses(item).length > 0;
+}
+
+function isEnchantableItem(item) {
+    return !!(item && resolveEquipSlot(item) && ENCHANT_RARITY_ROLL_RANGES[item.rarity]);
+}
+
+function getEnchantableEquipmentEntries() {
+    return ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape']
+        .map(slot => ({ slot, item: gameState.equipment[slot] }))
+        .filter(({ item }) => isEnchantableItem(item));
+}
+
+function getEnchantRollRange(item) {
+    return ENCHANT_RARITY_ROLL_RANGES[item?.rarity] || null;
+}
+
+function getEnchantPercentBaseStat(statKey) {
+    switch (statKey) {
+        case 'hpPercent': return 'maxHp';
+        case 'atkPercent': return 'atk';
+        case 'defPercent': return 'def';
+        case 'crit': return 'crit';
+        case 'critDmg': return 'critDmg';
+        case 'dodge': return 'dodge';
+        case 'dmgReduction': return 'dmgReduction';
+        case 'attackSpeed': return 'attackSpeed';
+        default: return null;
+    }
+}
+
+function getEnchantStatDisplayLabel(statKey) {
+    const labels = {
+        maxHp: 'HP',
+        atk: 'ATK',
+        def: 'DEF',
+        hpPercent: 'HP',
+        atkPercent: 'ATK',
+        defPercent: 'DEF',
+        crit: 'CRIT',
+        critDmg: 'Crit Damage',
+        dodge: 'Dodge',
+        dmgReduction: 'Damage Reduction',
+        healthRegen: 'Regen',
+        attackSpeed: 'Attack Speed'
+    };
+    return labels[statKey] || formatItemStatLabel(statKey);
+}
+
+function humanizeStatusEffectName(effectId) {
+    return COMBAT_STATUS_TEMPLATES[effectId]?.name
+        || String(effectId || 'effect').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatEnchantBonus(bonus) {
+    if (!bonus) return 'Empty';
+    if (bonus.kind === 'flat') return `+${bonus.value} ${getEnchantStatDisplayLabel(bonus.stat)}`;
+    if (bonus.kind === 'percent') return `+${bonus.value}% ${getEnchantStatDisplayLabel(bonus.stat)}`;
+    if (bonus.kind === 'onHitDebuff') return `${bonus.chance}% Inflict ${humanizeStatusEffectName(bonus.effect)} on Hit`;
+    if (bonus.kind === 'onHitBuff') return `${bonus.chance}% Buff Self with ${humanizeStatusEffectName(bonus.effect)} on Hit`;
+    return 'Unknown Enchant';
+}
+
+function normalizeEnchantBonus(bonus) {
+    if (!bonus || typeof bonus !== 'object') return null;
+    const kind = String(bonus.kind || '').trim();
+
+    if (kind === 'flat') {
+        const stat = String(bonus.stat || '').trim();
+        if (!ENCHANT_FLAT_STAT_KEYS.has(stat)) return null;
+        return {
+            kind,
+            stat,
+            value: normalizeFiniteNumber(bonus.value, 0, { min: 0 })
+        };
+    }
+
+    if (kind === 'percent') {
+        const stat = String(bonus.stat || '').trim();
+        if (!ENCHANT_PERCENT_STAT_KEYS.has(stat)) return null;
+        return {
+            kind,
+            stat,
+            value: normalizeFiniteNumber(bonus.value, 0, { min: 0 })
+        };
+    }
+
+    if (kind === 'onHitDebuff') {
+        const fallbackEffect = DEFAULT_RANDOM_DEBUFF_POOL[0] || 'burn';
+        const effect = DEFAULT_RANDOM_DEBUFF_POOL.includes(bonus.effect) ? bonus.effect : fallbackEffect;
+        return {
+            kind,
+            effect,
+            chance: normalizeFiniteNumber(bonus.chance ?? bonus.value, 0, { min: 0, max: 100 })
+        };
+    }
+
+    if (kind === 'onHitBuff') {
+        const fallbackEffect = ENCHANT_POSITIVE_BUFF_EFFECTS[0] || 'strength';
+        const effect = ENCHANT_POSITIVE_BUFF_EFFECTS.includes(bonus.effect) ? bonus.effect : fallbackEffect;
+        return {
+            kind,
+            effect,
+            chance: normalizeFiniteNumber(bonus.chance ?? bonus.value, 0, { min: 0, max: 100 })
+        };
+    }
+
+    return null;
+}
+
+function normalizeEnchantBonuses(list) {
+    return (Array.isArray(list) ? list : []).map(normalizeEnchantBonus).filter(Boolean);
+}
+
+function applyEnchantBonusesToItem(item, bonuses) {
+    if (!item) return item;
+    const normalized = normalizeEnchantBonuses(bonuses);
+    if (normalized.length > 0) item.enchantBonusStats = normalized;
+    else delete item.enchantBonusStats;
+    ensureItemDescription(item);
+    return item;
+}
+
+function stripEnchantDataFromItem(item) {
+    if (!item) return item;
+    const clean = cloneData(item);
+    delete clean.enchantBonusStats;
+    clean.desc = stripEnchantDescription(clean.desc || '');
+    return ensureItemDescription(clean);
+}
+
+function getSelectedEnchantSlot() {
+    const enchanting = normalizeEnchantingState();
+    const slot = enchanting.selectedSlot;
+    const item = slot ? gameState.equipment[slot] : null;
+    return isEnchantableItem(item) ? slot : null;
+}
+
+function getSelectedEnchantItem() {
+    const slot = getSelectedEnchantSlot();
+    return slot ? gameState.equipment[slot] : null;
+}
+
+function selectEnchantSlot(slot) {
+    const item = gameState.equipment[slot];
+    if (!isEnchantableItem(item)) return;
+    const enchanting = normalizeEnchantingState();
+    enchanting.selectedSlot = slot;
+    enchanting.lockedIndices = [];
+    enchanting.lastBefore = getEnchantBonuses(item).map(cloneData);
+    enchanting.lastAfter = getEnchantBonuses(item).map(cloneData);
+    renderEnchantmentAltar();
+}
+
+function getBaseEnchantCost(item) {
+    if (!item) return { gold: 0, soulGems: 0 };
+    if (item.rarity === 'legendary') {
+        return {
+            gold: 1000 * Math.max(1, Number(item.levelReq) || 1),
+            soulGems: 0
+        };
+    }
+    return { gold: 0, soulGems: 1 };
+}
+
+function scaleEnchantCost(cost, multiplier = 1) {
+    const safeMultiplier = Math.max(1, Math.floor(multiplier || 1));
+    return {
+        gold: Math.floor((cost?.gold || 0) * safeMultiplier),
+        soulGems: Math.floor((cost?.soulGems || 0) * safeMultiplier)
+    };
+}
+
+function formatEnchantCost(cost) {
+    const parts = [];
+    if (cost.gold > 0) parts.push(`${cost.gold.toLocaleString()} Gold`);
+    if (cost.soulGems > 0) parts.push(`${cost.soulGems} Soul Gem${cost.soulGems === 1 ? '' : 's'}`);
+    return parts.join(' + ') || 'Free';
+}
+
+function canAffordEnchantCost(cost) {
+    return gameState.player.gold >= (cost.gold || 0) && gameState.soulGems >= (cost.soulGems || 0);
+}
+
+function spendEnchantCost(cost) {
+    if (!canAffordEnchantCost(cost)) return false;
+    gameState.player.gold -= cost.gold || 0;
+    gameState.soulGems -= cost.soulGems || 0;
+    return true;
+}
+
+function toggleEnchantLock(index) {
+    const enchanting = normalizeEnchantingState();
+    const item = getSelectedEnchantItem();
+    const bonuses = getEnchantBonuses(item);
+    if (!item || !bonuses[index]) return;
+
+    if (enchanting.lockedIndices.includes(index)) {
+        enchanting.lockedIndices = enchanting.lockedIndices.filter(i => i !== index);
+    } else {
+        enchanting.lockedIndices.push(index);
+        enchanting.lockedIndices.sort((a, b) => a - b);
+    }
+    renderEnchantmentAltar();
+}
+
+function generateRandomEnchantBonus() {
+    const definition = pick(ENCHANT_BONUS_DEFINITIONS);
+    if (!definition) return null;
+
+    if (definition.kind === 'onHitDebuff') {
+        return normalizeEnchantBonus({
+            kind: 'onHitDebuff',
+            effect: pick(DEFAULT_RANDOM_DEBUFF_POOL) || 'burn',
+            chance: rand(definition.min, definition.max)
+        });
+    }
+
+    if (definition.kind === 'onHitBuff') {
+        return normalizeEnchantBonus({
+            kind: 'onHitBuff',
+            effect: pick(ENCHANT_POSITIVE_BUFF_EFFECTS) || 'strength',
+            chance: rand(definition.min, definition.max)
+        });
+    }
+
+    return normalizeEnchantBonus({
+        kind: definition.kind,
+        stat: definition.stat,
+        value: rand(definition.min, definition.max)
+    });
+}
+
+function buildEnchantRerollBonuses(item, lockedIndices = []) {
+    const currentBonuses = getEnchantBonuses(item);
+    const lockedSet = new Set((Array.isArray(lockedIndices) ? lockedIndices : []).filter(idx => currentBonuses[idx]));
+    const nextBonuses = currentBonuses.filter((_, idx) => lockedSet.has(idx)).map(cloneData);
+    const rollRange = getEnchantRollRange(item) || { min: 1, max: 1 };
+    const targetCount = Math.max(nextBonuses.length, rand(rollRange.min, rollRange.max));
+
+    while (nextBonuses.length < targetCount) {
+        const nextBonus = generateRandomEnchantBonus();
+        if (nextBonus) nextBonuses.push(nextBonus);
+    }
+
+    return normalizeEnchantBonuses(nextBonuses);
+}
+
+function performEnchant() {
+    const enchanting = normalizeEnchantingState();
+    const item = getSelectedEnchantItem();
+    if (!item || !isEnchantableItem(item)) {
+        addBattleMsg('Select a Legendary, Unique, or Uber Unique equipped item first.', 'damage');
+        renderEnchantmentAltar();
+        return;
+    }
+
+    const currentBonuses = getEnchantBonuses(item);
+    const rerolling = currentBonuses.length > 0;
+    const lockedIndices = rerolling ? enchanting.lockedIndices.filter(idx => currentBonuses[idx]) : [];
+    const baseCost = getBaseEnchantCost(item);
+    const totalCost = scaleEnchantCost(baseCost, rerolling ? (1 + lockedIndices.length) : 1);
+
+    if (!spendEnchantCost(totalCost)) {
+        addBattleMsg(`Not enough currency! Required: ${formatEnchantCost(totalCost)}.`, 'damage');
+        renderEnchantmentAltar();
+        return;
+    }
+
+    const beforeBonuses = currentBonuses.map(cloneData);
+    const afterBonuses = buildEnchantRerollBonuses(item, lockedIndices);
+    applyEnchantBonusesToItem(item, afterBonuses);
+
+    enchanting.lastBefore = beforeBonuses;
+    enchanting.lastAfter = afterBonuses.map(cloneData);
+    enchanting.lockedIndices = lockedIndices.filter(idx => afterBonuses[idx]);
+
+    recalculateAllPlayerStats();
+    updateStats();
+    renderEquipment();
+    renderInventory();
+    renderEnchantmentAltar();
+    updateSidePanels();
+    scheduleSilentPersist();
+
+    addBattleMsg(
+        rerolling
+            ? `Rerolled ${item.name} for ${formatEnchantCost(totalCost)}!`
+            : `Enchanted ${item.name} for ${formatEnchantCost(totalCost)}!`,
+        'reward'
+    );
+    addChatMessage('SYSTEM', `${gameState.player.name} ${rerolling ? 'rerolled' : 'enchanted'} ${item.name}.`, true);
+}
+
+function renderEnchantBonusBoxes(bonuses, options = {}) {
+    const showLocks = !!options.showLocks;
+    const lockedSet = new Set(options.lockedIndices || []);
+    let html = `<div class="enchant-box-list">`;
+
+    for (let i = 0; i < 5; i++) {
+        const bonus = bonuses[i];
+        const locked = lockedSet.has(i);
+        if (!bonus) {
+            html += `<div class="enchant-box empty"><div class="enchant-box-text">Empty</div></div>`;
+            continue;
+        }
+
+        html += `<div class="enchant-box ${locked ? 'locked' : ''}">
+            <div class="enchant-box-text">${formatEnchantBonus(bonus)}</div>
+            ${showLocks ? `<button class="enchant-lock-btn ${locked ? 'locked' : ''}" onclick="toggleEnchantLock(${i})">${locked ? '🔒 Locked' : '🔓 Lock'}</button>` : ''}
+        </div>`;
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+function stripEnchantDescription(desc) {
+    const raw = String(desc || '');
+    return raw.split('\n🔮 Enchant Bonuses:')[0];
+}
+
+function buildEnchantDescription(baseDescription, item) {
+    const bonuses = getEnchantBonuses(item);
+    const root = stripEnchantDescription(baseDescription || '');
+    if (bonuses.length === 0) return root;
+    const lines = bonuses.map((bonus, idx) => `${idx + 1}. ${formatEnchantBonus(bonus)}`);
+    return `${root}${root ? '\n' : ''}🔮 Enchant Bonuses:\n${lines.join('\n')}`;
 }
 
 const FAKE_PLAYER_NAMES = [
@@ -1523,6 +1907,33 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
                     }
                 }
 
+                getEnchantBonuses(eq).forEach(bonus => {
+                    if (!bonus) return;
+
+                    if (bonus.kind === 'flat') {
+                        if (bonus.stat === stat) {
+                            flatBonus += bonus.value || 0;
+                        }
+                        if (stat === 'maxHp' && bonus.stat === 'hp') {
+                            flatBonus += bonus.value || 0;
+                        }
+                        return;
+                    }
+
+                    if (bonus.kind === 'percent') {
+                        if (ENCHANT_DIRECT_PERCENT_STATS.has(bonus.stat)) {
+                            if (bonus.stat === stat) {
+                                flatBonus += bonus.value || 0;
+                            }
+                            return;
+                        }
+                        const mappedStat = getEnchantPercentBaseStat(bonus.stat);
+                        if (mappedStat === stat) {
+                            percentMultiplier += ((bonus.value || 0) / 100);
+                        }
+                    }
+                });
+
                 if (shouldApplyGlobalMerge && (!hasIntrinsicStat || canUseCanonicalBaseStat)) {
                     globalMergeMultiplier *= Math.pow(1.5, mergeLevel);
                 }
@@ -2111,24 +2522,68 @@ function tryApplyPlayerOnHitEffects(enemyObj, logCallback = addBattleMsg, option
 
     const hitCount = Math.max(1, Number(options.hitCount) || 1);
     const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
-    const procSources = eqSlots
-        .map(slot => gameState.equipment[slot])
-        .filter(item => item && item.onHitDebuff && item.onHitDebuff.effect);
+    const procSources = [];
+
+    eqSlots.forEach(slot => {
+        const item = gameState.equipment[slot];
+        if (!item) return;
+
+        if ((item.onHitDebuff && item.onHitDebuff.effect) || (item.onHitBuff && item.onHitBuff.effect)) {
+            procSources.push(item);
+        }
+
+        getEnchantBonuses(item).forEach((bonus, index) => {
+            if (bonus.kind === 'onHitDebuff' && bonus.effect) {
+                procSources.push({
+                    name: `${item.name} [Enchant ${index + 1}]`,
+                    onHitDebuff: {
+                        effect: bonus.effect,
+                        chance: bonus.chance || 0
+                    }
+                });
+            } else if (bonus.kind === 'onHitBuff' && bonus.effect) {
+                procSources.push({
+                    name: `${item.name} [Enchant ${index + 1}]`,
+                    onHitBuff: {
+                        effect: bonus.effect,
+                        chance: bonus.chance || 0
+                    }
+                });
+            }
+        });
+    });
 
     procSources.forEach(source => {
-        const proc = source.onHitDebuff;
-        let triggered = false;
-        for (let i = 0; i < hitCount; i++) {
-            if (Math.random() * 100 < (proc.chance || 0)) {
-                triggered = true;
-                break;
+        const debuffProc = source.onHitDebuff;
+        if (debuffProc && debuffProc.effect) {
+            let triggered = false;
+            for (let i = 0; i < hitCount; i++) {
+                if (Math.random() * 100 < (debuffProc.chance || 0)) {
+                    triggered = true;
+                    break;
+                }
+            }
+
+            if (triggered && addEnemyStatusEffect(enemyObj, debuffProc.effect, { source: source.name })) {
+                const effect = COMBAT_STATUS_TEMPLATES[debuffProc.effect];
+                logCallback(`${effect?.icon || '✨'} ${source.name} afflicts ${enemyObj.name} with ${effect?.name || debuffProc.effect}!`, 'reward');
             }
         }
-        if (!triggered) return;
 
-        if (addEnemyStatusEffect(enemyObj, proc.effect, { source: source.name })) {
-            const effect = COMBAT_STATUS_TEMPLATES[proc.effect];
-            logCallback(`${effect?.icon || '✨'} ${source.name} afflicts ${enemyObj.name} with ${effect?.name || proc.effect}!`, 'reward');
+        const buffProc = source.onHitBuff;
+        if (buffProc && buffProc.effect) {
+            let triggered = false;
+            for (let i = 0; i < hitCount; i++) {
+                if (Math.random() * 100 < (buffProc.chance || 0)) {
+                    triggered = true;
+                    break;
+                }
+            }
+
+            if (triggered && addPlayerStatusEffect(buffProc.effect, { source: source.name })) {
+                const effect = COMBAT_STATUS_TEMPLATES[buffProc.effect];
+                logCallback(`${effect?.icon || '✨'} ${source.name} grants you ${effect?.name || buffProc.effect}!`, 'reward');
+            }
         }
     });
 }
@@ -3856,7 +4311,7 @@ function addToInventory(item, options = {}) {
     if (!item) return;
     // sanitize luck: only allow luck on weapons or explicit 'charm' types
     const allowedLuckTypes = ['weapon', 'charm'];
-    const copy = { ...item };
+    const copy = cloneData(item);
     delete copy.marketPrice;
     delete copy.marketQty;
     delete copy.marketId;
@@ -3869,7 +4324,15 @@ function addToInventory(item, options = {}) {
     const resolved = resolveEquipSlot(copy);
     if (resolved && !copy.equipSlot) copy.equipSlot = resolved;
 
-    const existing = gameState.inventory.find(i => i.name === copy.name && i.type === copy.type);
+    copy.enchantBonusStats = normalizeEnchantBonuses(copy.enchantBonusStats);
+    if (!copy.enchantBonusStats.length) delete copy.enchantBonusStats;
+    ensureItemInstanceId(copy);
+    ensureItemDescription(copy);
+
+    const stackKey = getInventoryStackKey(copy);
+    const existing = stackKey
+        ? gameState.inventory.find(i => getInventoryStackKey(i) === stackKey)
+        : null;
     if (existing) {
         const existingQty = Number.isFinite(existing.qty) && existing.qty > 0 ? existing.qty : 1;
         const qtyToAdd = Number.isFinite(copy.qty) && copy.qty > 0 ? copy.qty : 1;
@@ -3955,6 +4418,8 @@ function equipItem(index) {
     const item = gameState.inventory[index];
     if (!item) return;
 
+    migrateLegacyWeaponLuckToEquippedItem();
+
     const slot = resolveEquipSlot(item);
     if (!slot) {
         addChatMessage('SYSTEM', `Cannot equip ${item.name} - invalid equipment slot`, true);
@@ -3989,6 +4454,10 @@ function equipItem(index) {
         equipped: true,
         equippedAt: Date.now()
     };
+    if (slot === 'weapon') {
+        gameState.equipment.weapon_luck = 0;
+        ensureItemDescription(gameState.equipment.weapon);
+    }
 
     // ✅ Recalculate ALL player derived stats from equipment
     recalculateAllPlayerStats();
@@ -3998,6 +4467,7 @@ function equipItem(index) {
     renderEquipment();
     renderInventory();
     updateSidePanels();
+    scheduleSilentPersist();
 
     addChatMessage('SYSTEM', `Equipped ${item.name}`, true);
 }
@@ -4059,9 +4529,31 @@ function recalculateAllPlayerStats() {
                 if (!percentBonuses[baseStatName]) percentBonuses[baseStatName] = 0;
                 percentBonuses[baseStatName] += value;
             } else {
+                const normalizedStatKey = statKey === 'hp'
+                    ? 'maxHp'
+                    : (statKey === 'mp'
+                        ? 'maxMp'
+                        : (statKey === 'weapon_luck' ? 'luck' : statKey));
                 // Flat bonus stat
-                if (finalStats[statKey] === undefined) finalStats[statKey] = 0;
-                finalStats[statKey] += value;
+                if (finalStats[normalizedStatKey] === undefined) finalStats[normalizedStatKey] = 0;
+                finalStats[normalizedStatKey] += value;
+            }
+        });
+
+        getEnchantBonuses(item).forEach(bonus => {
+            if (bonus.kind === 'flat') {
+                if (finalStats[bonus.stat] === undefined) finalStats[bonus.stat] = 0;
+                finalStats[bonus.stat] += bonus.value || 0;
+            } else if (bonus.kind === 'percent') {
+                if (ENCHANT_DIRECT_PERCENT_STATS.has(bonus.stat)) {
+                    if (finalStats[bonus.stat] === undefined) finalStats[bonus.stat] = 0;
+                    finalStats[bonus.stat] += bonus.value || 0;
+                    return;
+                }
+                const baseStatName = getEnchantPercentBaseStat(bonus.stat);
+                if (!baseStatName) return;
+                if (!percentBonuses[baseStatName]) percentBonuses[baseStatName] = 0;
+                percentBonuses[baseStatName] += bonus.value || 0;
             }
         });
     });
@@ -4095,6 +4587,10 @@ function unequipItem(slot) {
     const item = gameState.equipment[slot];
     if (!item) return;
 
+    if (slot === 'weapon') {
+        migrateLegacyWeaponLuckToEquippedItem();
+    }
+
     // Return item to inventory
     addToInventory({
         ...item,
@@ -4104,6 +4600,7 @@ function unequipItem(slot) {
 
     // Clear equipment slot
     gameState.equipment[slot] = null;
+    if (slot === 'weapon') gameState.equipment.weapon_luck = 0;
 
     // Recalculate all stats without this item
     recalculateAllPlayerStats();
@@ -4113,6 +4610,7 @@ function unequipItem(slot) {
     renderEquipment();
     renderInventory();
     updateSidePanels();
+    scheduleSilentPersist();
 
     addChatMessage('SYSTEM', `Unequipped ${item.name}`, true);
 }
@@ -4606,7 +5104,9 @@ function renderTravel() {
     const p = gameState.player;
     const loc = locations[p.location];
     const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const defeatLockRemaining = getDefeatScreenLockRemainingMs();
     const combatLocked = combatCooldownRemaining > 0;
+    const defeatLocked = defeatLockRemaining > 0;
     const canWanderHere = locationSupportsWandering(p.location);
     const wanderButtonLabel = gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering';
 
@@ -4625,11 +5125,26 @@ function renderTravel() {
     }
     
     html += `<div class="section-title">Actions</div>`;
-
     if (canWanderHere) {
-        html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Search for Enemies'}</button>`;
-        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? 'Recovery Active' : wanderButtonLabel}</button>`;
+        const battleDisabled = combatLocked || defeatLocked;
+        const wanderDisabled = combatLocked || defeatLocked;
+        const battleLabel = combatLocked
+            ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})`
+            : defeatLocked
+                ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})`
+                : 'Search for Enemies';
+        const wanderLabel = combatLocked
+            ? 'Recovery Active'
+            : defeatLocked
+                ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})`
+                : wanderButtonLabel;
 
+        html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${battleDisabled ? 'disabled' : ''}>${battleLabel}</button>`;
+        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${wanderDisabled ? 'disabled' : ''}>${wanderLabel}</button>`;
+
+        if (defeatLocked) {
+            html += `<div class="encounter-info" style="color:#ff8888;">Battle and Wandering unlock in ${formatPvpCooldown(defeatLockRemaining)}.</div>`;
+        }
         if (loc.levelRange) {
             html += `<div class="encounter-info">Level Range: ${loc.levelRange[0]}-${loc.levelRange[1]}</div>`;
         }
@@ -5089,11 +5604,13 @@ function renderWandering() {
     if (!w.active) {
         const canWanderHere = locationSupportsWandering(p.location);
         const currentLocationName = locations[p.location]?.name || 'this location';
+        const defeatLockRemaining = getDefeatScreenLockRemainingMs();
+        const defeatLocked = defeatLockRemaining > 0;
         container.innerHTML = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>
             <div class="description">${canWanderHere ? 'Embark on a wild adventure. Danger is ahead, but so are the rewards.' : `Wandering is unavailable in ${currentLocationName} because no enemies are assigned here.`}</div>
             <div class="section-title">Start New Expedition</div>
-            <button class="action-btn" ${canWanderHere ? 'onclick="startWanderingExpedition()"' : 'disabled title="Travel to a location with enemies to wander."'} style="font-size:1.2em; padding:15px 30px;">${canWanderHere ? 'Begin Wandering' : 'Wandering Unavailable'}</button>
-            <div class="msg" style="margin-top:15px">${canWanderHere ? 'Click the button above to start your journey into the unknown!' : 'Travel to a combat zone with assigned enemies to begin a wandering expedition.'}</div>`;
+            <button class="action-btn" ${canWanderHere && !defeatLocked ? 'onclick="startWanderingExpedition()"' : `disabled title="${defeatLocked ? `Wandering unlocks in ${formatPvpCooldown(defeatLockRemaining)}.` : 'Travel to a location with enemies to wander.'}"`} style="font-size:1.2em; padding:15px 30px;">${!canWanderHere ? 'Wandering Unavailable' : defeatLocked ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})` : 'Begin Wandering'}</button>
+            <div class="msg" style="margin-top:15px">${!canWanderHere ? 'Travel to a combat zone with assigned enemies to begin a wandering expedition.' : defeatLocked ? `Wandering is disabled after defeat for ${formatPvpCooldown(defeatLockRemaining)}.` : 'Click the button above to start your journey into the unknown!'}</div>`;
         return;
     }
     
@@ -5412,6 +5929,9 @@ function handleLocationAction(locKey) {
         case 'temple':
             renderTemple();
             return true;
+        case 'enchantment_altar':
+            renderEnchantmentAltar();
+            return true;
         case 'guild':
             renderGuildQuests();
             return true;
@@ -5457,6 +5977,11 @@ function renderBattle() {
     // Check if we're showing Guild
     if (gameState.player.location === 'guild' && !gameState.inBattle) {
         renderGuildQuests();
+        return;
+    }
+
+    if (gameState.player.location === 'enchantment_altar' && !gameState.inBattle) {
+        renderEnchantmentAltar();
         return;
     }
     
@@ -6702,12 +7227,16 @@ function mergeItems(groupKey) {
         }
         
         // Use official Uber Unique merge system with actual separate items
-        const mergedItem = mergeUberUniqueItems(itemsToMerge[0], itemsToMerge[1]);
+        const mergedItem = mergeUberUniqueItems(
+            stripEnchantDataFromItem(itemsToMerge[0]),
+            stripEnchantDataFromItem(itemsToMerge[1])
+        );
         
         if (mergedItem) {
-            addToInventory({ ...mergedItem, qty: 1 });
-            addBattleMsg(`Merge success! ${mergedItem.name} created with +50% ATK & DEF!`, 'reward');
-            addChatMessage('SYSTEM', `${gameState.player.name} merged items to create ${mergedItem.name}!`, true);
+            const cleanedMergedItem = stripEnchantDataFromItem(mergedItem);
+            addToInventory({ ...cleanedMergedItem, qty: 1 });
+            addBattleMsg(`Merge success! ${cleanedMergedItem.name} created with +50% ATK & DEF! Enchant bonuses do not carry over through merging.`, 'reward');
+            addChatMessage('SYSTEM', `${gameState.player.name} merged items to create ${cleanedMergedItem.name}!`, true);
         }
     } else {
         addBattleMsg('Only Unique and Uber Unique items can be merged!', 'damage');
@@ -6717,10 +7246,99 @@ function mergeItems(groupKey) {
     renderMerge();
 }
 
+function renderEnchantmentAltar() {
+    const container = document.getElementById('battle-content');
+    const enchanting = normalizeEnchantingState();
+    const equippedEntries = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape']
+        .map(slot => ({ slot, item: gameState.equipment[slot] }))
+        .filter(({ item }) => !!item);
+    const eligibleEntries = equippedEntries.filter(({ item }) => isEnchantableItem(item));
+
+    if ((!enchanting.selectedSlot || !isEnchantableItem(gameState.equipment[enchanting.selectedSlot])) && eligibleEntries.length > 0) {
+        enchanting.selectedSlot = eligibleEntries[0].slot;
+        enchanting.lockedIndices = [];
+        enchanting.lastBefore = getEnchantBonuses(eligibleEntries[0].item).map(cloneData);
+        enchanting.lastAfter = getEnchantBonuses(eligibleEntries[0].item).map(cloneData);
+    }
+
+    const selectedItem = getSelectedEnchantItem();
+    const currentBonuses = getEnchantBonuses(selectedItem);
+    const lockedIndices = selectedItem && currentBonuses.length > 0
+        ? enchanting.lockedIndices.filter(idx => currentBonuses[idx])
+        : [];
+    enchanting.lockedIndices = lockedIndices;
+
+    const beforeBonuses = enchanting.lastBefore.length > 0 ? enchanting.lastBefore : currentBonuses;
+    const afterBonuses = currentBonuses.length > 0 ? currentBonuses : enchanting.lastAfter;
+    const rerolling = currentBonuses.length > 0;
+    const totalCost = selectedItem
+        ? scaleEnchantCost(getBaseEnchantCost(selectedItem), rerolling ? (1 + lockedIndices.length) : 1)
+        : { gold: 0, soulGems: 0 };
+
+    let html = `<div class="location-header" style="color:#cc99ff;">✧ Enchantment Altar ✧</div>`;
+    html += `<div class="description">Only Legendary, Unique, and Uber Unique equipment can be enchanted. Select from currently equipped gear, then roll powerful bonus stats onto the item.</div>`;
+    html += `<div class="description">Legendary: 1-3 bonus stats | Unique: 2-4 | Uber Unique: 3-5</div>`;
+    html += `<div class="section-title">Equipment Selection</div>`;
+
+    if (equippedEntries.length === 0) {
+        html += `<div class="msg">Equip some gear first. The altar only works on currently equipped items.</div>`;
+    } else {
+        equippedEntries.forEach(({ slot, item }) => {
+            const eligible = isEnchantableItem(item);
+            const selected = slot === enchanting.selectedSlot;
+            html += `<div class="enchant-item-card ${selected ? 'selected' : ''}">
+                <div>
+                    <div class="enchant-item-card-name" style="${getRarityTextStyle(item)}">${item.name}</div>
+                    <div style="color:#888;font-size:0.82em">Slot: ${formatItemTypeLabel({ type: slot })} | Rarity: ${formatRarityLabel(item.rarity)}</div>
+                    <div class="description" style="font-size:0.82em;margin:6px 0 0 0">${item.desc || ''}</div>
+                </div>
+                <div>
+                    <button class="action-btn altar-btn" onclick="selectEnchantSlot('${slot}')" ${eligible ? '' : 'disabled'}>${selected ? 'Selected' : (eligible ? 'Select' : 'Requires Legendary+')}</button>
+                </div>
+            </div>`;
+        });
+    }
+
+    if (eligibleEntries.length === 0) {
+        html += `<div class="msg">No equipped Legendary, Unique, or Uber Unique items are available to enchant.</div>`;
+        container.innerHTML = html;
+        return;
+    }
+
+    if (!selectedItem) {
+        html += `<div class="msg">Select an eligible item to begin enchanting.</div>`;
+        container.innerHTML = html;
+        return;
+    }
+
+    html += `<div class="enchant-summary">
+        <div style="${getRarityTextStyle(selectedItem)};font-weight:bold;font-size:1.05em">Selected: ${selectedItem.name}</div>
+        <div class="enchant-cost">${rerolling ? 'Reroll Cost' : 'Enchant Cost'}: ${formatEnchantCost(totalCost)}</div>
+        <div class="enchant-note">Each locked bonus stat adds +1x cost multiplier. Current lock count: ${lockedIndices.length} (${1 + lockedIndices.length}x total cost).</div>
+    </div>`;
+
+    html += `<div style="text-align:center;margin-bottom:10px;">
+        <button class="action-btn altar-btn" onclick="performEnchant()" ${canAffordEnchantCost(totalCost) ? '' : 'disabled'}>${rerolling ? 'Reroll' : 'Enchant'}</button>
+    </div>`;
+
+    html += `<div class="enchant-grid">
+        <div class="enchant-panel">
+            <div class="enchant-panel-title">Before Bonus Stats</div>
+            ${renderEnchantBonusBoxes(beforeBonuses)}
+        </div>
+        <div class="enchant-panel">
+            <div class="enchant-panel-title">After / Current Bonus Stats</div>
+            ${renderEnchantBonusBoxes(afterBonuses, { showLocks: rerolling, lockedIndices })}
+        </div>
+    </div>`;
+
+    container.innerHTML = html;
+}
+
 // SACRED TEMPLE - Buy Blessing Oil
 function renderTemple() {
     const container = document.getElementById('battle-content');
-    const currentLuck = gameState.equipment.weapon_luck || 0;
+    const currentLuck = getEquippedWeaponLuckBonus();
     let html = `<div class="location-header" style="color:#ffff00">&#9748; Sacred Temple &#9748;</div>`;
     html += `<div class="description">A place of healing and spiritual renewal. The sacred oil here can permanently strengthen your body and soul.</div>`;
     html += `<div class="section-title">Temple Shop</div>`;
@@ -6775,17 +7393,18 @@ function applyWeaponLuckOil() {
     const roll = Math.random();
     const equip = gameState.equipment;
     const hasWeapon = equip.weapon && equip.weapon.name;
+    const currentLuck = getEquippedWeaponLuckBonus();
 
     if (roll < 0.4) {
         // 40% chance: increase weapon luck by 1 (max 9)
         if (hasWeapon) {
-            if (equip.weapon_luck >= 9) {
+            if (currentLuck >= 9) {
                 addBattleMsg('Blessing Oil activates, but your weapon luck is already maxed at 9!', 'info');
                 addChatMessage('SYSTEM', `Blessing Oil: Weapon Luck is already maxed at 9. No change applied.`, true);
             } else {
-                equip.weapon_luck = (equip.weapon_luck || 0) + 1;
-                addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
-                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+                const newLuck = setEquippedWeaponLuckBonus(currentLuck + 1);
+                addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${newLuck})`, 'reward');
+                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${newLuck}/9`, true);
             }
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -6798,9 +7417,9 @@ function applyWeaponLuckOil() {
     } else if (roll < 0.9) {
         // 20% chance: decrease weapon luck by 1
         if (hasWeapon) {
-            equip.weapon_luck = Math.max(0, (equip.weapon_luck || 0) - 1);
-            addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${equip.weapon_luck})`, 'damage');
-            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+            const newLuck = setEquippedWeaponLuckBonus(Math.max(0, currentLuck - 1));
+            addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${newLuck})`, 'damage');
+            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${newLuck}/9`, true);
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
             addChatMessage('SYSTEM', `Sacred Blessing Oil: No weapon equipped. Luck unchanged.`, true);
@@ -6812,6 +7431,10 @@ function applyWeaponLuckOil() {
     }
     updateStats();
     renderTemple();
+    renderEquipment();
+    renderInventory();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 // PREMIUM SACRED BLESSING - Costs 1 Soul Gem, never decreases luck
@@ -6828,15 +7451,16 @@ function applyWeaponLuckOilPremium() {
     const roll = Math.random();
     const equip = gameState.equipment;
     const hasWeapon = equip.weapon && equip.weapon.name;
+    const currentLuck = getEquippedWeaponLuckBonus();
 
     if (roll < 0.7) {
         // 70% chance: increase weapon luck by 1 (max 9)
         if (hasWeapon) {
-            if (equip.weapon_luck >= 9) {
+            if (currentLuck >= 9) {
                 addBattleMsg('Sacred Blessing activates, but your weapon luck is already maxed at 9!', 'info');
             } else {
-                equip.weapon_luck = (equip.weapon_luck || 0) + 1;
-                addBattleMsg(`Sacred Blessing succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
+                const newLuck = setEquippedWeaponLuckBonus(currentLuck + 1);
+                addBattleMsg(`Sacred Blessing succeeds! Weapon Luck increased by 1! (Current: +${newLuck})`, 'reward');
             }
         } else {
             addBattleMsg('Sacred Blessing activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -6847,6 +7471,10 @@ function applyWeaponLuckOilPremium() {
     }
     updateStats();
     renderTemple();
+    renderEquipment();
+    renderInventory();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 // GRAND MARKET - Refreshing shop with 20 items every hour
@@ -7542,6 +8170,7 @@ const SAVE_ITEM_KEY_ALIASES = {
     lifesteal: 'ls', manaRegen: 'mr', healthRegen: 'hr', magicFind: 'mf', expBonus: 'xb',
     goldFind: 'gf', armorPen: 'arp', magicPen: 'mpn', block: 'bl', reflect: 'rf',
     thorns: 'th', moveSpeed: 'ms', eleDmg: 'ed', stunChance: 'sc', cdr: 'cr',
+    enchantBonusStats: 'eb',
     attackSpeed: 'as'
 };
 const SAVE_EQUIPMENT_KEY_ALIASES = {
@@ -7702,7 +8331,7 @@ function rebuildMergedItemFromBase(baseName, mergeLevel, preservedItem = null) {
     const rebuilt = cloneData(base);
     const nonScalingKeys = new Set([
         'name', 'levelReq', 'specialAbility', 'uberUnique', 'equipSlot', 'type', 'rarity',
-        'desc', 'mergeLevel', 'canMerge', 'qty', 'equipped', 'equippedAt'
+        'desc', 'mergeLevel', 'canMerge', 'qty', 'equipped', 'equippedAt', 'enchantBonusStats'
     ]);
 
     for (let i = 0; i < mergeLevel; i++) {
@@ -7754,10 +8383,10 @@ function buildFallbackItemDescription(item) {
 
     const statLabels = [
         ['atk', 'ATK'], ['def', 'DEF'], ['crit', '% CRIT'], ['luck', 'LUCK'], ['critDmg', '% Crit Damage'],
-        ['atkPercent', '% ATK'], ['defPercent', '% DEF'], ['hp', 'HP'], ['mp', 'MP'], ['maxHp', 'Max HP'],
+        ['atkPercent', '% ATK'], ['defPercent', '% DEF'], ['hpPercent', '% HP'], ['hp', 'HP'], ['mp', 'MP'], ['maxHp', 'Max HP'],
         ['maxMp', 'Max MP'], ['dodge', '% Dodge'], ['lifesteal', '% Lifesteal'], ['dmgReduction', '% Damage Reduction'],
-        ['armorPen', 'Armor Pen'], ['magicPen', 'Magic Pen'], ['attackSpeed', 'Attack Speed'], ['cdr', '% CDR'],
-        ['moveSpeed', 'Move Speed'], ['healthRegen', 'Health Regen'], ['manaRegen', 'Mana Regen'],
+        ['armorPen', 'Armor Pen'], ['magicPen', 'Magic Pen'], ['attackSpeed', '% Attack Speed'], ['cdr', '% CDR'],
+        ['moveSpeed', '% Move Speed'], ['healthRegen', 'Health Regen'], ['manaRegen', 'Mana Regen'],
         ['magicFind', 'Magic Find'], ['expBonus', '% EXP'], ['goldFind', '% Gold'], ['block', '% Block'],
         ['reflect', 'Reflect Damage'], ['thorns', 'Thorns'], ['eleDmg', 'Elemental Damage'], ['stunChance', '% Stun']
     ];
@@ -7798,26 +8427,70 @@ function buildMergedDescription(baseDescription, mergeLevel) {
     return `${rootDescription}${rootDescription ? '\n' : ''}✨ Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
 }
 
+function stripWeaponLuckDescription(desc) {
+    return String(desc || '').replace(/\n☘ Weapon Luck: \+\d+/g, '');
+}
+
+function buildWeaponLuckDescription(baseDescription, item) {
+    const rootDescription = stripWeaponLuckDescription(baseDescription || '');
+    const weaponLuck = Math.max(0, Math.min(9, Number(item?.luck) || 0));
+    if (!(weaponLuck > 0) || item?.type !== 'weapon') return rootDescription;
+    return `${rootDescription}${rootDescription ? '\n' : ''}☘ Luck: +${weaponLuck}`;
+}
+
+function migrateLegacyWeaponLuckToEquippedItem() {
+    const equipment = gameState?.equipment;
+    const weapon = equipment?.weapon;
+    if (!equipment || !weapon) return 0;
+
+    const legacyEquipmentLuck = Math.max(0, Number(equipment.weapon_luck) || 0);
+    const legacyItemLuck = Math.max(0, Number(weapon.weapon_luck) || 0);
+    const legacyTotal = legacyEquipmentLuck + legacyItemLuck;
+
+    if (legacyTotal > 0) {
+        weapon.luck = Math.min(9, Math.max(0, Number(weapon.luck) || 0) + legacyTotal);
+        delete weapon.weapon_luck;
+        ensureItemDescription(weapon);
+    }
+
+    if (equipment.weapon_luck) equipment.weapon_luck = 0;
+    return Math.min(9, Math.max(0, Number(weapon.luck) || 0));
+}
+
+function getEquippedWeaponLuckBonus() {
+    const weapon = gameState?.equipment?.weapon;
+    if (!weapon) return 0;
+    migrateLegacyWeaponLuckToEquippedItem();
+    return Math.min(9, Math.max(0, Number(weapon.luck) || 0));
+}
+
+function setEquippedWeaponLuckBonus(value) {
+    const weapon = gameState?.equipment?.weapon;
+    if (!weapon) return 0;
+    weapon.luck = Math.min(9, Math.max(0, Number(value) || 0));
+    delete weapon.weapon_luck;
+    ensureItemDescription(weapon);
+    if (gameState?.equipment) gameState.equipment.weapon_luck = 0;
+    return weapon.luck;
+}
+
 function ensureItemDescription(item) {
     if (!item) return item;
 
     const baseName = item.name ? item.name.replace(/ \+\d+$/, '') : null;
     const base = getCanonicalItemByName(baseName);
+    const existingRootDesc = stripWeaponLuckDescription(stripEnchantDescription(item.desc || ''));
 
     if (item.mergeLevel > 0) {
-        const baseDescription = base?.desc || item.desc || buildFallbackItemDescription({ ...item, mergeLevel: 0 });
-        item.desc = buildMergedDescription(baseDescription, item.mergeLevel);
+        const baseDescription = base?.desc || existingRootDesc || buildFallbackItemDescription({ ...item, mergeLevel: 0 });
+        item.desc = buildEnchantDescription(buildWeaponLuckDescription(buildMergedDescription(baseDescription, item.mergeLevel), item), item);
         return item;
     }
 
-    if (item.desc) return item;
-
-    if (base && base.desc) {
-        item.desc = buildMergedDescription(base.desc, item.mergeLevel || 0);
-        return item;
-    }
-
-    item.desc = buildFallbackItemDescription(item);
+    const baseDescription = (base && base.desc)
+        ? buildMergedDescription(base.desc, item.mergeLevel || 0)
+        : (existingRootDesc || buildFallbackItemDescription(item));
+    item.desc = buildEnchantDescription(buildWeaponLuckDescription(baseDescription, item), item);
     return item;
 }
 
@@ -7948,6 +8621,8 @@ function normalizeScrollItemData(item) {
     if (!item) return null;
 
     item = recoverMergeLevelFromItemName(item);
+    item.enchantBonusStats = normalizeEnchantBonuses(item.enchantBonusStats);
+    if (!item.enchantBonusStats.length) delete item.enchantBonusStats;
 
     const scrollBase = scrollPool[item.name];
     if (!scrollBase && item.type !== 'scroll') {
@@ -8149,6 +8824,14 @@ function addSanitizedInventoryItem(targetInventory, item, stackIndexByKey = null
 function sanitizeLoadedStateData(state) {
     const allowedLuckTypes = ['weapon', 'charm'];
     if (!state.player || typeof state.player !== 'object') state.player = cloneData(INITIAL_GAME_STATE_SNAPSHOT.player);
+    state.enchanting = {
+        selectedSlot: SAVE_EQUIPMENT_SLOT_KEYS.includes(state.enchanting?.selectedSlot) ? state.enchanting.selectedSlot : null,
+        lockedIndices: (Array.isArray(state.enchanting?.lockedIndices) ? state.enchanting.lockedIndices : [])
+            .map(idx => normalizeFiniteNumber(idx, -1, { min: 0, max: 9 }))
+            .filter(idx => idx >= 0),
+        lastBefore: normalizeEnchantBonuses(state.enchanting?.lastBefore),
+        lastAfter: normalizeEnchantBonuses(state.enchanting?.lastAfter)
+    };
     state.player.name = sanitizeProfileText(state.player.name, 'Hero', 24);
     state.saveName = sanitizeProfileText(state.saveName, 'Hero Save', 40);
     ensurePlayerBaseStats(state.player);
@@ -9595,3 +10278,4 @@ renderBattle = function() {
 
 // Start the game
 init();
+

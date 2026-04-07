@@ -262,7 +262,7 @@
     </div>
     <div id="navigation">
         <button class="nav-btn active" onclick="attemptShowScreen('travel')">Map Travel</button>
-        <button class="nav-btn" onclick="attemptShowScreen('battle')">[/] Battle</button>
+        <button class="nav-btn" onclick="attemptShowScreen('battle')" id="battle-tab">[/] Battle</button>
         <button class="nav-btn" onclick="attemptShowScreen('quest')">~ Quest</button>
         <button class="nav-btn" onclick="attemptShowScreen('job')">$ Job</button>
 <button class="nav-btn" onclick="attemptShowScreen('wandering')" id="wander-tab">[?] Wander</button>
@@ -416,7 +416,7 @@ let currentPvpEnemy = null;
 const PVP_COOLDOWN_MS = 15 * 60 * 1000;
 const TRADE_COOLDOWN_MS = 15 * 60 * 1000;
 const DEFEAT_COMBAT_COOLDOWN_MS = 5 * 60 * 1000;
-const DEFEAT_NAVIGATION_COOLDOWN_MS = 30 * 1000;
+const DEFEAT_SCREEN_LOCKOUT_MS = 5 * 60 * 1000;
 const WORLD_BOSS_HEALTH_MULTIPLIER = 50;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MIN = 500;
 const WORLD_BOSS_FAKE_ATTACK_INTERVAL_MAX = 2000;
@@ -529,7 +529,7 @@ function getCombatCooldownRemainingMs() {
     return Math.max(0, (gameState.combatCooldownUntil || 0) - Date.now());
 }
 
-function getNavigationCooldownRemainingMs() {
+function getDefeatScreenLockRemainingMs() {
     return Math.max(0, (gameState.navigationCooldownUntil || 0) - Date.now());
 }
 
@@ -542,12 +542,12 @@ function formatPvpCooldown(ms) {
 
 function getDefeatStatusMessage() {
     const combatRemaining = getCombatCooldownRemainingMs();
-    const navigationRemaining = getNavigationCooldownRemainingMs();
-    if (combatRemaining <= 0 && navigationRemaining <= 0) return '';
+    const screenLockRemaining = getDefeatScreenLockRemainingMs();
+    if (combatRemaining <= 0 && screenLockRemaining <= 0) return '';
 
     const details = [];
     if (combatRemaining > 0) details.push(`Combat cooldown: ${formatPvpCooldown(combatRemaining)}`);
-    if (navigationRemaining > 0) details.push(`Navigation cooldown: ${formatPvpCooldown(navigationRemaining)}`);
+    if (screenLockRemaining > 0) details.push(`Battle/Wander locked: ${formatPvpCooldown(screenLockRemaining)}`);
     return `You have been defeated. Reviving... ${details.join(' | ')}`;
 }
 
@@ -561,18 +561,23 @@ function updateStatusBanner() {
 }
 
 function updateNavigationCooldownState() {
-    const remaining = getNavigationCooldownRemainingMs();
+    const remaining = getDefeatScreenLockRemainingMs();
     const isActive = remaining > 0;
-    document.querySelectorAll('#navigation .nav-btn').forEach(btn => {
+    const lockedButtons = [
+        document.getElementById('battle-tab'),
+        document.getElementById('wander-tab')
+    ].filter(Boolean);
+
+    lockedButtons.forEach(btn => {
         btn.disabled = isActive;
-        btn.title = isActive ? `Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.` : '';
+        btn.title = isActive ? `Unavailable after defeat for ${formatPvpCooldown(remaining)}.` : '';
     });
 }
 
 function refreshCooldownUi() {
     const combatSeconds = Math.ceil(getCombatCooldownRemainingMs() / 1000);
-    const navigationSeconds = Math.ceil(getNavigationCooldownRemainingMs() / 1000);
-    const signature = `${combatSeconds}:${navigationSeconds}`;
+    const screenLockSeconds = Math.ceil(getDefeatScreenLockRemainingMs() / 1000);
+    const signature = `${combatSeconds}:${screenLockSeconds}`;
     if (signature === lastCooldownUiSignature) return;
     lastCooldownUiSignature = signature;
 
@@ -601,9 +606,10 @@ function attemptShowScreen(screenName) {
         (combatContext === 'worldboss' && targetScreen === 'battle') ||
         (combatContext === 'wandering' && targetScreen === 'wandering');
 
-    const remaining = getNavigationCooldownRemainingMs();
-    if (remaining > 0 && !canBypassCooldown) {
-        addBattleMsg(`Navigation tabs are on cooldown for ${formatPvpCooldown(remaining)}.`, 'damage');
+    const remaining = getDefeatScreenLockRemainingMs();
+    const isLockedScreen = targetScreen === 'battle' || targetScreen === 'wandering';
+    if (remaining > 0 && isLockedScreen && !canBypassCooldown) {
+        addBattleMsg(`Battle and Wander are unavailable after defeat for ${formatPvpCooldown(remaining)}.`, 'damage');
         refreshCooldownUi();
         return;
     }
@@ -623,7 +629,7 @@ function triggerDefeatRecovery(logCallback = addBattleMsg) {
     const now = Date.now();
     gameState.player.hp = Math.max(1, Math.floor(getTotalMaxHp() * 0.5));
     gameState.combatCooldownUntil = Math.max(gameState.combatCooldownUntil || 0, now + DEFEAT_COMBAT_COOLDOWN_MS);
-    gameState.navigationCooldownUntil = Math.max(gameState.navigationCooldownUntil || 0, now + DEFEAT_NAVIGATION_COOLDOWN_MS);
+    gameState.navigationCooldownUntil = Math.max(gameState.navigationCooldownUntil || 0, now + DEFEAT_SCREEN_LOCKOUT_MS);
     logCallback('You have been defeated. Reviving...', 'damage');
     addChatMessage('SYSTEM', 'You have been defeated. Reviving...', true);
     scheduleSilentPersist();
@@ -4728,6 +4734,8 @@ function equipItem(index) {
     const item = gameState.inventory[index];
     if (!item) return;
 
+    migrateLegacyWeaponLuckToEquippedItem();
+
     const slot = resolveEquipSlot(item);
     if (!slot) {
         addChatMessage('SYSTEM', `Cannot equip ${item.name} - invalid equipment slot`, true);
@@ -4762,6 +4770,10 @@ function equipItem(index) {
         equipped: true,
         equippedAt: Date.now()
     };
+    if (slot === 'weapon') {
+        gameState.equipment.weapon_luck = 0;
+        ensureItemDescription(gameState.equipment.weapon);
+    }
 
     // ✅ Recalculate ALL player derived stats from equipment
     recalculateAllPlayerStats();
@@ -4771,6 +4783,7 @@ function equipItem(index) {
     renderEquipment();
     renderInventory();
     updateSidePanels();
+    scheduleSilentPersist();
 
     addChatMessage('SYSTEM', `Equipped ${item.name}`, true);
 }
@@ -4834,7 +4847,9 @@ function recalculateAllPlayerStats() {
             } else {
                 const normalizedStatKey = statKey === 'hp'
                     ? 'maxHp'
-                    : (statKey === 'mp' ? 'maxMp' : statKey);
+                    : (statKey === 'mp'
+                        ? 'maxMp'
+                        : (statKey === 'weapon_luck' ? 'luck' : statKey));
                 // Flat bonus stat
                 if (finalStats[normalizedStatKey] === undefined) finalStats[normalizedStatKey] = 0;
                 finalStats[normalizedStatKey] += value;
@@ -4888,6 +4903,10 @@ function unequipItem(slot) {
     const item = gameState.equipment[slot];
     if (!item) return;
 
+    if (slot === 'weapon') {
+        migrateLegacyWeaponLuckToEquippedItem();
+    }
+
     // Return item to inventory
     addToInventory({
         ...item,
@@ -4897,6 +4916,7 @@ function unequipItem(slot) {
 
     // Clear equipment slot
     gameState.equipment[slot] = null;
+    if (slot === 'weapon') gameState.equipment.weapon_luck = 0;
 
     // Recalculate all stats without this item
     recalculateAllPlayerStats();
@@ -4906,6 +4926,7 @@ function unequipItem(slot) {
     renderEquipment();
     renderInventory();
     updateSidePanels();
+    scheduleSilentPersist();
 
     addChatMessage('SYSTEM', `Unequipped ${item.name}`, true);
 }
@@ -5399,7 +5420,9 @@ function renderTravel() {
     const p = gameState.player;
     const loc = locations[p.location];
     const combatCooldownRemaining = getCombatCooldownRemainingMs();
+    const defeatLockRemaining = getDefeatScreenLockRemainingMs();
     const combatLocked = combatCooldownRemaining > 0;
+    const defeatLocked = defeatLockRemaining > 0;
     const canWanderHere = locationSupportsWandering(p.location);
     const wanderButtonLabel = gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering';
 
@@ -5418,11 +5441,26 @@ function renderTravel() {
     }
     
     html += `<div class="section-title">Actions</div>`;
-
     if (canWanderHere) {
-        html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Search for Enemies'}</button>`;
-        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? 'Recovery Active' : wanderButtonLabel}</button>`;
+        const battleDisabled = combatLocked || defeatLocked;
+        const wanderDisabled = combatLocked || defeatLocked;
+        const battleLabel = combatLocked
+            ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})`
+            : defeatLocked
+                ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})`
+                : 'Search for Enemies';
+        const wanderLabel = combatLocked
+            ? 'Recovery Active'
+            : defeatLocked
+                ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})`
+                : wanderButtonLabel;
 
+        html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${battleDisabled ? 'disabled' : ''}>${battleLabel}</button>`;
+        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${wanderDisabled ? 'disabled' : ''}>${wanderLabel}</button>`;
+
+        if (defeatLocked) {
+            html += `<div class="encounter-info" style="color:#ff8888;">Battle and Wandering unlock in ${formatPvpCooldown(defeatLockRemaining)}.</div>`;
+        }
         if (loc.levelRange) {
             html += `<div class="encounter-info">Level Range: ${loc.levelRange[0]}-${loc.levelRange[1]}</div>`;
         }
@@ -5882,11 +5920,13 @@ function renderWandering() {
     if (!w.active) {
         const canWanderHere = locationSupportsWandering(p.location);
         const currentLocationName = locations[p.location]?.name || 'this location';
+        const defeatLockRemaining = getDefeatScreenLockRemainingMs();
+        const defeatLocked = defeatLockRemaining > 0;
         container.innerHTML = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>
             <div class="description">${canWanderHere ? 'Embark on a wild adventure. Danger is ahead, but so are the rewards.' : `Wandering is unavailable in ${currentLocationName} because no enemies are assigned here.`}</div>
             <div class="section-title">Start New Expedition</div>
-            <button class="action-btn" ${canWanderHere ? 'onclick="startWanderingExpedition()"' : 'disabled title="Travel to a location with enemies to wander."'} style="font-size:1.2em; padding:15px 30px;">${canWanderHere ? 'Begin Wandering' : 'Wandering Unavailable'}</button>
-            <div class="msg" style="margin-top:15px">${canWanderHere ? 'Click the button above to start your journey into the unknown!' : 'Travel to a combat zone with assigned enemies to begin a wandering expedition.'}</div>`;
+            <button class="action-btn" ${canWanderHere && !defeatLocked ? 'onclick="startWanderingExpedition()"' : `disabled title="${defeatLocked ? `Wandering unlocks in ${formatPvpCooldown(defeatLockRemaining)}.` : 'Travel to a location with enemies to wander.'}"`} style="font-size:1.2em; padding:15px 30px;">${!canWanderHere ? 'Wandering Unavailable' : defeatLocked ? `Defeat Lock (${formatPvpCooldown(defeatLockRemaining)})` : 'Begin Wandering'}</button>
+            <div class="msg" style="margin-top:15px">${!canWanderHere ? 'Travel to a combat zone with assigned enemies to begin a wandering expedition.' : defeatLocked ? `Wandering is disabled after defeat for ${formatPvpCooldown(defeatLockRemaining)}.` : 'Click the button above to start your journey into the unknown!'}</div>`;
         return;
     }
     
@@ -7614,7 +7654,7 @@ function renderEnchantmentAltar() {
 // SACRED TEMPLE - Buy Blessing Oil
 function renderTemple() {
     const container = document.getElementById('battle-content');
-    const currentLuck = gameState.equipment.weapon_luck || 0;
+    const currentLuck = getEquippedWeaponLuckBonus();
     let html = `<div class="location-header" style="color:#ffff00">&#9748; Sacred Temple &#9748;</div>`;
     html += `<div class="description">A place of healing and spiritual renewal. The sacred oil here can permanently strengthen your body and soul.</div>`;
     html += `<div class="section-title">Temple Shop</div>`;
@@ -7669,17 +7709,18 @@ function applyWeaponLuckOil() {
     const roll = Math.random();
     const equip = gameState.equipment;
     const hasWeapon = equip.weapon && equip.weapon.name;
+    const currentLuck = getEquippedWeaponLuckBonus();
 
     if (roll < 0.4) {
         // 40% chance: increase weapon luck by 1 (max 9)
         if (hasWeapon) {
-            if (equip.weapon_luck >= 9) {
+            if (currentLuck >= 9) {
                 addBattleMsg('Blessing Oil activates, but your weapon luck is already maxed at 9!', 'info');
                 addChatMessage('SYSTEM', `Blessing Oil: Weapon Luck is already maxed at 9. No change applied.`, true);
             } else {
-                equip.weapon_luck = (equip.weapon_luck || 0) + 1;
-                addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
-                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+                const newLuck = setEquippedWeaponLuckBonus(currentLuck + 1);
+                addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${newLuck})`, 'reward');
+                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${newLuck}/9`, true);
             }
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -7692,9 +7733,9 @@ function applyWeaponLuckOil() {
     } else if (roll < 0.9) {
         // 20% chance: decrease weapon luck by 1
         if (hasWeapon) {
-            equip.weapon_luck = Math.max(0, (equip.weapon_luck || 0) - 1);
-            addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${equip.weapon_luck})`, 'damage');
-            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+            const newLuck = setEquippedWeaponLuckBonus(Math.max(0, currentLuck - 1));
+            addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${newLuck})`, 'damage');
+            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${newLuck}/9`, true);
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
             addChatMessage('SYSTEM', `Sacred Blessing Oil: No weapon equipped. Luck unchanged.`, true);
@@ -7706,6 +7747,10 @@ function applyWeaponLuckOil() {
     }
     updateStats();
     renderTemple();
+    renderEquipment();
+    renderInventory();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 // PREMIUM SACRED BLESSING - Costs 1 Soul Gem, never decreases luck
@@ -7722,15 +7767,16 @@ function applyWeaponLuckOilPremium() {
     const roll = Math.random();
     const equip = gameState.equipment;
     const hasWeapon = equip.weapon && equip.weapon.name;
+    const currentLuck = getEquippedWeaponLuckBonus();
 
     if (roll < 0.7) {
         // 70% chance: increase weapon luck by 1 (max 9)
         if (hasWeapon) {
-            if (equip.weapon_luck >= 9) {
+            if (currentLuck >= 9) {
                 addBattleMsg('Sacred Blessing activates, but your weapon luck is already maxed at 9!', 'info');
             } else {
-                equip.weapon_luck = (equip.weapon_luck || 0) + 1;
-                addBattleMsg(`Sacred Blessing succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
+                const newLuck = setEquippedWeaponLuckBonus(currentLuck + 1);
+                addBattleMsg(`Sacred Blessing succeeds! Weapon Luck increased by 1! (Current: +${newLuck})`, 'reward');
             }
         } else {
             addBattleMsg('Sacred Blessing activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -7741,6 +7787,10 @@ function applyWeaponLuckOilPremium() {
     }
     updateStats();
     renderTemple();
+    renderEquipment();
+    renderInventory();
+    updateSidePanels();
+    scheduleSilentPersist();
 }
 
 // GRAND MARKET - Refreshing shop with 20 items every hour
@@ -8693,23 +8743,70 @@ function buildMergedDescription(baseDescription, mergeLevel) {
     return `${rootDescription}${rootDescription ? '\n' : ''}✨ Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
 }
 
+function stripWeaponLuckDescription(desc) {
+    return String(desc || '').replace(/\n☘ Weapon Luck: \+\d+/g, '');
+}
+
+function buildWeaponLuckDescription(baseDescription, item) {
+    const rootDescription = stripWeaponLuckDescription(baseDescription || '');
+    const weaponLuck = Math.max(0, Math.min(9, Number(item?.luck) || 0));
+    if (!(weaponLuck > 0) || item?.type !== 'weapon') return rootDescription;
+    return `${rootDescription}${rootDescription ? '\n' : ''}☘ Luck: +${weaponLuck}`;
+}
+
+function migrateLegacyWeaponLuckToEquippedItem() {
+    const equipment = gameState?.equipment;
+    const weapon = equipment?.weapon;
+    if (!equipment || !weapon) return 0;
+
+    const legacyEquipmentLuck = Math.max(0, Number(equipment.weapon_luck) || 0);
+    const legacyItemLuck = Math.max(0, Number(weapon.weapon_luck) || 0);
+    const legacyTotal = legacyEquipmentLuck + legacyItemLuck;
+
+    if (legacyTotal > 0) {
+        weapon.luck = Math.min(9, Math.max(0, Number(weapon.luck) || 0) + legacyTotal);
+        delete weapon.weapon_luck;
+        ensureItemDescription(weapon);
+    }
+
+    if (equipment.weapon_luck) equipment.weapon_luck = 0;
+    return Math.min(9, Math.max(0, Number(weapon.luck) || 0));
+}
+
+function getEquippedWeaponLuckBonus() {
+    const weapon = gameState?.equipment?.weapon;
+    if (!weapon) return 0;
+    migrateLegacyWeaponLuckToEquippedItem();
+    return Math.min(9, Math.max(0, Number(weapon.luck) || 0));
+}
+
+function setEquippedWeaponLuckBonus(value) {
+    const weapon = gameState?.equipment?.weapon;
+    if (!weapon) return 0;
+    weapon.luck = Math.min(9, Math.max(0, Number(value) || 0));
+    delete weapon.weapon_luck;
+    ensureItemDescription(weapon);
+    if (gameState?.equipment) gameState.equipment.weapon_luck = 0;
+    return weapon.luck;
+}
+
 function ensureItemDescription(item) {
     if (!item) return item;
 
     const baseName = item.name ? item.name.replace(/ \+\d+$/, '') : null;
     const base = getCanonicalItemByName(baseName);
-    const existingRootDesc = stripEnchantDescription(item.desc || '');
+    const existingRootDesc = stripWeaponLuckDescription(stripEnchantDescription(item.desc || ''));
 
     if (item.mergeLevel > 0) {
         const baseDescription = base?.desc || existingRootDesc || buildFallbackItemDescription({ ...item, mergeLevel: 0 });
-        item.desc = buildEnchantDescription(buildMergedDescription(baseDescription, item.mergeLevel), item);
+        item.desc = buildEnchantDescription(buildWeaponLuckDescription(buildMergedDescription(baseDescription, item.mergeLevel), item), item);
         return item;
     }
 
     const baseDescription = (base && base.desc)
         ? buildMergedDescription(base.desc, item.mergeLevel || 0)
         : (existingRootDesc || buildFallbackItemDescription(item));
-    item.desc = buildEnchantDescription(baseDescription, item);
+    item.desc = buildEnchantDescription(buildWeaponLuckDescription(baseDescription, item), item);
     return item;
 }
 
