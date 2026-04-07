@@ -393,7 +393,8 @@ const locations = {
     forest: { name: 'Enchanted Forest', desc: 'A mystical forest teeming with life.', connections: ['town', 'mountains'], levelRange: [1, 10], minLevel: 1, enemies: ['rat', 'slime', 'wolf', 'goblin', 'forest_sprite', 'giant_bat'] },
     dark_forest: { name: 'Dark Forest', desc: 'A shadowy forest filled with danger.', connections: ['town', 'swamp'], levelRange: [10, 25], minLevel: 10, enemies: ['dark_wolf', 'wraith', 'rock_golem', 'harpy', 'orc_warrior'] },
     mountains: { name: 'Dragon Mountains', desc: 'Treacherous peaks inhabited by dragons.', connections: ['town', 'forest', 'dragon_lair'], levelRange: [8, 30], minLevel: 8, enemies: ['skeleton_knight', 'forest_troll', 'pixie_swarm', 'wolf_alpha', 'young_dragon'] },
-    swamp: { name: 'Murky Swamp', desc: 'A foul swamp riddled with dark creatures.', connections: ['dark_forest'], levelRange: [15, 35], minLevel: 15, enemies: ['dark_knight', 'cave_troll', 'dark_guard', 'necromancer'] },
+    swamp: { name: 'Murky Swamp', desc: 'A foul swamp riddled with dark creatures.', connections: ['dark_forest', 'gates_of_shadow'], levelRange: [15, 35], minLevel: 15, enemies: ['dark_knight', 'cave_troll', 'dark_guard', 'necromancer'] },
+    gates_of_shadow: { name: 'Gates of Shadow', desc: 'Ancient obsidian gates rise from the swamp mist, guarded by duskbound horrors that punish the unprepared with layered afflictions.', connections: ['swamp'], levelRange: [30, 42], minLevel: 30, enemies: ['shade_stalker', 'gloomfang', 'veilwarden', 'umbra_sorcerer', 'gate_revenant'], wanderRewardMultiplier: 1.8 },
     dragon_lair: { name: "Dragon's Lair", desc: 'The fiery domain of ancient dragons.', connections: ['mountains', 'ceaseless_void'], levelRange: [25, 50], minLevel: 25, enemies: ['wyvern', 'stone_giant', 'phantom_warrior', 'elder_troll', 'dragon', 'elder_dragon'] },
     ceaseless_void: { name: 'Ceaseless Void', desc: 'A collapsing abyss where reality tears and cursed horrors strike with layered debuffs.', connections: ['dragon_lair'], levelRange: [55, 70], minLevel: 55, enemies: ['void_seraph', 'entropy_behemoth', 'null_watcher', 'ceaseless_maw', 'paradox_harbinger'], wanderRewardMultiplier: 3 },
     market: { name: 'Grand Market', desc: 'A marketplace for trading and shopping.', connections: ['town'], minLevel: 1 },
@@ -453,7 +454,7 @@ const COMBAT_STATUS_TEMPLATES = {
     frostbite: { id: 'frostbite', name: 'Frostbite', type: 'debuff', icon: '❄️', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
     paralysis: { id: 'paralysis', name: 'Paralyzed', type: 'debuff', icon: '⚡', color: '#f1c40f', duration: 1, missChance: 100, cannotUseItems: true },
     freeze: { id: 'freeze', name: 'Frozen', type: 'debuff', icon: '🧊', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
-    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, cannotAttack: true, defenseMultiplier: 0.5 },
+    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, missChance: 100, enemyGuaranteedCrit: true, defenseMultiplier: 0.8 },
     root: { id: 'root', name: 'Rooted', type: 'debuff', icon: '🌿', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
     silence: { id: 'silence', name: 'Silenced', type: 'debuff', icon: '🔇', color: '#95a5a6', duration: 2, cannotUseItems: true, cannotUseAbilities: true },
     slow: { id: 'slow', name: 'Slowed', type: 'debuff', icon: '🐌', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
@@ -742,7 +743,12 @@ const questDefs = [
     { id: 'q4', name: 'Dark Wolves', desc: 'Defeat 5 dark wolves', target: 'dark_wolf', count: 5, reward: createFixedQuestReward('dark_wolf', 5, 1.15), location: 'guild' },
     { id: 'q5', name: 'Wraith Hunter', desc: 'Defeat 5 wraiths', target: 'wraith', count: 5, reward: createFixedQuestReward('wraith', 5, 1.35), location: 'guild' },
     { id: 'q6', name: 'Dragon Slayer', desc: 'Defeat 3 young dragons', target: 'young_dragon', count: 3, reward: createFixedQuestReward('young_dragon', 3, 1.5), location: 'guild' },
-    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: createFixedQuestReward('skeleton_knight', 5, 1.45), location: 'guild' }
+    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: createFixedQuestReward('skeleton_knight', 5, 1.45), location: 'guild' },
+    { id: 'q8', name: 'Through the Black Gate', desc: 'Defeat 4 Shade Stalkers in the Gates of Shadow', target: 'shade_stalker', count: 4, reward: createFixedQuestReward('shade_stalker', 4, 1.55), location: 'guild' },
+    { id: 'q9', name: 'Fangs in the Fog', desc: 'Defeat 4 Gloomfangs stalking the shadow marsh', target: 'gloomfang', count: 4, reward: createFixedQuestReward('gloomfang', 4, 1.58), location: 'guild' },
+    { id: 'q10', name: 'Break the Veilward', desc: 'Defeat 3 Veilwardens at the obsidian threshold', target: 'veilwarden', count: 3, reward: createFixedQuestReward('veilwarden', 3, 1.65), location: 'guild' },
+    { id: 'q11', name: 'Silence the Umbra', desc: 'Defeat 3 Umbra Sorcerers before they curse the marsh', target: 'umbra_sorcerer', count: 3, reward: createFixedQuestReward('umbra_sorcerer', 3, 1.72), location: 'guild' },
+    { id: 'q12', name: 'Revenant at the Threshold', desc: 'Defeat 2 Gate Revenants in the Gates of Shadow', target: 'gate_revenant', count: 2, reward: createFixedQuestReward('gate_revenant', 2, 1.8), location: 'guild' }
 ];
 
 const DAILY_QUEST_TIER_META = {
@@ -1909,6 +1915,7 @@ function seededPick(seed, arr) {
 function getFakePlayerRegion(level) {
     if (level >= 55) return locations.ceaseless_void.name;
     if (level >= 45) return locations.dragon_lair.name;
+    if (level >= 30) return locations.gates_of_shadow.name;
     if (level >= 28) return locations.swamp.name;
     if (level >= 16) return locations.dark_forest.name;
     if (level >= 8) return locations.mountains.name;
@@ -2609,7 +2616,8 @@ function getStatusSnapshot(target) {
         missChance: 0,
         skipTurn: false,
         cannotAttack: false,
-        cannotUseItems: false,
+        immuneToDebuffs: false,
+        enemyGuaranteedCrit: false,
         cannotUseAbilities: false,
         cannotEscape: false,
         attackTwice: false,
@@ -2625,6 +2633,7 @@ function getStatusSnapshot(target) {
         if (effect.dodgeBonus !== undefined) snapshot.dodgeBonus += effect.dodgeBonus;
         if (effect.critMultiplier !== undefined) snapshot.critMultiplier *= effect.critMultiplier;
         if (effect.missChance !== undefined) snapshot.missChance = Math.max(snapshot.missChance, effect.missChance);
+        if (effect.enemyGuaranteedCrit) snapshot.enemyGuaranteedCrit = true;
         if (effect.skipTurn) snapshot.skipTurn = true;
         if (effect.cannotAttack) snapshot.cannotAttack = true;
         if (effect.cannotUseItems) snapshot.cannotUseItems = true;
@@ -3055,6 +3064,11 @@ function calculateDamageBasedHealing(damageDealt) {
     return healAmt;
 }
 
+function getShadowCritMultiplier() {
+    if (!hasEquippedSpecialAbility('shadow_crit')) return 1;
+    return Math.random() < 0.5 ? 4 : 1;
+}
+
 function recordWorldBossPlayerDamage(dmg) {
     if (!gameState.worldBossActive || !gameState.currentWorldBoss || dmg <= 0) return;
 
@@ -3129,6 +3143,12 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     enemyDmg = Math.ceil(enemyDmg * getScrollEnemyDamageMultiplier());
     enemyDmg = Math.max(1, Math.ceil(enemyDmg * enemyStatus.damageDealtMultiplier));
 
+    const enemyCritChance = Math.max(0, Number(enemyObj?.crit) || 0);
+    const enemyCrit = !!playerStatus.enemyGuaranteedCrit || (enemyCritChance > 0 && Math.random() * 100 < enemyCritChance);
+    if (enemyCrit) {
+        enemyDmg = Math.max(1, Math.floor(enemyDmg * 1.5));
+    }
+
     const drPercent = Math.min(gameState.player.dmgReduction || gameState.player.damageReduction || 0, 95) / 100;
     if (gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75')) {
         enemyDmg = Math.ceil(enemyDmg * 0.25);
@@ -3163,7 +3183,7 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
 
     const actualDamageTaken = applyDamageToTarget(playerObj, enemyDmg, logCallback);
     if (actualDamageTaken > 0) {
-        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, 'damage');
+        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage${enemyCrit ? ' (CRIT!)' : ''}!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, enemyCrit ? 'reward' : 'damage');
         tryApplyEnemyOnHitEffects(enemyObj, logCallback);
     }
     if (playerObj.hp <= 0 && tryConsumeReviveScroll(playerObj, logCallback)) {
@@ -3668,6 +3688,7 @@ function updateStats() {
     if (atkEl) atkEl.textContent = getTotalAtk();
     if (defEl) defEl.textContent = getTotalDef();
     if (critEl) critEl.textContent = `${actualCrit}%`;
+    if (lvlEl) lvlEl.textContent = p.level;
     if (xpLabelEl) xpLabelEl.textContent = p.level >= MAX_PLAYER_LEVEL ? 'EXP Gained:' : 'XP:';
     if (xpEl) xpEl.textContent = p.level >= MAX_PLAYER_LEVEL
         ? formatScientificXp(p.xp)
@@ -4188,6 +4209,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             let attackCount = playerStatus.attackTwice ? 2 : 1;
             let trueDamage = false;
             let guaranteedCrit = false;
+            let shadowCritTriggered = false;
             
             // Initialize attack counters if not exists
             if (typeof gameState.attackCounter === 'undefined') {
@@ -4234,12 +4256,18 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 crit = true;
                 dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
             }
-            
+
             // Apply true damage (ignore defense)
             if (trueDamage) {
                 dmg = totalAtk + bonusDmg;
             } else {
                 dmg += bonusDmg;
+            }
+
+            const shadowCritMultiplier = getShadowCritMultiplier();
+            if (shadowCritMultiplier > 1) {
+                dmg = Math.floor(dmg * shadowCritMultiplier);
+                shadowCritTriggered = true;
             }
             
             // Handle multiple attacks
@@ -4256,7 +4284,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             }
             
             const multiHitMsg = totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : '';
-            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, crit ? 'reward' : 'info');
+            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
             if (landedHits > 0) {
                 tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
@@ -4396,6 +4424,11 @@ function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, opt
 
                 dmg = Math.floor(dmg * spellMultiplier * damageMult);
                 dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
+                const shadowCritMultiplier = getShadowCritMultiplier();
+                const shadowCritTriggered = shadowCritMultiplier > 1;
+                if (shadowCritTriggered) {
+                    dmg = Math.floor(dmg * shadowCritMultiplier);
+                }
 
                 let totalDamageDealt = 0;
                 let landedHits = 0;
@@ -4408,7 +4441,7 @@ function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, opt
                     if (enemyObj.hp <= 0) break;
                 }
 
-                logCallback(`You cast a spell for ${totalDamageDealt} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+                logCallback(`You cast a spell for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x${damageMult > 1 ? ` + Scroll x${damageMult.toFixed(1)}` : ''})`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
                 if (landedHits > 0) {
                     tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
@@ -9004,7 +9037,8 @@ function humanizeSpecialAbility(ability) {
     const labels = {
         half_current_hp: 'Deals 50% of enemy current HP as bonus damage',
         status_immunity: 'Immune to negative status effects',
-        encounter_multiplier_escape: 'Wander counts as extra encounters and escape keeps rewards'
+        encounter_multiplier_escape: 'Wander counts as extra encounters and escape keeps rewards',
+        shadow_crit: '50% chance for attacks to deal an additional 300% damage'
     };
     return labels[ability] || String(ability || '').replace(/_/g, ' ');
 }
@@ -9466,6 +9500,11 @@ function sanitizeLoadedStateData(state) {
     };
     state.player.name = sanitizeProfileText(state.player.name, 'Hero', 24);
     state.saveName = sanitizeProfileText(state.saveName, 'Hero Save', 40);
+    state.player.level = normalizeFiniteNumber(state.player.level, INITIAL_GAME_STATE_SNAPSHOT.player.level, { min: 1, max: MAX_PLAYER_LEVEL });
+    state.player.xp = normalizeFiniteNumber(state.player.xp, INITIAL_GAME_STATE_SNAPSHOT.player.xp, { min: 0 });
+    state.player.xpToNext = state.player.level >= MAX_PLAYER_LEVEL
+        ? null
+        : normalizeFiniteNumber(state.player.xpToNext, INITIAL_GAME_STATE_SNAPSHOT.player.xpToNext, { min: 1 });
     ensurePlayerBaseStats(state.player);
     state.player.gold = normalizeFiniteNumber(state.player.gold, INITIAL_GAME_STATE_SNAPSHOT.player.gold, { min: 0 });
     state.soulGems = normalizeFiniteNumber(state.soulGems, INITIAL_GAME_STATE_SNAPSHOT.soulGems, { min: 0 });
@@ -10600,6 +10639,7 @@ function attackWorldBoss() {
             let specialMsg = '';
             let attackCount = playerStatus.attackTwice ? 2 : 1;
             let trueDamage = false;
+            let shadowCritTriggered = false;
             let guaranteedCrit = false;
             const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
 
@@ -10653,6 +10693,12 @@ function attackWorldBoss() {
                 dmg += bonusDmg;
             }
 
+            const shadowCritMultiplier = getShadowCritMultiplier();
+            if (shadowCritMultiplier > 1) {
+                dmg = Math.floor(dmg * shadowCritMultiplier);
+                shadowCritTriggered = true;
+            }
+
             const totalAttackInstances = getTotalAttackInstances(attackCount);
             let totalDamageDealt = 0;
             let landedHits = 0;
@@ -10667,7 +10713,7 @@ function attackWorldBoss() {
 
             recordWorldBossPlayerDamage(totalDamageDealt);
             scheduleSilentPersist();
-            addBattleMsg(`You hit the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
+            addBattleMsg(`You strike the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
             if (landedHits > 0) {
                 tryApplyPlayerOnHitEffects(boss, addBattleMsg, { hitCount: landedHits });

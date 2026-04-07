@@ -46,6 +46,7 @@ const itemPool = {
     'Abyssal Shard': { name: 'Abyssal Shard', type: 'material', desc: 'Dense shard of abyssal power', rarity: 'epic' },
     'Celestial Core': { name: 'Celestial Core', type: 'material', desc: 'A brilliant core overflowing with divine force', rarity: 'legendary' },
     'Starweave Fiber': { name: 'Starweave Fiber', type: 'material', desc: 'Radiant thread woven from constellations', rarity: 'legendary' },
+    'Shadow Lantern': { name: 'Shadow Lantern', type: 'material', desc: 'A lamp crystal that burns with black flame', rarity: 'rare' },
     
     // WEAPONS - Level 1-10 (Common)
     'Rusty Sword': { name: 'Rusty Sword', type: 'weapon', equipSlot: 'weapon', atk: 3, levelReq: 1, desc: '+3 ATK', rarity: 'common' },
@@ -69,11 +70,46 @@ const itemPool = {
     'Infernal Blade': { name: 'Infernal Blade', type: 'weapon', equipSlot: 'weapon', atk: 65, levelReq: 40, desc: '+65 ATK | 50% chance to Burn target', rarity: 'epic', onHitDebuff: { effect: 'burn', chance: 50 } },
     'Void Scythe': { name: 'Void Scythe', type: 'weapon', equipSlot: 'weapon', atk: 80, levelReq: 45, desc: '+80 ATK | 40% chance to Exhaust target', rarity: 'epic', onHitDebuff: { effect: 'exhaustion', chance: 40 } },
     'Doom Bringer': { name: 'Doom Bringer', type: 'weapon', equipSlot: 'weapon', atk: 100, levelReq: 50, desc: '+100 ATK | 30% chance to make target Vulnerable', rarity: 'epic', onHitDebuff: { effect: 'vulnerability', chance: 30 } },
+    'Gloamfang Blade': { name: 'Gloamfang Blade', type: 'weapon', equipSlot: 'weapon', atk: 46, crit: 6, levelReq: 30, desc: '+46 ATK, +6% CRIT', rarity: 'common' },
+    'Duskwall Cuirass': { name: 'Duskwall Cuirass', type: 'armor', equipSlot: 'armor', def: 36, levelReq: 31, desc: '+36 DEF', rarity: 'common' },
+    'Nightwarden Helm': { name: 'Nightwarden Helm', type: 'helmet', equipSlot: 'helmet', def: 20, crit: 3, levelReq: 32, desc: '+20 DEF, +3% CRIT', rarity: 'common' },
+    'Gatebreaker Bulwark': { name: 'Gatebreaker Bulwark', type: 'shield', equipSlot: 'shield', def: 34, block: 5, levelReq: 33, desc: '+34 DEF, +5% Block', rarity: 'common' },
+    'Nightfang Boots': { name: 'Nightfang Boots', type: 'boots', equipSlot: 'boots', def: 18, dodge: 5, levelReq: 34, desc: '+18 DEF, +5% Dodge', rarity: 'common' },
+    'Grasp of Dusk': { name: 'Grasp of Dusk', type: 'gloves', equipSlot: 'gloves', atk: 22, attackSpeed: 5, levelReq: 35, desc: '+22 ATK, +5% Attack Speed', rarity: 'common' },
+    'Umbral Focus Ring': { name: 'Umbral Focus Ring', type: 'ring', equipSlot: 'ring', atk: 14, crit: 4, levelReq: 34, desc: '+14 ATK, +4% CRIT', rarity: 'common' },
+    'Veilheart Charm': { name: 'Veilheart Charm', type: 'amulet', equipSlot: 'amulet', def: 18, maxHp: 45, levelReq: 35, desc: '+18 DEF, +45 Max HP', rarity: 'common' },
+
+    'Wraithbite Saber': { name: 'Wraithbite Saber', type: 'weapon', equipSlot: 'weapon', atk: 58, crit: 8, levelReq: 36, desc: '+58 ATK, +8% CRIT', rarity: 'uncommon' },
+    'Shadebound Mail': { name: 'Shadebound Mail', type: 'armor', equipSlot: 'armor', def: 48, dodge: 5, levelReq: 36, desc: '+48 DEF, +5% Dodge', rarity: 'uncommon' },
+    'Hood of Hollow Eyes': { name: 'Hood of Hollow Eyes', type: 'helmet', equipSlot: 'helmet', def: 28, crit: 6, levelReq: 37, desc: '+28 DEF, +6% CRIT', rarity: 'uncommon' },
+    'Blackgate Ward': { name: 'Blackgate Ward', type: 'shield', equipSlot: 'shield', def: 45, block: 8, levelReq: 38, desc: '+45 DEF, +8% Block', rarity: 'uncommon' },
+    'Grimtrail Greaves': { name: 'Grimtrail Greaves', type: 'boots', equipSlot: 'boots', def: 26, dodge: 8, moveSpeed: 6, levelReq: 38, desc: '+26 DEF, +8% Dodge, +6% Move Speed', rarity: 'uncommon' },
+    'Murkclaw Wraps': { name: 'Murkclaw Wraps', type: 'gloves', equipSlot: 'gloves', atk: 30, attackSpeed: 8, levelReq: 39, desc: '+30 ATK, +8% Attack Speed', rarity: 'uncommon' },
+    'Ring of Waning Light': { name: 'Ring of Waning Light', type: 'ring', equipSlot: 'ring', atk: 18, crit: 7, luck: 4, levelReq: 39, desc: '+18 ATK, +7% CRIT, +4 LUCK', rarity: 'uncommon' },
+    'Pendant of the Veil': { name: 'Pendant of the Veil', type: 'amulet', equipSlot: 'amulet', def: 26, maxHp: 80, dmgReduction: 4, levelReq: 40, desc: '+26 DEF, +80 Max HP, +4% Damage Reduction', rarity: 'uncommon' },
+
+    'Riftcarver': { name: 'Riftcarver', type: 'weapon', equipSlot: 'weapon', atk: 72, crit: 10, levelReq: 40, desc: '+72 ATK, +10% CRIT | 22% chance to Weaken target', rarity: 'rare', onHitDebuff: { effect: 'weakness', chance: 22 } },
+    'Veilguard Plate': { name: 'Veilguard Plate', type: 'armor', equipSlot: 'armor', def: 62, dmgReduction: 6, levelReq: 40, desc: '+62 DEF, +6% Damage Reduction', rarity: 'rare' },
+    'Helm of the Last Watch': { name: 'Helm of the Last Watch', type: 'helmet', equipSlot: 'helmet', def: 36, crit: 9, levelReq: 41, desc: '+36 DEF, +9% CRIT', rarity: 'rare' },
+    'Nightglass Bastion': { name: 'Nightglass Bastion', type: 'shield', equipSlot: 'shield', def: 58, block: 12, reflect: 8, levelReq: 41, desc: '+58 DEF, +12% Block, +8 Reflect', rarity: 'rare' },
+    'Shadowstep Spurs': { name: 'Shadowstep Spurs', type: 'boots', equipSlot: 'boots', def: 34, dodge: 12, moveSpeed: 10, levelReq: 42, desc: '+34 DEF, +12% Dodge, +10% Move Speed', rarity: 'rare' },
+    'Talons of the Gate': { name: 'Talons of the Gate', type: 'gloves', equipSlot: 'gloves', atk: 42, attackSpeed: 12, levelReq: 42, desc: '+42 ATK, +12% Attack Speed', rarity: 'rare' },
+    'Noctis Band': { name: 'Noctis Band', type: 'ring', equipSlot: 'ring', atk: 28, crit: 10, armorPen: 8, levelReq: 43, desc: '+28 ATK, +10% CRIT, +8 Armor Pen', rarity: 'rare' },
+    'Eclipsed Sigil': { name: 'Eclipsed Sigil', type: 'amulet', equipSlot: 'amulet', def: 34, maxHp: 120, critDmg: 14, levelReq: 43, desc: '+34 DEF, +120 Max HP, +14% Crit Damage', rarity: 'rare' },
     
     // WEAPONS - Level 50-60 (Legendary)
     'Soul Blade': { name: 'Soul Blade', type: 'weapon', equipSlot: 'weapon', atk: 120, levelReq: 50, desc: '+120 ATK | 45% chance to Weaken target', rarity: 'legendary', onHitDebuff: { effect: 'weakness', chance: 45 } },
     'Excalibur': { name: 'Excalibur', type: 'weapon', equipSlot: 'weapon', atk: 150, levelReq: 55, desc: '+150 ATK | 35% chance to Freeze target', rarity: 'legendary', onHitDebuff: { effect: 'freeze', chance: 35 } },
     'Apocalypse': { name: 'Apocalypse', type: 'weapon', equipSlot: 'weapon', atk: 180, levelReq: 60, desc: '+180 ATK | 60% chance to Curse target', rarity: 'legendary', onHitDebuff: { effect: 'curse', chance: 60 } },
+    'Kingfall Edge': { name: 'Kingfall Edge', type: 'weapon', equipSlot: 'weapon', atk: 132, crit: 16, levelReq: 47, desc: '+132 ATK, +16% CRIT | 34% chance to inflict Vulnerable', rarity: 'legendary', onHitDebuff: { effect: 'vulnerability', chance: 34 } },
+
+    'Abysswatch Raiment': { name: 'Abysswatch Raiment', type: 'armor', equipSlot: 'armor', def: 126, dmgReduction: 14, maxHp: 180, levelReq: 47, desc: '+126 DEF, +14% Damage Reduction, +180 Max HP', rarity: 'legendary' },
+    'Crown of Black Dawn': { name: 'Crown of Black Dawn', type: 'helmet', equipSlot: 'helmet', def: 70, crit: 16, critDmg: 24, levelReq: 48, desc: '+70 DEF, +16% CRIT, +24% Crit Damage', rarity: 'legendary' },
+    'Umbra Wall': { name: 'Umbra Wall', type: 'shield', equipSlot: 'shield', def: 118, block: 20, reflect: 18, levelReq: 48, desc: '+118 DEF, +20% Block, +18 Reflect', rarity: 'legendary' },
+    'Stalkerstride': { name: 'Stalkerstride', type: 'boots', equipSlot: 'boots', def: 64, dodge: 22, moveSpeed: 18, levelReq: 49, desc: '+64 DEF, +22% Dodge, +18% Move Speed', rarity: 'legendary' },
+    'Midnight Talons': { name: 'Midnight Talons', type: 'gloves', equipSlot: 'gloves', atk: 78, attackSpeed: 22, crit: 10, levelReq: 49, desc: '+78 ATK, +22% Attack Speed, +10% CRIT', rarity: 'legendary' },
+    'Gateshadow Loop': { name: 'Gateshadow Loop', type: 'ring', equipSlot: 'ring', atk: 56, crit: 18, armorPen: 16, levelReq: 50, desc: '+56 ATK, +18% CRIT, +16 Armor Pen', rarity: 'legendary' },
+    'Heart of the Threshold': { name: 'Heart of the Threshold', type: 'amulet', equipSlot: 'amulet', def: 62, maxHp: 260, critDmg: 28, dmgReduction: 10, levelReq: 50, desc: '+62 DEF, +260 Max HP, +28% Crit Damage, +10% Damage Reduction', rarity: 'legendary' },
     
     // ARMOR - Level 1-10 (Common)
     'Leather Vest': { name: 'Leather Vest', type: 'armor', equipSlot: 'armor', def: 2, levelReq: 1, desc: '+2 DEF', rarity: 'common' },
@@ -132,9 +168,18 @@ const itemPool = {
     // CAPES
     'Cloth Cloak': { name: 'Cloth Cloak', type: 'cape', equipSlot: 'cape', def: 1, levelReq: 1, desc: '+1 DEF', rarity: 'common' },
     'Traveler Cloak': { name: 'Traveler Cloak', type: 'cape', equipSlot: 'cape', def: 4, levelReq: 10, desc: '+4 DEF', rarity: 'uncommon' },
-    'Shadow Cloak': { name: 'Shadow Cloak', type: 'cape', equipSlot: 'cape', def: 12, crit: 5, levelReq: 20, desc: '+12 DEF, +5% CRIT', rarity: 'rare' },
+    'Duskwoven Cloak': { name: 'Duskwoven Cloak', type: 'cape', equipSlot: 'cape', def: 12, crit: 5, levelReq: 20, desc: '+12 DEF, +5% CRIT', rarity: 'rare' },
     'Vampire Cape': { name: 'Vampire Cape', type: 'cape', equipSlot: 'cape', def: 30, crit: 12, levelReq: 35, desc: '+30 DEF, +12% CRIT', rarity: 'epic' },
     'Wings of Liberty': { name: 'Wings of Liberty', type: 'cape', equipSlot: 'cape', def: 65, crit: 25, levelReq: 50, desc: '+65 DEF, +25% CRIT', rarity: 'legendary' },
+
+    'Ravenous Pike': { name: 'Ravenous Pike', type: 'weapon', equipSlot: 'weapon', atk: 92, crit: 12, lifesteal: 6, levelReq: 44, desc: '+92 ATK, +12% CRIT, +6% Lifesteal', rarity: 'epic' },
+    'Shroudplate': { name: 'Shroudplate', type: 'armor', equipSlot: 'armor', def: 88, maxHp: 140, levelReq: 44, desc: '+88 DEF, +140 Max HP', rarity: 'epic' },
+    'Ebon Visor': { name: 'Ebon Visor', type: 'helmet', equipSlot: 'helmet', def: 48, crit: 12, luck: 8, levelReq: 45, desc: '+48 DEF, +12% CRIT, +8 LUCK', rarity: 'epic' },
+    'Veilrender Aegis': { name: 'Veilrender Aegis', type: 'shield', equipSlot: 'shield', def: 82, block: 16, reflect: 12, levelReq: 45, desc: '+82 DEF, +16% Block, +12 Reflect', rarity: 'epic' },
+    'Ashen Wake Boots': { name: 'Ashen Wake Boots', type: 'boots', equipSlot: 'boots', def: 44, dodge: 16, attackSpeed: 8, levelReq: 46, desc: '+44 DEF, +16% Dodge, +8% Attack Speed', rarity: 'epic' },
+    'Hands of the Hollow Gate': { name: 'Hands of the Hollow Gate', type: 'gloves', equipSlot: 'gloves', atk: 58, attackSpeed: 16, crit: 8, levelReq: 46, desc: '+58 ATK, +16% Attack Speed, +8% CRIT', rarity: 'epic' },
+    'Moonlit Seal': { name: 'Moonlit Seal', type: 'ring', equipSlot: 'ring', atk: 40, crit: 14, critDmg: 18, levelReq: 47, desc: '+40 ATK, +14% CRIT, +18% Crit Damage', rarity: 'epic' },
+    'Threshold Relic': { name: 'Threshold Relic', type: 'amulet', equipSlot: 'amulet', def: 46, maxHp: 180, dmgReduction: 7, levelReq: 47, desc: '+46 DEF, +180 Max HP, +7% Damage Reduction', rarity: 'epic' },
     
     // RINGS
     'Copper Ring': { name: 'Copper Ring', type: 'ring', equipSlot: 'ring', atk: 1, levelReq: 1, desc: '+1 ATK', rarity: 'common' },
@@ -263,7 +308,7 @@ const BASE_CRAFTING_RECIPES = [
     { name: 'Lucky Charm', materials: { 'Pixie Wings': 3, 'Magic Stone': 1 }, result: { name: 'Lucky Charm', type: 'charm', equipSlot: 'ring', luck: 3, levelReq: 15, desc: '+3 LUCK', rarity: 'uncommon' }, chance: 0.4 },
     { name: 'Critical Ring', materials: { 'Harpy Feather': 2, 'Dragon Claw': 1 }, result: { name: 'Critical Ring', type: 'ring', equipSlot: 'ring', crit: 15, levelReq: 20, desc: '+15% CRIT', rarity: 'rare' }, chance: 0.35 },
     { name: 'Dragon Scale Mail', materials: { 'Dragon Scale': 5, 'Iron Ore': 10 }, result: { name: 'Dragon Scale Mail', type: 'armor', equipSlot: 'armor', def: 42, levelReq: 30, desc: '+42 DEF', rarity: 'rare' }, chance: 0.3 },
-    { name: 'Shadow Cloak', materials: { 'Shadow Essence': 2, 'Dark Pelt': 3 }, result: { name: 'Shadow Cloak', type: 'cape', equipSlot: 'cape', def: 12, crit: 5, levelReq: 20, desc: '+12 DEF, +5% CRIT', rarity: 'rare' }, chance: 0.35 },
+    { name: 'Duskwoven Cloak', materials: { 'Shadow Essence': 2, 'Dark Pelt': 3 }, result: { name: 'Duskwoven Cloak', type: 'cape', equipSlot: 'cape', def: 12, crit: 5, levelReq: 20, desc: '+12 DEF, +5% CRIT', rarity: 'rare' }, chance: 0.35 },
     { name: 'Greater Health Potion', materials: { 'Sprite Dust': 3, 'Wolf Pelt': 3, 'Magic Stone': 1 }, result: { name: 'Greater Health Potion', type: 'consumable', effect: 'heal', value: 100, desc: 'Restores 100 HP', rarity: 'uncommon' }, chance: 0.7 }
 ];
 

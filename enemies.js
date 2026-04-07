@@ -47,6 +47,8 @@ const ENEMY_NAME_DB = {
     'phantom_warrior': { tier: 5, rarity: 'rare', drops: ['Shadow Essence', 'Wraith Essence'] },
     'elder_troll': { tier: 5, rarity: 'rare', drops: ['Cave Troll Hide', 'Magic Stone'] },
     'vampire_spawn': { tier: 5, rarity: 'rare', drops: ['Dark Pelt', 'Wraith Essence'] },
+    'shade_stalker': { tier: 5, rarity: 'rare', drops: ['Shadow Lantern', 'Gloamfang Blade', 'Runic Thread'] },
+    'gloomfang': { tier: 5, rarity: 'rare', drops: ['Nightfang Boots', 'Shadow Essence', 'Moonstone'] },
     
     // TIER 6: Level 35-42 (Epic)
     'dragon': { tier: 6, rarity: 'epic', drops: ['Dragon Heart', 'Dragon Scale'] },
@@ -55,6 +57,9 @@ const ENEMY_NAME_DB = {
     'ancient_golem': { tier: 6, rarity: 'epic', drops: ['Stone Core', 'Mythril Ore'] },
     'elder_vampire': { tier: 6, rarity: 'epic', drops: ['Shadow Essence', 'Vampire Cape'] },
     'storm_elemental': { tier: 6, rarity: 'epic', drops: ['Magic Stone', 'Storm Hammer'] },
+    'veilwarden': { tier: 6, rarity: 'epic', drops: ['Veilguard Plate', 'Nightwarden Helm', 'Abyssal Shard'] },
+    'umbra_sorcerer': { tier: 6, rarity: 'epic', drops: ['Umbral Focus Ring', 'Shadow Essence', 'Runic Thread'] },
+    'gate_revenant': { tier: 6, rarity: 'epic', drops: ['Gatebreaker Bulwark', 'Grasp of Dusk', 'Aethersteel Ingot'] },
     
     // TIER 7: Level 45-50 (Legendary)
     'shadow_lord': { tier: 7, rarity: 'legendary', drops: ['Shadow Crown', 'Soul Blade'] },
@@ -193,6 +198,11 @@ Object.keys(ENEMY_NAME_DB).forEach(key => {
         'shadow_mage': { inflict: 'silence', chance: 35 },
         'shadow_lord': { inflict: 'silence', chance: 45 },
         'lich_king': { inflict: 'silence', chance: 50 },
+        'shade_stalker': { inflict: 'bleed', chance: 45 },
+        'gloomfang': { inflict: 'weakness', chance: 40 },
+        'veilwarden': { inflict: 'root', chance: 45 },
+        'umbra_sorcerer': { inflict: 'silence', chance: 50 },
+        'gate_revenant': { inflict: 'curse', chance: 55 },
         
         // Stat Debuffs
         'wraith': { inflict: 'weakness', chance: 25 },
@@ -212,6 +222,11 @@ Object.keys(ENEMY_NAME_DB).forEach(key => {
     };
 
     const enemySpecialOverrides = {
+        'shade_stalker': { randomDebuffChance: 0.34, randomDebuffCountRange: [1, 2], debuffPool: ['bleed', 'weakness', 'slow'] },
+        'gloomfang': { randomDebuffChance: 0.38, randomDebuffCountRange: [1, 3], debuffPool: ['bleed', 'root', 'exhaustion'] },
+        'veilwarden': { randomDebuffChance: 0.42, randomDebuffCountRange: [1, 3], debuffPool: ['root', 'vulnerability', 'weakness', 'slow'] },
+        'umbra_sorcerer': { randomDebuffChance: 0.46, randomDebuffCountRange: [2, 3], debuffPool: ['silence', 'curse', 'exhaustion', 'freeze'] },
+        'gate_revenant': { randomDebuffChance: 0.5, randomDebuffCountRange: [2, 3], debuffPool: ['curse', 'vulnerability', 'stun', 'weakness'] },
         'void_seraph': { randomDebuffChance: 0.45, randomDebuffCountRange: [1, 3], debuffPool: ['silence', 'freeze', 'curse', 'exhaustion', 'vulnerability'] },
         'entropy_behemoth': { randomDebuffChance: 0.5, randomDebuffCountRange: [2, 4], debuffPool: ['stun', 'weakness', 'root', 'vulnerability', 'slow'] },
         'null_watcher': { randomDebuffChance: 0.4, randomDebuffCountRange: [1, 4], debuffPool: ['paralysis', 'silence', 'exhaustion', 'curse', 'freeze'] },

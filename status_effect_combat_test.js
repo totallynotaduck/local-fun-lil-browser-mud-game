@@ -190,7 +190,7 @@ function activePlayerEffect(effectId) {
 function assertSnapshotMatches(template, snapshot, label) {
     const booleanProps = [
         'skipTurn', 'cannotAttack', 'cannotUseItems', 'cannotUseAbilities',
-        'cannotEscape', 'attackTwice', 'immuneToDamage', 'immuneToDebuffs'
+        'cannotEscape', 'attackTwice', 'immuneToDamage', 'immuneToDebuffs', 'enemyGuaranteedCrit'
     ];
     for (const prop of booleanProps) {
         if (template[prop]) {
@@ -395,6 +395,23 @@ function runCombatPathIntegrationTests() {
     api.battleAction('attack');
     assert.strictEqual(api.gameState.currentEnemy.hp, enemyHpBefore, 'paralysis should cause battle attacks to miss completely');
     assert(!activePlayerEffect('paralysis'), 'paralysis should expire after the missed combat turn');
+
+    resetState();
+    api.gameState.player.hp = 100;
+    api.gameState.player.def = 10;
+    api.gameState.player.baseDef = 10;
+    api.gameState.inBattle = true;
+    api.gameState.currentEnemy = makeEnemy({ name: 'Stun Dummy', hp: 250, maxHp: 250, atk: 20, def: 0, dodge: 0, crit: 0 });
+    assert.strictEqual(api.addPlayerStatusEffect('stun', { source: 'combat-test' }), true);
+    const stunnedSnapshot = api.getPlayerStatusSnapshot();
+    assert.strictEqual(stunnedSnapshot.missChance, 100, 'stun should force the player attack to miss');
+    assert.strictEqual(stunnedSnapshot.enemyGuaranteedCrit, true, 'stun should guarantee the enemy crits the player');
+    assert.strictEqual(stunnedSnapshot.defenseMultiplier, 0.8, 'stun should reduce player defense by 20%');
+    const stunnedEnemyHpBefore = api.gameState.currentEnemy.hp;
+    api.battleAction('attack');
+    assert.strictEqual(api.gameState.currentEnemy.hp, stunnedEnemyHpBefore, 'stun should cause battle attacks to miss completely');
+    assert.strictEqual(api.gameState.player.hp, 82, 'stun should cause the enemy counterattack to crit through reduced defense');
+    assert(!activePlayerEffect('stun'), 'stun should expire after the missed combat turn');
 }
 
 function runItemPathIntegrationTests() {

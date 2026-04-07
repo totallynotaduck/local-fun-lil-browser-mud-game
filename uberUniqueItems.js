@@ -68,6 +68,21 @@ const UBER_UNIQUE_SET = [
         uberUnique: true
     },
 
+    {
+        name: 'Shadow Cloak',
+        type: 'cape',
+        equipSlot: 'cape',
+        dodge: 55,
+        def: 100,
+        atk: 50,
+        crit: 20,
+        levelReq: 30,
+        desc: '+55% Dodge, +100 DEF, +50 ATK, +20% CRIT | Special: Shadow Crit - Attacks have a 50% chance to deal an additional 300% damage',
+        rarity: 'uber_unique',
+        specialAbility: 'shadow_crit',
+        uberUnique: true
+    },
+
     // LEVEL BRACKET 50-60
     {
         name: 'Worldeater Gauntlets',

@@ -93,9 +93,10 @@ const STATUS_EFFECTS = {
         name: 'Stunned',
         type: 'debuff',
         category: 'control',
-        description: 'Dazed - cannot attack, can still defend partially',
-        cannotAttack: true,
-        defMultiplier: 0.5,
+        description: 'Dazed - your next attack misses, enemy next hit is a guaranteed crit, DEF reduced by 20%',
+        missChance: 100,
+        enemyGuaranteedCrit: true,
+        defenseMultiplier: 0.8,
         duration: 1,
         icon: '💫',
         color: '#9b59b6'
