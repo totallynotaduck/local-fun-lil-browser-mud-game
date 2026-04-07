@@ -117,7 +117,9 @@ globalThis.__testApi = {
     wanderingUseItem,
     attackWorldBoss,
     useItem,
-    recalculateAllPlayerStats
+    recalculateAllPlayerStats,
+    getTotalHealthRegen,
+    autoRegen
 };
 `, context, { filename: 'status-effect-test-export.js' });
 
@@ -332,6 +334,53 @@ function runCombatPathIntegrationTests() {
     assert.strictEqual(getEffect(api.gameState.currentWorldBoss, 'burn').remainingTurns, 2, 'world boss path should process enemy end-of-turn statuses');
 
     resetState();
+    api.gameState.player.mp = 100;
+    api.gameState.equipment.weapon = {
+        name: 'Enchanted Test Wand',
+        type: 'weapon',
+        equipSlot: 'weapon',
+        atk: 0,
+        enchantBonusStats: [{ kind: 'onHitDebuff', effect: 'burn', chance: 100 }]
+    };
+    api.gameState.inBattle = true;
+    api.gameState.currentEnemy = makeEnemy({ hp: 600, maxHp: 600 });
+    api.battleAction('spell');
+    assert(getEffect(api.gameState.currentEnemy, 'burn'), 'battle spell should apply enchant on-hit debuff to enemy');
+
+    resetState();
+    api.gameState.player.mp = 100;
+    api.gameState.equipment.weapon = {
+        name: 'Enchanted Dungeon Staff',
+        type: 'weapon',
+        equipSlot: 'weapon',
+        atk: 0,
+        enchantBonusStats: [{ kind: 'onHitDebuff', effect: 'curse', chance: 100 }]
+    };
+    api.dungeonState.active = true;
+    api.dungeonState.inBattle = true;
+    api.dungeonState.hp = 100;
+    api.dungeonState.maxHp = 100;
+    api.dungeonState.currentEnemy = makeEnemy({ name: 'Dungeon Enchant Dummy', hp: 650, maxHp: 650 });
+    api.dungeonAction('spell');
+    assert(getEffect(api.dungeonState.currentEnemy, 'curse'), 'dungeon spell should apply enchant on-hit debuff to enemy');
+
+    resetState();
+    api.gameState.player.hp = 100;
+    api.gameState.player.mp = 100;
+    api.gameState.equipment.weapon = {
+        name: 'Enchanted World Boss Blade',
+        type: 'weapon',
+        equipSlot: 'weapon',
+        atk: 0,
+        enchantBonusStats: [{ kind: 'onHitDebuff', effect: 'weakness', chance: 100 }]
+    };
+    api.gameState.worldBossActive = true;
+    api.gameState.currentWorldBoss = makeEnemy({ name: 'Boss Enchant Dummy', hp: 5000, maxHp: 5000, atk: 1, def: 0, tier: 5 });
+    api.gameState.worldBossSpawnTime = Date.now();
+    api.attackWorldBoss();
+    assert(getEffect(api.gameState.currentWorldBoss, 'weakness'), 'world boss attack should apply enchant on-hit debuff to boss');
+
+    resetState();
     api.gameState.player.hp = 100;
     api.gameState.player.mp = 100;
     api.gameState.inBattle = true;
@@ -404,10 +453,55 @@ function runItemPathIntegrationTests() {
     assert(!activePlayerEffect('bleed'), 'dungeon healing should remove bleed');
 }
 
+function runRegenBehaviorTests() {
+    resetState();
+    api.gameState.equipment.amulet = {
+        name: 'Regen Test Amulet',
+        type: 'amulet',
+        equipSlot: 'amulet',
+        healthRegen: 7
+    };
+    api.recalculateAllPlayerStats();
+    assert.strictEqual(api.getTotalHealthRegen(), 7, 'equipped health regen should not double count');
+
+    api.gameState.equipment.amulet = null;
+    api.recalculateAllPlayerStats();
+    assert.strictEqual(api.getTotalHealthRegen(), 0, 'health regen should clear after unequipping regen gear');
+
+    resetState();
+    api.gameState.player.hp = 50;
+    api.gameState.player.maxHp = 100;
+    api.gameState.player.baseMaxHp = 100;
+    api.gameState.player.mp = 10;
+    api.gameState.player.maxMp = 100;
+    api.gameState.player.baseMaxMp = 100;
+    api.gameState.lastRegen = Date.now() - 6000;
+    api.gameState.inBattle = true;
+    api.gameState.currentEnemy = makeEnemy({ name: 'Battle Regen Dummy' });
+    api.autoRegen();
+    assert.strictEqual(api.gameState.player.hp, 50, 'natural health regen should pause during standard battle');
+    assert.strictEqual(api.gameState.player.mp, 13, 'natural mana regen should still tick during standard battle');
+
+    resetState();
+    api.gameState.player.hp = 50;
+    api.gameState.player.maxHp = 100;
+    api.gameState.player.baseMaxHp = 100;
+    api.gameState.player.mp = 10;
+    api.gameState.player.maxMp = 100;
+    api.gameState.player.baseMaxMp = 100;
+    api.gameState.lastRegen = Date.now() - 6000;
+    api.gameState.worldBossActive = true;
+    api.gameState.currentWorldBoss = makeEnemy({ name: 'World Boss Regen Dummy', hp: 5000, maxHp: 5000, tier: 5 });
+    api.autoRegen();
+    assert.strictEqual(api.gameState.player.hp, 52, 'natural health regen should continue during world boss combat');
+    assert.strictEqual(api.gameState.player.mp, 13, 'natural mana regen should still tick during world boss combat');
+}
+
 function runAllTests() {
     runStatusTemplateCoverageTests();
     runCombatPathIntegrationTests();
     runItemPathIntegrationTests();
+    runRegenBehaviorTests();
 }
 
 try {

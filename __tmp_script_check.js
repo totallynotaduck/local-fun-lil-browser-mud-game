@@ -1,4 +1,3 @@
-﻿
 
 // GAME STATE
 const gameState = {
@@ -113,23 +112,36 @@ const WANDER_RANK_MAP = WANDER_RANKS.reduce((map, rank) => {
     return map;
 }, {});
 const WANDER_HIGH_RANK_KEYS = new Set(['S', 'SS', 'SSS']);
-const PLAYER_DEBUFF_TEMPLATES = {
-    burn: { id: 'burn', name: 'Burning', icon: '馃敟', color: '#ff4444', duration: 3, dotFlat: 15 },
-    poison: { id: 'poison', name: 'Poisoned', icon: '鈽狅笍', color: '#2ecc71', duration: 4, dotPercentMaxHp: 0.03 },
-    bleed: { id: 'bleed', name: 'Bleeding', icon: '馃└', color: '#c0392b', duration: 4, dotFlat: 12 },
-    frostbite: { id: 'frostbite', name: 'Frostbite', icon: '鉂勶笍', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
-    paralysis: { id: 'paralysis', name: 'Paralyzed', icon: '鈿?, color: '#f1c40f', duration: 1, skipTurn: true },
-    freeze: { id: 'freeze', name: 'Frozen', icon: '馃', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
-    stun: { id: 'stun', name: 'Stunned', icon: '馃挮', color: '#9b59b6', duration: 1, cannotAttack: true },
-    root: { id: 'root', name: 'Rooted', icon: '馃尶', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
-    silence: { id: 'silence', name: 'Silenced', icon: '馃攪', color: '#95a5a6', duration: 2, cannotUseItems: true },
-    slow: { id: 'slow', name: 'Slowed', icon: '馃悓', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
-    weakness: { id: 'weakness', name: 'Weakened', icon: '馃様', color: '#6c5ce7', duration: 3, damageDealtMultiplier: 0.5 },
-    curse: { id: 'curse', name: 'Cursed', icon: '馃懟', color: '#2d3436', duration: 4, damageTakenMultiplier: 1.5 },
-    vulnerability: { id: 'vulnerability', name: 'Vulnerable', icon: '馃挃', color: '#e17055', duration: 2, defenseMultiplier: 0.5 },
-    exhaustion: { id: 'exhaustion', name: 'Exhausted', icon: '馃槴', color: '#fdcb6e', duration: 3, dodgeMultiplier: 0.5, critMultiplier: 0.5 }
+const WANDER_SPECIAL_REWARD_LOCATIONS = new Set(['forest', 'dark_forest', 'mountains']);
+const COMBAT_STATUS_TEMPLATES = {
+    burn: { id: 'burn', name: 'Burning', type: 'debuff', icon: '🔥', color: '#ff4444', duration: 3, dotFlat: 15 },
+    poison: { id: 'poison', name: 'Poisoned', type: 'debuff', icon: '☠️', color: '#2ecc71', duration: 4, dotPercentMaxHp: 0.03 },
+    bleed: { id: 'bleed', name: 'Bleeding', type: 'debuff', icon: '🩸', color: '#c0392b', duration: 5, dotFlat: 8, stackIncrease: 4 },
+    frostbite: { id: 'frostbite', name: 'Frostbite', type: 'debuff', icon: '❄️', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
+    paralysis: { id: 'paralysis', name: 'Paralyzed', type: 'debuff', icon: '⚡', color: '#f1c40f', duration: 1, missChance: 100, cannotUseItems: true },
+    freeze: { id: 'freeze', name: 'Frozen', type: 'debuff', icon: '🧊', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
+    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, cannotAttack: true, defenseMultiplier: 0.5 },
+    root: { id: 'root', name: 'Rooted', type: 'debuff', icon: '🌿', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
+    silence: { id: 'silence', name: 'Silenced', type: 'debuff', icon: '🔇', color: '#95a5a6', duration: 2, cannotUseItems: true, cannotUseAbilities: true },
+    slow: { id: 'slow', name: 'Slowed', type: 'debuff', icon: '🐌', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
+    weakness: { id: 'weakness', name: 'Weakened', type: 'debuff', icon: '😔', color: '#6c5ce7', duration: 3, damageDealtMultiplier: 0.5 },
+    curse: { id: 'curse', name: 'Cursed', type: 'debuff', icon: '👻', color: '#2d3436', duration: 4, damageTakenMultiplier: 1.5 },
+    vulnerability: { id: 'vulnerability', name: 'Vulnerable', type: 'debuff', icon: '💔', color: '#e17055', duration: 2, defenseMultiplier: 0.5 },
+    exhaustion: { id: 'exhaustion', name: 'Exhausted', type: 'debuff', icon: '😫', color: '#fdcb6e', duration: 3, dodgeMultiplier: 0.5, critMultiplier: 0.5 },
+    strength: { id: 'strength', name: 'Strength', type: 'buff', icon: '💪', color: '#e74c3c', duration: 3, damageDealtMultiplier: 1.35 },
+    shield: { id: 'shield', name: 'Shielded', type: 'buff', icon: '🛡️', color: '#3498db', duration: 4, absorbDamage: 150 },
+    regeneration: { id: 'regeneration', name: 'Regeneration', type: 'buff', icon: '💚', color: '#00b894', duration: 4, healPercentMaxHp: 0.05 },
+    haste: { id: 'haste', name: 'Haste', type: 'buff', icon: '⚡', color: '#fdcb6e', duration: 2, attackTwice: true, dodgeBonus: 0.25 },
+    berserk: { id: 'berserk', name: 'Berserk', type: 'buff', icon: '😡', color: '#d63031', duration: 3, damageDealtMultiplier: 2, damageTakenMultiplier: 1.5 },
+    invulnerability: { id: 'invulnerability', name: 'Invulnerable', type: 'buff', icon: '✨', color: '#ffeaa7', duration: 1, immuneToDamage: true, immuneToDebuffs: true }
 };
-const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(PLAYER_DEBUFF_TEMPLATES);
+const COMBAT_STATUS_RULES = {
+    stackable: new Set(['burn', 'poison', 'bleed']),
+    refreshOnReapply: new Set(['frostbite', 'slow', 'weakness', 'curse', 'vulnerability', 'exhaustion', 'root', 'silence', 'strength', 'shield', 'regeneration', 'haste', 'berserk']),
+    unique: new Set(['paralysis', 'freeze', 'stun', 'invulnerability'])
+};
+const PLAYER_DEBUFF_TEMPLATES = COMBAT_STATUS_TEMPLATES;
+const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(COMBAT_STATUS_TEMPLATES).filter(effectId => COMBAT_STATUS_TEMPLATES[effectId].type === 'debuff');
 const WANDER_COMPLETION_CONGRATS = [
     '{player} actually cleared a {rank} wandering expedition. That is absurd.',
     'Respect, {player}. A full {rank} wander clear is not normal.',
@@ -1276,7 +1288,7 @@ function summarizeFakePlayerEquipment(equipment) {
         equipment.armor?.name,
         equipment.ring?.name || equipment.amulet?.name
     ].filter(Boolean);
-    return highlights.join(' 鈥?');
+    return highlights.join(' • ');
 }
 
 function buildFakePlayerRoster(count = 80) {
@@ -1446,7 +1458,9 @@ function renderFakePlayerCard(enemy, idx, isOnCooldown) {
             magicPen: 'baseMagicPen',
             attackSpeed: 'baseAttackSpeed',
             cdr: 'baseCdr',
-            moveSpeed: 'baseMoveSpeed'
+            moveSpeed: 'baseMoveSpeed',
+            healthRegen: 'baseHealthRegen',
+            manaRegen: 'baseManaRegen'
         };
         const baseKey = baseStatKeys[stat];
         let base = baseKey ? (p[baseKey] ?? p[stat] ?? 0) : (p[stat] || 0);
@@ -1659,7 +1673,7 @@ function applyCombatHealthRegen(playerObj, logCallback = addBattleMsg) {
     const healAmt = Math.min(maxHp - playerObj.hp, Math.floor(maxHp * regenPercent / 100));
     if (healAmt > 0) {
         playerObj.hp += healAmt;
-        logCallback(`馃挌 Health Regen restores ${healAmt} HP! (${regenPercent}% Max HP)`, 'heal');
+        logCallback(`💚 Health Regen restores ${healAmt} HP! (${regenPercent}% Max HP)`, 'heal');
     }
 
     return healAmt;
@@ -1705,6 +1719,32 @@ function applyWanderingRewardBoost(amount, expedition = gameState.wandering, ext
     return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier() * getWanderingLocationRewardMultiplier(expedition) * Math.max(0, extraMultiplier || 1)));
 }
 
+function locationSupportsWandering(locationKey = gameState.player.location) {
+    const loc = locations[locationKey];
+    return !!(loc && Array.isArray(loc.enemies) && loc.enemies.length > 0);
+}
+
+function getWanderStageRange(rankKey, locationKey = gameState.player.location) {
+    if (WANDER_SPECIAL_REWARD_LOCATIONS.has(locationKey)) {
+        if (rankKey === 'SSS') return [120, 300];
+        if (rankKey === 'SS') return [75, 200];
+    }
+
+    if (WANDER_HIGH_RANK_KEYS.has(rankKey)) return [50, 150];
+    return [5, 50];
+}
+
+function getWanderCompletionStatReward(rankKey, locationKey = gameState.wandering?.locationKey || gameState.player.location) {
+    if (WANDER_SPECIAL_REWARD_LOCATIONS.has(locationKey)) {
+        if (rankKey === 'SS') return { atk: 5, def: 5 };
+        if (rankKey === 'SSS') return { atk: 30, def: 30 };
+        return null;
+    }
+
+    if (WANDER_HIGH_RANK_KEYS.has(rankKey)) return { atk: 3, def: 3 };
+    return null;
+}
+
 function getCeaselessVoidBenchmarkStats() {
     return {
         maxHp: Math.max(getTotalMaxHp(), 38000),
@@ -1746,82 +1786,287 @@ function buildCeaselessVoidEnemy(template, options = {}) {
     };
 }
 
-function getActivePlayerStatusEffects() {
-    return (gameState.activeStatusEffects || []).filter(effect => effect && effect.remainingTurns > 0);
+function getStatusEffectCollection(target) {
+    if (!target) return [];
+    if (target === gameState.player) {
+        if (!Array.isArray(gameState.activeStatusEffects)) gameState.activeStatusEffects = [];
+        return gameState.activeStatusEffects;
+    }
+    if (!Array.isArray(target.activeStatusEffects)) target.activeStatusEffects = [];
+    return target.activeStatusEffects;
 }
 
-function getPlayerStatusSnapshot() {
+function getActiveStatusEffectsForTarget(target) {
+    return getStatusEffectCollection(target).filter(effect => effect && effect.remainingTurns > 0);
+}
+
+function getStatusTargetName(target) {
+    return target === gameState.player ? 'you' : (target?.name || 'the target');
+}
+
+function getStatusTargetDisplayName(target) {
+    return target === gameState.player ? 'You' : (target?.name || 'Target');
+}
+
+function createStatusEffectInstance(effectId, options = {}) {
+    const template = COMBAT_STATUS_TEMPLATES[effectId];
+    if (!template) return null;
+
+    const instance = {
+        ...template,
+        source: options.source || null,
+        stacks: Math.max(1, Number(options.stacks) || 1),
+        remainingTurns: Math.max(1, Number(options.duration) || template.duration || 1)
+    };
+
+    if (template.absorbDamage !== undefined) {
+        instance.absorbDamageRemaining = Math.max(0, Number(options.absorbDamageRemaining) || template.absorbDamage);
+    }
+
+    return instance;
+}
+
+function getStatusSnapshot(target) {
     const snapshot = {
         damageDealtMultiplier: 1,
         damageTakenMultiplier: 1,
         defenseMultiplier: 1,
         dodgeMultiplier: 1,
+        dodgeBonus: 0,
         critMultiplier: 1,
         missChance: 0,
         skipTurn: false,
         cannotAttack: false,
         cannotUseItems: false,
-        cannotEscape: false
+        cannotUseAbilities: false,
+        cannotEscape: false,
+        attackTwice: false,
+        immuneToDamage: false,
+        immuneToDebuffs: false
     };
 
-    getActivePlayerStatusEffects().forEach(effect => {
+    getActiveStatusEffectsForTarget(target).forEach(effect => {
         if (effect.damageDealtMultiplier !== undefined) snapshot.damageDealtMultiplier *= effect.damageDealtMultiplier;
         if (effect.damageTakenMultiplier !== undefined) snapshot.damageTakenMultiplier *= effect.damageTakenMultiplier;
         if (effect.defenseMultiplier !== undefined) snapshot.defenseMultiplier *= effect.defenseMultiplier;
         if (effect.dodgeMultiplier !== undefined) snapshot.dodgeMultiplier *= effect.dodgeMultiplier;
+        if (effect.dodgeBonus !== undefined) snapshot.dodgeBonus += effect.dodgeBonus;
         if (effect.critMultiplier !== undefined) snapshot.critMultiplier *= effect.critMultiplier;
         if (effect.missChance !== undefined) snapshot.missChance = Math.max(snapshot.missChance, effect.missChance);
         if (effect.skipTurn) snapshot.skipTurn = true;
         if (effect.cannotAttack) snapshot.cannotAttack = true;
         if (effect.cannotUseItems) snapshot.cannotUseItems = true;
+        if (effect.cannotUseAbilities) snapshot.cannotUseAbilities = true;
         if (effect.cannotEscape) snapshot.cannotEscape = true;
+        if (effect.attackTwice) snapshot.attackTwice = true;
+        if (effect.immuneToDamage) snapshot.immuneToDamage = true;
+        if (effect.immuneToDebuffs) snapshot.immuneToDebuffs = true;
     });
 
     return snapshot;
 }
 
-function addPlayerStatusEffect(effectId, options = {}) {
-    const template = PLAYER_DEBUFF_TEMPLATES[effectId];
-    if (!template) return false;
-    if (hasEquippedSpecialAbility('status_immunity')) return false;
+function getActivePlayerStatusEffects() {
+    return getActiveStatusEffectsForTarget(gameState.player);
+}
 
-    const existing = (gameState.activeStatusEffects || []).find(effect => effect && effect.id === effectId);
+function getPlayerStatusSnapshot() {
+    return getStatusSnapshot(gameState.player);
+}
+
+function getEnemyStatusSnapshot(enemyObj) {
+    return getStatusSnapshot(enemyObj);
+}
+
+function addStatusEffectToTarget(target, effectId, options = {}) {
+    const template = COMBAT_STATUS_TEMPLATES[effectId];
+    if (!target || !template) return false;
+
+    if (target === gameState.player && template.type === 'debuff' && hasEquippedSpecialAbility('status_immunity')) {
+        return false;
+    }
+
+    if (template.type === 'debuff' && getStatusSnapshot(target).immuneToDebuffs) {
+        return false;
+    }
+
+    const collection = getStatusEffectCollection(target);
+    const existing = collection.find(effect => effect && effect.id === effectId);
     if (existing) {
+        if (COMBAT_STATUS_RULES.unique.has(effectId)) {
+            return false;
+        }
+
+        if (COMBAT_STATUS_RULES.stackable.has(effectId)) {
+            existing.stacks = Math.max(1, existing.stacks || 1) + Math.max(1, Number(options.stacks) || 1);
+            existing.remainingTurns = Math.max(existing.remainingTurns || 0, template.duration || 1);
+            return true;
+        }
+
         existing.remainingTurns = Math.max(existing.remainingTurns || 0, template.duration || 1);
+        if (template.absorbDamage !== undefined) {
+            existing.absorbDamageRemaining = Math.max(existing.absorbDamageRemaining || 0, template.absorbDamage);
+        }
         return true;
     }
 
-    gameState.activeStatusEffects.push({
-        ...template,
-        source: options.source || null,
-        remainingTurns: template.duration || 1
-    });
+    const instance = createStatusEffectInstance(effectId, options);
+    if (!instance) return false;
+    collection.push(instance);
     return true;
 }
 
-function decrementPlayerStatusEffects(logCallback = addBattleMsg) {
-    gameState.activeStatusEffects = getActivePlayerStatusEffects().filter(effect => {
+function addPlayerStatusEffect(effectId, options = {}) {
+    return addStatusEffectToTarget(gameState.player, effectId, options);
+}
+
+function addEnemyStatusEffect(enemyObj, effectId, options = {}) {
+    return addStatusEffectToTarget(enemyObj, effectId, options);
+}
+
+function decrementStatusEffectsForTarget(target, logCallback = addBattleMsg) {
+    const remainingEffects = getActiveStatusEffectsForTarget(target).filter(effect => {
         effect.remainingTurns--;
         if (effect.remainingTurns <= 0) {
-            logCallback(`${effect.icon || '鈿狅笍'} ${effect.name} wore off.`, 'info');
+            const message = target === gameState.player
+                ? `${effect.icon || '⚠️'} ${effect.name} wore off.`
+                : `${effect.icon || '⚠️'} ${effect.name} on ${getStatusTargetDisplayName(target)} wore off.`;
+            logCallback(message, 'info');
             return false;
         }
         return true;
     });
+
+    if (target === gameState.player) gameState.activeStatusEffects = remainingEffects;
+    else target.activeStatusEffects = remainingEffects;
+}
+
+function decrementPlayerStatusEffects(logCallback = addBattleMsg) {
+    decrementStatusEffectsForTarget(gameState.player, logCallback);
+}
+
+function removeStatusEffectFromTarget(target, effectId) {
+    if (!target || !effectId) return false;
+    const collection = getStatusEffectCollection(target);
+    const next = collection.filter(effect => effect && effect.id !== effectId);
+    if (next.length === collection.length) return false;
+    if (target === gameState.player) gameState.activeStatusEffects = next;
+    else target.activeStatusEffects = next;
+    return true;
+}
+
+function absorbDamageWithStatusEffects(target, damage, logCallback = addBattleMsg) {
+    let remainingDamage = Math.max(0, Math.floor(damage));
+    if (remainingDamage <= 0) return 0;
+
+    getActiveStatusEffectsForTarget(target).forEach(effect => {
+        if (remainingDamage <= 0 || effect.absorbDamage === undefined) return;
+        if (!Number.isFinite(effect.absorbDamageRemaining)) {
+            effect.absorbDamageRemaining = Math.max(0, effect.absorbDamage || 0);
+        }
+        if (effect.absorbDamageRemaining <= 0) return;
+
+        const absorbed = Math.min(remainingDamage, effect.absorbDamageRemaining);
+        effect.absorbDamageRemaining -= absorbed;
+        remainingDamage -= absorbed;
+        logCallback(`${effect.icon || '🛡️'} ${effect.name} absorbs ${absorbed} damage on ${getStatusTargetName(target)}!`, 'reward');
+
+        if (effect.absorbDamageRemaining <= 0) {
+            effect.remainingTurns = 0;
+            logCallback(`${effect.icon || '🛡️'} ${effect.name} shatters on ${getStatusTargetName(target)}!`, 'info');
+        }
+    });
+
+    return remainingDamage;
+}
+
+function applyDamageToTarget(target, damage, logCallback = addBattleMsg, options = {}) {
+    if (!target) return 0;
+
+    let finalDamage = Math.max(0, Math.floor(damage));
+    if (finalDamage <= 0) return 0;
+
+    const snapshot = getStatusSnapshot(target);
+    if (snapshot.immuneToDamage) {
+        logCallback(`✨ ${getStatusTargetDisplayName(target)} is immune to damage right now!`, 'info');
+        return 0;
+    }
+
+    if (options.applyTakenMultiplier !== false) {
+        finalDamage = Math.max(1, Math.ceil(finalDamage * snapshot.damageTakenMultiplier));
+    }
+
+    finalDamage = absorbDamageWithStatusEffects(target, finalDamage, logCallback);
+    if (finalDamage <= 0) return 0;
+
+    target.hp = Math.max(0, target.hp - finalDamage);
+    return finalDamage;
+}
+
+function applyHealingToTarget(target, amount, maxHp, logCallback = addBattleMsg, sourceLabel = 'Healing') {
+    if (!target) return 0;
+    const actualMaxHp = Math.max(1, Number(maxHp) || Number(target.maxHp) || (target === gameState.player ? getTotalMaxHp() : 1));
+    const healAmount = Math.min(Math.max(0, Math.floor(amount)), Math.max(0, actualMaxHp - target.hp));
+    if (healAmount <= 0) return 0;
+
+    target.hp += healAmount;
+    if (removeStatusEffectFromTarget(target, 'bleed')) {
+        logCallback(`🩹 ${sourceLabel} closes ${target === gameState.player ? 'your' : `${getStatusTargetDisplayName(target)}'s`} bleeding wounds.`, 'heal');
+    }
+    return healAmount;
+}
+
+function applyEndOfTurnStatusEffects(target, logCallback = addBattleMsg) {
+    let targetDied = false;
+    const maxHp = Math.max(1, Number(target?.maxHp) || (target === gameState.player ? getTotalMaxHp() : 1));
+
+    getActiveStatusEffectsForTarget(target).forEach(effect => {
+        const stacks = Math.max(1, effect.stacks || 1);
+        let damage = 0;
+        let healing = 0;
+
+        if (effect.dotFlat) {
+            damage += effect.stackIncrease
+                ? effect.dotFlat + (effect.stackIncrease * (stacks - 1))
+                : effect.dotFlat * stacks;
+        }
+        if (effect.dotPercentMaxHp) damage += Math.floor(maxHp * effect.dotPercentMaxHp * stacks);
+        if (effect.healFlat) healing += effect.healFlat * stacks;
+        if (effect.healPercentMaxHp) healing += Math.floor(maxHp * effect.healPercentMaxHp);
+
+        if (damage > 0 && target.hp > 0) {
+            const appliedDamage = applyDamageToTarget(target, damage, logCallback, { applyTakenMultiplier: false });
+            if (appliedDamage > 0) {
+                const message = target === gameState.player
+                    ? `${effect.icon || '⚠️'} ${effect.name} deals ${appliedDamage} damage to you!`
+                    : `${effect.icon || '⚠️'} ${effect.name} deals ${appliedDamage} damage to ${target.name}!`;
+                logCallback(message, 'damage');
+                if (target === gameState.currentWorldBoss) recordWorldBossPlayerDamage(appliedDamage);
+            }
+            if (target.hp <= 0) targetDied = true;
+        }
+
+        if (healing > 0 && target.hp > 0) {
+            const healed = applyHealingToTarget(target, healing, maxHp, logCallback, effect.name);
+            if (healed > 0) {
+                const message = target === gameState.player
+                    ? `${effect.icon || '✨'} ${effect.name} restores ${healed} HP to you!`
+                    : `${effect.icon || '✨'} ${effect.name} restores ${healed} HP to ${target.name}!`;
+                logCallback(message, 'heal');
+            }
+        }
+    });
+
+    decrementStatusEffectsForTarget(target, logCallback);
+    return { targetDied };
 }
 
 function applyEndOfTurnPlayerStatusEffects(playerObj, logCallback = addBattleMsg) {
-    getActivePlayerStatusEffects().forEach(effect => {
-        let damage = 0;
-        if (effect.dotFlat) damage += effect.dotFlat;
-        if (effect.dotPercentMaxHp) damage += Math.floor(getTotalMaxHp() * effect.dotPercentMaxHp);
-        if (damage > 0) {
-            damage = Math.max(1, damage);
-            playerObj.hp = Math.max(0, playerObj.hp - damage);
-            logCallback(`${effect.icon || '鈿狅笍'} ${effect.name} deals ${damage} damage to you!`, 'damage');
-        }
-    });
-    decrementPlayerStatusEffects(logCallback);
+    return applyEndOfTurnStatusEffects(playerObj || gameState.player, logCallback);
+}
+
+function applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback = addBattleMsg) {
+    return applyEndOfTurnStatusEffects(enemyObj, logCallback);
 }
 
 function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
@@ -1830,6 +2075,11 @@ function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
     const pending = [];
     if (enemyObj.inflictDebuff && Math.random() * 100 < (enemyObj.inflictDebuff.chance || 0)) {
         pending.push(enemyObj.inflictDebuff.inflict);
+    }
+
+    const weaponDebuff = enemyObj?.equipment?.weapon?.onHitDebuff;
+    if (weaponDebuff && Math.random() * 100 < (weaponDebuff.chance || 0)) {
+        pending.push(weaponDebuff.effect);
     }
 
     if (enemyObj.randomDebuffChance && Math.random() < enemyObj.randomDebuffChance) {
@@ -1850,7 +2100,35 @@ function tryApplyEnemyOnHitEffects(enemyObj, logCallback = addBattleMsg) {
     Array.from(new Set(pending.filter(Boolean))).forEach(effectId => {
         if (addPlayerStatusEffect(effectId, { source: enemyObj.name })) {
             const effect = PLAYER_DEBUFF_TEMPLATES[effectId];
-            logCallback(`${effect.icon || '鈿狅笍'} ${enemyObj.name} afflicted you with ${effect.name}!`, 'damage');
+            logCallback(`${effect.icon || '⚠️'} ${enemyObj.name} afflicted you with ${effect.name}!`, 'damage');
+        }
+    });
+}
+
+function tryApplyPlayerOnHitEffects(enemyObj, logCallback = addBattleMsg, options = {}) {
+    if (!enemyObj || enemyObj.hp <= 0) return;
+    if (getPlayerStatusSnapshot().cannotUseAbilities) return;
+
+    const hitCount = Math.max(1, Number(options.hitCount) || 1);
+    const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
+    const procSources = eqSlots
+        .map(slot => gameState.equipment[slot])
+        .filter(item => item && item.onHitDebuff && item.onHitDebuff.effect);
+
+    procSources.forEach(source => {
+        const proc = source.onHitDebuff;
+        let triggered = false;
+        for (let i = 0; i < hitCount; i++) {
+            if (Math.random() * 100 < (proc.chance || 0)) {
+                triggered = true;
+                break;
+            }
+        }
+        if (!triggered) return;
+
+        if (addEnemyStatusEffect(enemyObj, proc.effect, { source: source.name })) {
+            const effect = COMBAT_STATUS_TEMPLATES[proc.effect];
+            logCallback(`${effect?.icon || '✨'} ${source.name} afflicts ${enemyObj.name} with ${effect?.name || proc.effect}!`, 'reward');
         }
     });
 }
@@ -1983,7 +2261,7 @@ function tryConsumeReviveScroll(playerObj, logCallback = addBattleMsg) {
 
     const reviveHp = Math.max(1, Math.floor(getTotalMaxHp() * (reviveEffect.value || 0.5)));
     playerObj.hp = reviveHp;
-    logCallback(`馃敟 ${reviveEffect.name} revives you with ${reviveHp} HP!`, 'heal');
+    logCallback(`🔥 ${reviveEffect.name} revives you with ${reviveHp} HP!`, 'heal');
     return true;
 }
 
@@ -1993,18 +2271,24 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     const totalDef = options.totalDef === undefined ? getEffectivePlayerDefense() : options.totalDef;
     const defenseMitigationFactor = options.defenseMitigationFactor === undefined ? 1 : options.defenseMitigationFactor;
     const playerStatus = getPlayerStatusSnapshot();
+    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
 
-    if (invulnerable) {
+    if (invulnerable || playerStatus.immuneToDamage) {
         logCallback(`${enemyObj.name} attacks, but you are invulnerable!`, 'info');
         return { enemyDied, damageTaken: 0 };
     }
 
-    if (isEnemyFrozenByScroll()) {
-        logCallback(`鉂勶笍 ${enemyObj.name} is frozen and cannot act!`, 'reward');
+    if (isEnemyFrozenByScroll() || enemyStatus.skipTurn || enemyStatus.cannotAttack) {
+        logCallback(`❄️ ${enemyObj.name} is frozen and cannot act!`, 'reward');
         return { enemyDied, damageTaken: 0, skipped: true };
     }
 
-    const playerDodgeChance = Math.min(0.95, getEffectivePlayerDodgeChance() * playerStatus.dodgeMultiplier);
+    if (enemyStatus.missChance > 0 && Math.random() * 100 < enemyStatus.missChance) {
+        logCallback(`${enemyObj.name} falters and misses the attack!`, 'info');
+        return { enemyDied, damageTaken: 0, missed: true };
+    }
+
+    const playerDodgeChance = Math.min(0.95, (getEffectivePlayerDodgeChance() * playerStatus.dodgeMultiplier) + playerStatus.dodgeBonus);
     if (Math.random() < playerDodgeChance) {
         logCallback(`You DODGED the attack! (Dodge: ${(playerDodgeChance * 100).toFixed(1)}%)`, 'heal');
         return { enemyDied, damageTaken: 0, dodged: true };
@@ -2012,12 +2296,12 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
 
     const blockChance = Math.min(getTotalBlock(), 95);
     if (Math.random() * 100 < blockChance) {
-        logCallback(`馃洝锔?You BLOCKED the attack! (Block: ${blockChance.toFixed(1)}%)`, 'heal');
+        logCallback(`🛡️ You BLOCKED the attack! (Block: ${blockChance.toFixed(1)}%)`, 'heal');
 
         if (hasEquippedSpecialAbility('heal_on_block')) {
             const healAmt = enemyObj.atk;
             playerObj.hp = Math.min(getTotalMaxHp(), playerObj.hp + healAmt);
-            logCallback(`馃挌 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
+            logCallback(`💚 Heal on Block activated! Healed ${healAmt} HP!`, 'heal');
             if (healCallback) healCallback(healAmt);
         }
 
@@ -2027,24 +2311,21 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     const effectiveDefense = Math.max(0, Math.floor(totalDef * playerStatus.defenseMultiplier));
     let enemyDmg = Math.max(1, enemyObj.atk - Math.floor(effectiveDefense * defenseMitigationFactor) + rand(-2, 2));
     enemyDmg = Math.ceil(enemyDmg * getScrollEnemyDamageMultiplier());
+    enemyDmg = Math.max(1, Math.ceil(enemyDmg * enemyStatus.damageDealtMultiplier));
 
     const drPercent = Math.min(gameState.player.dmgReduction || gameState.player.damageReduction || 0, 95) / 100;
     if (gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75')) {
         enemyDmg = Math.ceil(enemyDmg * 0.25);
-        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (75% DR ACTIVE)`, 'damage');
     } else {
         enemyDmg = Math.ceil(enemyDmg * (1 - drPercent));
-        logCallback(`${enemyObj.name} hits you for ${enemyDmg} damage! (DR: ${(drPercent * 100).toFixed(1)}%)`, 'damage');
     }
-
-    enemyDmg = Math.max(1, Math.ceil(enemyDmg * playerStatus.damageTakenMultiplier));
 
     const reflectChance = Math.min(getTotalReflect(), 95);
     if (reflectChance > 0 && Math.random() * 100 < reflectChance) {
         const reflectDamage = enemyDmg;
         enemyObj.hp = Math.max(0, enemyObj.hp - reflectDamage);
         if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(reflectDamage);
-        logCallback(`鈿?DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
+        logCallback(`⚡ DAMAGE REFLECT! ${enemyObj.name} takes ${reflectDamage} reflected damage!`, 'reward');
 
         if (enemyObj.hp <= 0) {
             logCallback(`${enemyObj.name} was killed by reflected damage!`, 'reward');
@@ -2056,7 +2337,7 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     if (thornsDamage > 0 && enemyObj.hp > 0) {
         enemyObj.hp = Math.max(0, enemyObj.hp - thornsDamage);
         if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(thornsDamage);
-        logCallback(`馃尩 THORNS! ${enemyObj.name} takes ${thornsDamage} damage!`, 'reward');
+        logCallback(`🌵 THORNS! ${enemyObj.name} takes ${thornsDamage} damage!`, 'reward');
 
         if (enemyObj.hp <= 0) {
             logCallback(`${enemyObj.name} was slain by thorns damage!`, 'reward');
@@ -2064,15 +2345,16 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
         }
     }
 
-    playerObj.hp = Math.max(0, playerObj.hp - enemyDmg);
-    if (enemyDmg > 0) {
+    const actualDamageTaken = applyDamageToTarget(playerObj, enemyDmg, logCallback);
+    if (actualDamageTaken > 0) {
+        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, 'damage');
         tryApplyEnemyOnHitEffects(enemyObj, logCallback);
     }
     if (playerObj.hp <= 0 && tryConsumeReviveScroll(playerObj, logCallback)) {
-        return { enemyDied, damageTaken: enemyDmg, revived: true };
+        return { enemyDied, damageTaken: actualDamageTaken, revived: true };
     }
 
-    return { enemyDied, damageTaken: enemyDmg };
+    return { enemyDied, damageTaken: actualDamageTaken };
 }
 
 function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattleMsg) {
@@ -2082,7 +2364,7 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
         const healAmt = Math.min(effect.value || 0, getTotalMaxHp() - playerObj.hp);
         if (healAmt > 0) {
             playerObj.hp += healAmt;
-            logCallback(`鉁?${effect.name} restores ${healAmt} HP!`, 'heal');
+            logCallback(`✨ ${effect.name} restores ${healAmt} HP!`, 'heal');
         }
     });
 
@@ -2094,7 +2376,7 @@ function applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback = addBattl
             enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
             if (enemyObj === gameState.currentWorldBoss) recordWorldBossPlayerDamage(dmg);
 
-            const icon = type === 'burn' ? '馃敟' : '鈽狅笍';
+            const icon = type === 'burn' ? '🔥' : '☠️';
             logCallback(`${icon} ${effect.name} deals ${dmg} ${type} damage to ${enemyObj.name}!`, 'damage');
 
             if (enemyObj.hp <= 0) {
@@ -2387,7 +2669,7 @@ function formatInventoryQuicksellLevelFilterText() {
     }
 
     if (levelFilter.max !== '') {
-        return ` | Level 鈮?${levelFilter.max}`;
+        return ` | Level ≤ ${levelFilter.max}`;
     }
 
     return '';
@@ -2751,7 +3033,7 @@ function startBattle(location) {
         const alertDiv = document.createElement('div');
         alertDiv.className = 'battle-log no-enemies-alert';
         alertDiv.style.borderLeftColor = '#4444ff';
-        alertDiv.innerHTML = `<p class="info">馃攳 No enemies found here right now! Try again.</p>`;
+        alertDiv.innerHTML = `<p class="info">🔍 No enemies found here right now! Try again.</p>`;
         
         // Insert alert at top of travel screen
         container.insertBefore(alertDiv, container.firstChild);
@@ -2839,16 +3121,15 @@ function useScroll(slotIndex, options = {}) {
     
     // Immediate effects
     if (scroll.effect === 'heal') {
-        gameState.player.hp = Math.min(getTotalMaxHp(), gameState.player.hp + scroll.value);
-        logCallback(`Used ${scroll.name}: Healed ${scroll.value} HP!`, 'heal');
+        const actualHeal = applyHealingToTarget(gameState.player, scroll.value, getTotalMaxHp(), logCallback, scroll.name);
+        logCallback(`Used ${scroll.name}: Healed ${actualHeal} HP!`, 'heal');
     } else if (scroll.effect === 'nuke') {
         if (!target) {
             logCallback(`${scroll.name} fizzles with no target.`, 'damage');
         } else {
-            const actualDamage = Math.min(scroll.value, target.hp);
-            target.hp = Math.max(0, target.hp - scroll.value);
+            const actualDamage = applyDamageToTarget(target, scroll.value, logCallback);
             if (context === 'worldboss') recordWorldBossPlayerDamage(actualDamage);
-            logCallback(`馃挜 Used ${scroll.name}: Dealt ${actualDamage} damage instantly!`, 'reward');
+            logCallback(`💥 Used ${scroll.name}: Dealt ${actualDamage} damage instantly!`, 'reward');
         }
     } else if (scroll.effect === 'invulnerable') {
         logCallback(`Used ${scroll.name}: Invulnerable for ${scroll.duration} turn${scroll.duration > 1 ? 's' : ''}!`, 'reward');
@@ -2901,7 +3182,7 @@ function useScroll(slotIndex, options = {}) {
 }
 
 // ==============================================
-// 鉁?UNIVERSAL SINGLE COMBAT ENGINE
+// ✅ UNIVERSAL SINGLE COMBAT ENGINE
 // ==============================================
 // This is the ONLY combat system in the entire game.
 // EVERY SINGLE COMBAT IN THE GAME GOES THROUGH THIS FUNCTION.
@@ -2922,8 +3203,9 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     const critBonus = getScrollCritBonus();
     const invulnerable = isInvulnerable();
     const playerStatus = getPlayerStatusSnapshot();
+    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
     
-    // 鉁?UBER UNIQUE SPECIAL ABILITIES CHECK - RUNS FOR ALL ACTIONS
+    // ✅ UBER UNIQUE SPECIAL ABILITIES CHECK - RUNS FOR ALL ACTIONS
     let has75DamageReduction = false;
     let hasGuaranteedExtraDrop = false;
     let has100EscapeSuccess = false;
@@ -2972,11 +3254,11 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 break;
             }
 
-            // 鉁?DODGE CHANCE CHECK
+            // ✅ DODGE CHANCE CHECK
             const dodgeChance = enemyObj.dodge || 0;
-            const cappedDodge = Math.min(dodgeChance, 0.95); // HARD CAP 95% MAX DODGE
+            const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus)); // HARD CAP 95% MAX DODGE
             if (Math.random() < cappedDodge) {
-                logCallback(`${enemyObj.name} DODGED your attack! (Dodge: ${(cappedDodge*100).toFixed(1)}%)`, 'damage');
+                logCallback(`${enemyObj.name} DODGED your attack! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
                 break;
             }
             
@@ -2992,10 +3274,10 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             dmg = Math.floor(dmg * damageMult);
             dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
 
-            // 鉁?UBER UNIQUE SPECIAL ABILITIES SYSTEM - ATTACK SPECIFIC
+            // ✅ UBER UNIQUE SPECIAL ABILITIES SYSTEM - ATTACK SPECIFIC
             let bonusDmg = 0;
             let specialMsg = '';
-            let attackCount = 1;
+            let attackCount = playerStatus.attackTwice ? 2 : 1;
             let trueDamage = false;
             let guaranteedCrit = false;
             
@@ -3055,19 +3337,27 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             // Handle multiple attacks
             const totalAttackInstances = getTotalAttackInstances(attackCount);
             let totalDamageDealt = 0;
+            let landedHits = 0;
             for (let i = 0; i < totalAttackInstances; i++) {
-                totalDamageDealt += dmg;
-                enemyObj.hp = Math.max(0, enemyObj.hp - dmg);
+                const appliedDamage = applyDamageToTarget(enemyObj, dmg, logCallback);
+                if (appliedDamage > 0) {
+                    totalDamageDealt += appliedDamage;
+                    landedHits++;
+                }
+                if (enemyObj.hp <= 0) break;
             }
             
             const multiHitMsg = totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : '';
             logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, crit ? 'reward' : 'info');
+
+            if (landedHits > 0) {
+                tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
+            }
             
             // Apply lifesteal healing
             const healAmt = calculateDamageBasedHealing(totalDamageDealt);
             if (healAmt > 0) {
-                const actualHeal = Math.min(healAmt, getTotalMaxHp() - playerObj.hp);
-                playerObj.hp += actualHeal;
+                const actualHeal = applyHealingToTarget(playerObj, healAmt, getTotalMaxHp(), logCallback, 'Lifesteal');
                 if (actualHeal > 0) {
                     logCallback(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
                     if (healCallback) healCallback(actualHeal);
@@ -3087,7 +3377,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 logCallback('You are rooted and cannot escape!', 'damage');
                 break;
             }
-            // 鉁?Apply 100% escape success special ability
+            // ✅ Apply 100% escape success special ability
             if (gameState.has100EscapeSuccess) {
                 fled = true;
                 break;
@@ -3120,9 +3410,19 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
         enemyDied = true;
     }
 
-    applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
+    if (!enemyDied && enemyObj && enemyObj.hp > 0) {
+        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback);
+        if (enemyStatusResult.targetDied) {
+            enemyDied = true;
+        }
+    }
+
+    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
+    if (playerStatusResult.targetDied) {
+        playerDied = true;
+    }
     
-    if (playerObj.hp <= 0) {
+    if (!playerDied && playerObj.hp <= 0) {
         if (!tryConsumeReviveScroll(playerObj, logCallback)) {
             playerDied = true;
         }
@@ -3140,6 +3440,140 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
     if (afterHitCallback) afterHitCallback();
     
     return { playerDied, enemyDied, fled };
+}
+
+function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, options = {}) {
+    if (!playerObj) playerObj = gameState.player;
+    if (!enemyObj) return { playerDied: false, enemyDied: false, aborted: true };
+
+    const manaCost = Math.max(0, Number(options.manaCost) || 15);
+    if (playerObj.mp < manaCost) {
+        logCallback(`Not enough mana! Requires ${manaCost} MP to cast spell.`, 'damage');
+        return { playerDied: false, enemyDied: false, aborted: true };
+    }
+
+    const damageMult = getScrollDamageMultiplier() * 2;
+    const critBonus = getScrollCritBonus() * 2;
+    const invulnerable = isInvulnerable();
+    const playerStatus = getPlayerStatusSnapshot();
+    const enemyStatus = getEnemyStatusSnapshot(enemyObj);
+    const totalDef = getEffectivePlayerDefense();
+
+    let playerDied = false;
+    let enemyDied = false;
+
+    if (playerStatus.skipTurn || playerStatus.cannotAttack || playerStatus.cannotUseAbilities) {
+        logCallback('You are unable to cast a spell this turn!', 'damage');
+    } else {
+        playerObj.mp -= manaCost;
+
+        if (playerStatus.missChance > 0 && Math.random() * 100 < playerStatus.missChance) {
+            logCallback('Your debuffs cause the spell to fizzle!', 'damage');
+        } else {
+            const dodgeChance = enemyObj.dodge || 0;
+            const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus));
+            if (Math.random() < cappedDodge) {
+                logCallback(`${enemyObj.name} DODGED your spell! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
+            } else {
+                const spellMultiplier = 0.5 + Math.random() * 2.5;
+                const totalAtk = getTotalAtk();
+                const totalCrit = getTotalCrit();
+                const totalCritDmg = getTotalCritDmg();
+                const effectiveEnemyDefense = getEffectiveEnemyDefense(enemyObj, options.enemyDefenseMultiplier === undefined ? 1 : options.enemyDefenseMultiplier);
+                const totalAttackInstances = getTotalAttackInstances();
+
+                let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
+                let crit = Math.random() * 100 < ((totalCrit + critBonus) * playerStatus.critMultiplier);
+                if (crit) dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
+
+                dmg = Math.floor(dmg * spellMultiplier * damageMult);
+                dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
+
+                let totalDamageDealt = 0;
+                let landedHits = 0;
+                for (let i = 0; i < totalAttackInstances; i++) {
+                    const appliedDamage = applyDamageToTarget(enemyObj, dmg, logCallback);
+                    if (appliedDamage > 0) {
+                        totalDamageDealt += appliedDamage;
+                        landedHits++;
+                    }
+                    if (enemyObj.hp <= 0) break;
+                }
+
+                logCallback(`You cast a spell for ${totalDamageDealt} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+
+                if (landedHits > 0) {
+                    tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
+                }
+
+                const spellHeal = calculateDamageBasedHealing(totalDamageDealt);
+                if (spellHeal > 0) {
+                    const actualHeal = applyHealingToTarget(playerObj, spellHeal, getTotalMaxHp(), logCallback, 'Lifesteal');
+                    if (actualHeal > 0) {
+                        logCallback(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+                        if (options.healCallback) options.healCallback(actualHeal);
+                    }
+                }
+
+                if (typeof options.onDamageDealt === 'function' && totalDamageDealt > 0) {
+                    options.onDamageDealt(totalDamageDealt);
+                }
+
+                tryTriggerActiveExecute(enemyObj, logCallback);
+                if (enemyObj.hp <= 0) {
+                    enemyDied = true;
+                }
+            }
+        }
+    }
+
+    if (!enemyDied) {
+        const counterResult = resolveEnemyCounterAttack(playerObj, enemyObj, logCallback, options.healCallback, {
+            invulnerable,
+            totalDef,
+            defenseMitigationFactor: options.defenseMitigationFactor
+        });
+        if (counterResult.enemyDied) {
+            enemyDied = true;
+        } else if (tryTriggerActiveExecute(enemyObj, logCallback)) {
+            enemyDied = true;
+        }
+    }
+
+    const endOfTurnResult = applyEndOfTurnScrollEffects(playerObj, enemyObj, logCallback);
+    if (endOfTurnResult.enemyDied) {
+        enemyDied = true;
+    }
+
+    if (!enemyDied && enemyObj && enemyObj.hp > 0) {
+        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(enemyObj, logCallback);
+        if (enemyStatusResult.targetDied) {
+            enemyDied = true;
+        }
+    }
+
+    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(playerObj, logCallback);
+    if (playerStatusResult.targetDied) {
+        playerDied = true;
+    }
+
+    if (!playerDied && playerObj.hp <= 0) {
+        if (!tryConsumeReviveScroll(playerObj, logCallback)) {
+            playerDied = true;
+        }
+    }
+
+    decrementScrollEffects(logCallback);
+
+    const maxMp = getTotalMaxMp();
+    const manaRegenAmount = getCombatManaRegenAmount();
+    gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
+
+    if (typeof options.afterTurnCallback === 'function') {
+        options.afterTurnCallback();
+    }
+
+    return { playerDied, enemyDied, aborted: false };
 }
 
 // Get active scroll effect values
@@ -3198,7 +3632,7 @@ function tryTriggerExecuteFromEffect(enemyObj, logCallback = addBattleMsg, effec
         recordWorldBossPlayerDamage(remainingHp);
     }
 
-    logCallback(`鈿旓笍 ${effect.name || 'Execution Scroll'} executes ${enemyObj.name} instantly!`, 'reward');
+    logCallback(`⚔️ ${effect.name || 'Execution Scroll'} executes ${enemyObj.name} instantly!`, 'reward');
     return true;
 }
 
@@ -3229,72 +3663,17 @@ function battleAction(action) {
     }
     
     if (action === 'spell') {
-        // Spell attack: 0.5-3x damage at cost of 15 mana
-        if (gameState.player.mp < 15) {
-            addBattleMsg('Not enough mana! Requires 15 MP to cast spell.', 'damage');
+        const result = runSpellCombatTurn(gameState.player, gameState.currentEnemy, addBattleMsg);
+        if (result.aborted) {
             renderBattle();
+            updateStats();
             return;
         }
-        
-        gameState.player.mp -= 15;
-        
-        // Get scroll effect values (DOUBLE EFFECT FOR SPELLS)
-        const damageMult = getScrollDamageMultiplier() * 2;
-        const critBonus = getScrollCritBonus() * 2;
-        const invulnerable = isInvulnerable();
-        const totalDef = getEffectivePlayerDefense();
-        
-        // Calculate spell damage multiplier between 0.5x and 3x
-        const spellMultiplier = 0.5 + Math.random() * 2.5;
-        const totalAtk = getTotalAtk();
-        const totalCrit = getTotalCrit();
-        const effectiveEnemyDefense = getEffectiveEnemyDefense(gameState.currentEnemy);
-        const totalAttackInstances = getTotalAttackInstances();
-        
-        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
-        let crit = Math.random() * 100 < (totalCrit + critBonus);
-        if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
-        
-        // Apply spell multiplier + scroll damage multiplier
-        dmg = Math.floor(dmg * spellMultiplier * damageMult);
-        dmg *= totalAttackInstances;
-        
-        gameState.currentEnemy.hp = Math.max(0, gameState.currentEnemy.hp - dmg);
-        
-        addBattleMsg(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
-
-        const spellHeal = calculateDamageBasedHealing(dmg);
-        if (spellHeal > 0) {
-            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - gameState.player.hp);
-            if (actualHeal > 0) {
-                gameState.player.hp += actualHeal;
-                addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
-            }
-        }
-        
-        tryTriggerActiveExecute(gameState.currentEnemy, addBattleMsg);
-        
-        if (gameState.currentEnemy.hp <= 0) {
+        if (result.enemyDied) {
             enemyDefeated();
             return;
         }
-        
-        const counterResult = resolveEnemyCounterAttack(gameState.player, gameState.currentEnemy, addBattleMsg, null, {
-            invulnerable,
-            totalDef
-        });
-        if (counterResult.enemyDied) {
-            enemyDefeated();
-            return;
-        }
-
-        const endOfTurnResult = applyEndOfTurnScrollEffects(gameState.player, gameState.currentEnemy, addBattleMsg);
-        if (endOfTurnResult.enemyDied) {
-            enemyDefeated();
-            return;
-        }
-        
-        if (gameState.player.hp <= 0) {
+        if (result.playerDied) {
             triggerDefeatRecovery(addBattleMsg);
             gameState.player.gold = Math.floor(gameState.player.gold * 0.9);
             resetCombatScrollSession();
@@ -3303,15 +3682,7 @@ function battleAction(action) {
             showScreen('travel');
             return;
         }
-        
-        // Decrement scroll effects at end of turn
-        decrementScrollEffects(addBattleMsg);
-        
-        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
-        const maxMp = getTotalMaxMp();
-        const manaRegenAmount = getCombatManaRegenAmount();
-        gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
-        
+
         renderBattle();
         updateStats();
         return;
@@ -3401,7 +3772,7 @@ function enemyDefeated() {
         }
     }
     
-    // 鉁?Apply guaranteed extra item drop special ability
+    // ✅ Apply guaranteed extra item drop special ability
     if (gameState.hasGuaranteedExtraDrop) {
         // Guaranteed extra item drop - always drop an additional equipment item
         const targetRarity = getItemDropByRarity();
@@ -3412,7 +3783,7 @@ function enemyDefeated() {
             const rarityColor = getRarityColor(extraItem.rarity);
             const isUber = isUberUnique(extraItem);
             const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
-            addBattleMsg(`鉁?BONUS DROP: <span style="${itemColorStyle}">${extraItem.name}</span> (${extraItem.rarity})!`, 'reward');
+            addBattleMsg(`✅ BONUS DROP: <span style="${itemColorStyle}">${extraItem.name}</span> (${extraItem.rarity})!`, 'reward');
             addItemLog('battle', extraItem.name);
             addChatMessage('SYSTEM', `${p.name} got BONUS DROP: ${formatChatItemMention(extraItem)}!`, true);
         }
@@ -3446,7 +3817,7 @@ function checkLevelUp() {
         p.xp -= p.xpToNext;
         p.level++;
         
-        // 鉁?HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
+        // ✅ HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
         // Base stats are ALWAYS recalculated from level 1 formula
         const BASE_HP = 100;
         const BASE_MP = 50;
@@ -3548,13 +3919,19 @@ function removeFromInventory(index, qty = 1) {
 function useItem(index) {
     const item = gameState.inventory[index];
     if (!item) return;
+
+    if (getPlayerStatusSnapshot().cannotUseItems) {
+        addBattleMsg('You are unable to use items right now!', 'damage');
+        renderInventory();
+        return;
+    }
     
     if (item.type === 'consumable') {
         if (item.effect === 'heal') {
-            gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + item.value);
-            addBattleMsg(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
+            const actualHeal = applyHealingToTarget(gameState.player, item.value, getTotalMaxHp(), addBattleMsg, item.name);
+            addBattleMsg(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
         } else if (item.effect === 'mana') {
-            gameState.player.mp = Math.min(gameState.player.maxMp, gameState.player.mp + item.value);
+            gameState.player.mp = Math.min(getTotalMaxMp(), gameState.player.mp + item.value);
             addBattleMsg(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
         } else if (item.effect === 'blessing') {
             addBattleMsg(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -3565,7 +3942,7 @@ function useItem(index) {
                 return;
             }
             spawnWorldBoss();
-            addBattleMsg(`鉁?World Boss summoned! Go to the Battle tab to fight!`, 'reward');
+            addBattleMsg(`✅ World Boss summoned! Go to the Battle tab to fight!`, 'reward');
             addChatMessage('SYSTEM', `${gameState.player.name} used a World Boss Ticket!`, true);
         }
         removeFromInventory(index);
@@ -3592,7 +3969,7 @@ function equipItem(index) {
 
     const currentlyEquipped = gameState.equipment[slot];
 
-    // 鉁?Full stat recalculation system
+    // ✅ Full stat recalculation system
     // Remove old item stats first if something is equipped
     if (currentlyEquipped) {
         // Return previously equipped item to inventory with ALL stats preserved
@@ -3613,7 +3990,7 @@ function equipItem(index) {
         equippedAt: Date.now()
     };
 
-    // 鉁?Recalculate ALL player derived stats from equipment
+    // ✅ Recalculate ALL player derived stats from equipment
     recalculateAllPlayerStats();
 
     // Update UI
@@ -3649,7 +4026,9 @@ function recalculateAllPlayerStats() {
         magicPen: p.baseMagicPen || 0,
         attackSpeed: p.baseAttackSpeed || 0,
         cdr: p.baseCdr || 0,
-        moveSpeed: p.baseMoveSpeed || 0
+        moveSpeed: p.baseMoveSpeed || 0,
+        healthRegen: p.baseHealthRegen || 0,
+        manaRegen: p.baseManaRegen || 0
     };
 
     // Initialize calculation accumulators
@@ -3695,7 +4074,7 @@ function recalculateAllPlayerStats() {
         }
     });
 
-    // 鉁?Apply stat hard caps
+    // ✅ Apply stat hard caps
     finalStats.crit = Math.min(finalStats.crit, 95);              // 95% max crit chance
     finalStats.dodge = Math.min(finalStats.dodge, 95);            // 95% max dodge
     finalStats.dmgReduction = Math.min(finalStats.dmgReduction, 95); // 95% max damage reduction
@@ -4228,6 +4607,8 @@ function renderTravel() {
     const loc = locations[p.location];
     const combatCooldownRemaining = getCombatCooldownRemainingMs();
     const combatLocked = combatCooldownRemaining > 0;
+    const canWanderHere = locationSupportsWandering(p.location);
+    const wanderButtonLabel = gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering';
 
     const locationEnemyNames = Array.isArray(loc.enemies) && loc.enemies.length > 0
         ? loc.enemies.map(enemyKey => {
@@ -4243,23 +4624,27 @@ function renderTravel() {
         html += `<div class="description"><span style="color:#00ffff;">Enemies here:</span> ${locationEnemyNames.join(', ')}</div>`;
     }
     
-    if (loc.enemies) {
-        html += `<div class="section-title">Actions</div>`;
+    html += `<div class="section-title">Actions</div>`;
+
+    if (canWanderHere) {
         html += `<button class="action-btn" onclick="startBattle('${p.location}')" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `Combat Cooldown (${formatPvpCooldown(combatCooldownRemaining)})` : 'Search for Enemies'}</button>`;
-        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? 'Recovery Active' : (gameState.wandering.active ? 'Stop Wandering' : 'Enable Wandering')}</button>`;
-        
+        html += `<button class="action-btn ${gameState.wandering.active ? 'danger' : ''}" onclick="toggleWander()" ${combatLocked ? 'disabled' : ''}>${combatLocked ? 'Recovery Active' : wanderButtonLabel}</button>`;
+
         if (loc.levelRange) {
             html += `<div class="encounter-info">Level Range: ${loc.levelRange[0]}-${loc.levelRange[1]}</div>`;
         }
         if (combatLocked) {
             html += `<div class="encounter-info" style="color:#ff8888;">Combat systems recover in ${formatPvpCooldown(combatCooldownRemaining)}.</div>`;
         }
+    } else {
+        html += `<button class="action-btn" disabled title="Wandering requires a location with assigned enemies.">${wanderButtonLabel}</button>`;
+        html += `<div class="encounter-info" style="color:#888;">No enemies are assigned to this location, so wandering is unavailable here.</div>`;
     }
     
     // Show wandering status if active
     if (gameState.wandering.active) {
         html += `<div class="battle-log" style="border-left-color: #00ffff; margin-top: 10px;">
-            <p class="info">馃攧 Wandering expedition is active... You are exploring the area.</p>
+            <p class="info">🔄 Wandering expedition is active... You are exploring the area.</p>
         </div>`;
     }
     
@@ -4284,14 +4669,14 @@ function showLockedLocationMessage(locKey) {
     const loc = locations[locKey];
     const requiredLevel = loc.minLevel;
     const currentLevel = gameState.player.level;
-    addBattleMsg(`馃敀 ${loc.name} is locked! Requires Level ${requiredLevel} (Your Level: ${currentLevel})`, 'damage');
+    addBattleMsg(`🔒 ${loc.name} is locked! Requires Level ${requiredLevel} (Your Level: ${currentLevel})`, 'damage');
     
     // Show a more prominent alert
     const container = document.getElementById('travel-content');
     const alertDiv = document.createElement('div');
     alertDiv.className = 'battle-log';
     alertDiv.style.borderLeftColor = '#ff4444';
-    alertDiv.innerHTML = `<p class="damage">馃敀 <strong>${loc.name} is locked!</strong></p>
+    alertDiv.innerHTML = `<p class="damage">🔒 <strong>${loc.name} is locked!</strong></p>
         <p class="info">Required Level: ${requiredLevel}</p>
         <p class="info">Your Level: ${currentLevel}</p>
         <p class="info">Defeat enemies and complete quests to gain XP and level up!</p>`;
@@ -4312,14 +4697,26 @@ function showLockedLocationMessage(locKey) {
 // WANDERING EXPEDITION SYSTEM
 function toggleWander() {
     if (guardCombatCooldown(addBattleMsg, renderTravel)) return;
+    if (!locationSupportsWandering(gameState.player.location)) {
+        addBattleMsg(`Wandering is unavailable in ${locations[gameState.player.location]?.name || 'this location'} because no enemies are assigned here.`, 'info');
+        renderTravel();
+        return;
+    }
     // Start a wandering expedition and navigate to the wander screen
     startWanderingExpedition();
 }
 
 function startWanderingExpedition() {
     const p = gameState.player;
+    if (!locationSupportsWandering(p.location)) {
+        addBattleMsg(`Wandering is unavailable in ${locations[p.location]?.name || 'this location'} because no enemies are assigned here.`, 'info');
+        renderWandering();
+        return;
+    }
+
     const rankData = rollWanderRank();
-    const totalEvents = WANDER_HIGH_RANK_KEYS.has(rankData.key) ? rand(50, 150) : rand(5, 50);
+    const [minStages, maxStages] = getWanderStageRange(rankData.key, p.location);
+    const totalEvents = rand(minStages, maxStages);
     
     // Initialize wandering state
     gameState.wandering = {
@@ -4341,7 +4738,7 @@ function startWanderingExpedition() {
     addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${rankData.multiplier}x scaling)`, 'reward');
     addWanderingLog(`This journey will have ${totalEvents} events.`, 'info');
     if (WANDER_HIGH_RANK_KEYS.has(rankData.key)) {
-        addWanderingLog('鈿狅笍 High-rank rules active: 50-150 stages, no expedition escape after stage 2, enemies may inflict extra debuffs.', 'damage');
+        addWanderingLog(`⚠️ High-rank rules active: ${minStages}-${maxStages} stages, no expedition escape after stage 2, enemies may inflict extra debuffs.`, 'damage');
     }
     
     // Show wandering screen
@@ -4646,6 +5043,7 @@ function completeWanderingExpedition() {
     const w = gameState.wandering;
     const p = gameState.player;
     const rankData = getWanderRankData(w.rankKey);
+    const statReward = getWanderCompletionStatReward(w.rankKey, w.locationKey);
     
     addWanderingLog('Expedition complete!', 'reward');
     
@@ -4661,11 +5059,13 @@ function completeWanderingExpedition() {
     resetCombatScrollSession();
     
     addChatMessage('SYSTEM', `${p.name} completed a wandering expedition and gained ${w.rewards.xp} XP!`, true);
+    if (statReward) {
+        p.permanentAtkBonus = (p.permanentAtkBonus || 0) + statReward.atk;
+        p.permanentDefBonus = (p.permanentDefBonus || 0) + statReward.def;
+        addWanderingLog(`🏆 ${rankData.key} expedition reward: permanent +${statReward.atk} ATK and +${statReward.def} DEF!`, 'reward');
+        addChatMessage('SYSTEM', `🌈 ${p.name} completed a full ${rankData.key} wandering expedition and earned permanent +${statReward.atk} ATK / +${statReward.def} DEF!`, true);
+    }
     if (WANDER_HIGH_RANK_KEYS.has(w.rankKey)) {
-        p.permanentAtkBonus = (p.permanentAtkBonus || 0) + 3;
-        p.permanentDefBonus = (p.permanentDefBonus || 0) + 3;
-        addWanderingLog(`馃弳 ${rankData.key} expedition reward: permanent +3 ATK and +3 DEF!`, 'reward');
-        addChatMessage('SYSTEM', `馃寛 ${p.name} completed a full ${rankData.key} wandering expedition and earned permanent +3 ATK / +3 DEF!`, true);
         ensureFakePlayerRoster(100).slice(0, 3).forEach(fake => {
             const msg = pick(WANDER_COMPLETION_CONGRATS)
                 .replace(/\{player\}/g, p.name)
@@ -4687,16 +5087,18 @@ function renderWandering() {
     const combatLocked = combatCooldownRemaining > 0;
     
     if (!w.active) {
-        container.innerHTML = `<div class="location-header" style="color:#00ffff;">鈿旓笍 Wandering Expedition 鈿旓笍</div>
-            <div class="description">Embark on a random adventure! Each expedition has 5-50 events with various encounters including battles, treasure, and exploration rewards.</div>
+        const canWanderHere = locationSupportsWandering(p.location);
+        const currentLocationName = locations[p.location]?.name || 'this location';
+        container.innerHTML = `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>
+            <div class="description">${canWanderHere ? 'Embark on a wild adventure. Danger is ahead, but so are the rewards.' : `Wandering is unavailable in ${currentLocationName} because no enemies are assigned here.`}</div>
             <div class="section-title">Start New Expedition</div>
-            <button class="action-btn" onclick="startWanderingExpedition()" style="font-size:1.2em; padding:15px 30px;">Begin Wandering</button>
-            <div class="msg" style="margin-top:15px">Click the button above to start your journey into the unknown!</div>`;
+            <button class="action-btn" ${canWanderHere ? 'onclick="startWanderingExpedition()"' : 'disabled title="Travel to a location with enemies to wander."'} style="font-size:1.2em; padding:15px 30px;">${canWanderHere ? 'Begin Wandering' : 'Wandering Unavailable'}</button>
+            <div class="msg" style="margin-top:15px">${canWanderHere ? 'Click the button above to start your journey into the unknown!' : 'Travel to a combat zone with assigned enemies to begin a wandering expedition.'}</div>`;
         return;
     }
     
     let html = `<div class="wandering-screen-shell">`;
-    html += `<div class="location-header" style="color:#00ffff;">鈿旓笍 Wandering Expedition 鈿旓笍</div>`;
+    html += `<div class="location-header" style="color:#00ffff;">⚔️ Wandering Expedition ⚔️</div>`;
     html += `<div style="margin-bottom:10px; padding:8px; background-color:#112211; border:1px solid #004400; border-radius:4px;">
         <span style="color:#888;">Current Location: </span>
         <span style="color:#00ffff; font-weight:bold;">${locations[p.location].name}</span>
@@ -4724,7 +5126,7 @@ function renderWandering() {
     
     // Merchant section if merchant is active
     if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
-        html += `<div class="section-title" style="color:#ffd700;">馃 Wandering Merchant</div>`;
+        html += `<div class="section-title" style="color:#ffd700;">🧙 Wandering Merchant</div>`;
         html += `<div class="description">A mysterious merchant with rare and powerful wares. These items won't last long!</div>`;
         
         w.merchantItems.forEach((item, idx) => {
@@ -4750,7 +5152,7 @@ function renderWandering() {
         });
         
         html += `<div style="margin-top:15px;">
-            <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">馃憢 Wave goodbye to the merchant</button>
+            <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
     } else if (w.inBattle && w.currentEnemy) {
         activateCombatScrollsForCurrentBattle('wandering');
@@ -4758,10 +5160,10 @@ function renderWandering() {
         const hpPct = (e.hp / e.maxHp * 100).toFixed(0);
 
         html += `<div class="wandering-battle-card">`;
-        html += `<div class="section-title" style="color:#ff4444;">鈿旓笍 Ambushed During Wandering - ${e.name}</div>`;
+        html += `<div class="section-title" style="color:#ff4444;">⚔️ Ambushed During Wandering - ${e.name}</div>`;
         html += `<div class="wandering-battle-actions">`;
-        html += `<button class="action-btn wandering-primary-action" onclick="wanderingBattle('attack')" ${combatLocked ? 'disabled' : ''}>鈿旓笍 Attack</button>`;
-        html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingBattle('flee')" ${combatLocked ? 'disabled' : ''}>馃弮 Flee</button>`;
+        html += `<button class="action-btn wandering-primary-action" onclick="wanderingBattle('attack')" ${combatLocked ? 'disabled' : ''}>⚔️ Attack</button>`;
+        html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingBattle('flee')" ${combatLocked ? 'disabled' : ''}>🏃 Flee</button>`;
         html += `</div>`;
         html += `<div class="description" style="margin-top:10px;">The expedition remains active underneath this encounter. Defeat or flee from the enemy to continue exploring.</div>`;
         html += `<div class="boss-hp-bar"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>`;
@@ -4793,12 +5195,12 @@ function renderWandering() {
         // Continue/Escape buttons - Make them prominent!
         html += `<div class="section-title">Continue Your Expedition</div>`;
         if (w.currentEvent >= w.totalEvents) {
-            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">馃帀 Complete Expedition</button>`;
+            html += `<button class="action-btn" onclick="completeWanderingExpedition()" style="font-size:1.2em; padding:15px 30px; background-color:#006600;">🎉 Complete Expedition</button>`;
         } else {
             html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
-            html += `<button class="action-btn wandering-primary-action" onclick="wanderingContinue()">鈻讹笍 Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
+            html += `<button class="action-btn wandering-primary-action" onclick="wanderingContinue()">▶️ Continue (${w.totalEvents - w.currentEvent} events left)</button>`;
             const escapeLocked = WANDER_HIGH_RANK_KEYS.has(w.rankKey) && w.currentEvent > 2;
-            html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingEscape()" ${escapeLocked ? 'disabled' : ''}>${escapeLocked ? '馃敀 Escape Sealed' : '馃毆 Escape (Lose Half Rewards)'}</button>`;
+            html += `<button class="action-btn danger wandering-secondary-action" onclick="wanderingEscape()" ${escapeLocked ? 'disabled' : ''}>${escapeLocked ? '🔒 Escape Sealed' : '🚪 Escape (Lose Half Rewards)'}</button>`;
             html += `</div>`;
         }
     }
@@ -4823,17 +5225,17 @@ function wanderingUseItem(idx) {
     if (!item || item.type !== 'consumable') return;
 
     if (getPlayerStatusSnapshot().cannotUseItems) {
-        addWanderingLog('You are silenced and cannot use items right now!', 'damage');
+        addWanderingLog('You are unable to use items right now!', 'damage');
         return;
     }
     
     const p = gameState.player;
     
     if (item.effect === 'heal') {
-        p.hp = Math.min(p.maxHp, p.hp + item.value);
-        addWanderingLog(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
+        const actualHeal = applyHealingToTarget(p, item.value, getTotalMaxHp(), addWanderingLog, item.name);
+        addWanderingLog(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
     } else if (item.effect === 'mana') {
-        p.mp = Math.min(p.maxMp, p.mp + item.value);
+        p.mp = Math.min(getTotalMaxMp(), p.mp + item.value);
         addWanderingLog(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
     } else if (item.effect === 'blessing') {
         addWanderingLog(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -5119,6 +5521,11 @@ function renderBattle() {
 
 function battleUseItem(idx) {
     if (!gameState.inBattle || !gameState.currentEnemy) return;
+    if (getPlayerStatusSnapshot().cannotUseItems) {
+        addBattleMsg('You are unable to use items right now!', 'damage');
+        renderBattle();
+        return;
+    }
     useItem(idx);
     renderBattle();
 }
@@ -5214,14 +5621,14 @@ function renderJobs() {
     
     // Max Job Points Upgrade
     html += `<div style="background:#1a1a1a;border:2px solid #ff00ff;padding:12px;margin:10px 0;border-radius:5px;">
-        <div style="color:#ff00ff;font-weight:bold">猬嗭笍 Increase Max Job Points</div>
+        <div style="color:#ff00ff;font-weight:bold">⬆️ Increase Max Job Points</div>
         <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Permanently increase your maximum Job Points capacity by 1</div>
         <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Current: ${gameState.maxJobPoints} Max Points</div>
         <button class="action-btn soul-btn" onclick="increaseMaxJobPoints()" ${gameState.soulGems >= 1 ? '' : 'disabled'} style="margin-top:8px;">Upgrade Max Job Points</button>
     </div>`;
 
     html += `<div style="background:#1a1a1a;border:2px solid #ff00ff;padding:12px;margin:10px 0;border-radius:5px;">
-        <div style="color:#ff00ff;font-weight:bold">馃敭 Refill Job Points</div>
+        <div style="color:#ff00ff;font-weight:bold">🔮 Refill Job Points</div>
         <div style="color:#aaa;font-size:0.85em;margin:5px 0;">Instantly restore your Job Points to maximum</div>
         <div style="color:#ffd700;font-size:0.9em">Cost: 1 Soul Gem | Missing: ${missingJobPoints} Point${missingJobPoints === 1 ? '' : 's'}</div>
         <button class="action-btn soul-btn" onclick="refillJobPointsToMax()" ${(gameState.soulGems >= 1 && gameState.jobPoints < gameState.maxJobPoints) ? '' : 'disabled'} style="margin-top:8px;">Refill Job Points to Max</button>
@@ -5376,7 +5783,7 @@ function renderInventory() {
         const quicksellLevelFilter = normalizeInventoryQuicksellLevelFilter();
         const rewardText = formatInventoryQuicksellRewardText(quicksellSummary);
         const quicksellSummaryText = quicksellSummary.items > 0
-            ? `Selected: ${quicksellSummary.items} item${quicksellSummary.items === 1 ? '' : 's'} across ${quicksellSummary.stacks} stack${quicksellSummary.stacks === 1 ? '' : 's'}${formatInventoryQuicksellLevelFilterText()} 鈫?${rewardText}`
+            ? `Selected: ${quicksellSummary.items} item${quicksellSummary.items === 1 ? '' : 's'} across ${quicksellSummary.stacks} stack${quicksellSummary.stacks === 1 ? '' : 's'}${formatInventoryQuicksellLevelFilterText()} → ${rewardText}`
             : 'Selected: no matching unequipped equipment';
 
         html += `<div class="quicksell-panel">
@@ -5977,7 +6384,7 @@ function startNewAuction() {
     // Highlight auction tab
     setAuctionTabAlert(true);
     
-    addChatMessage('SYSTEM', `鈿狅笍 NEW AUCTION STARTED: ${item.name} (${formatAuctionRarityLabel(rarity)})! Click Auction tab to view.`, true);
+    addChatMessage('SYSTEM', `⚠️ NEW AUCTION STARTED: ${item.name} (${formatAuctionRarityLabel(rarity)})! Click Auction tab to view.`, true);
     
     scheduleAuctionEndAt(auctionState.endTime);
     scheduleSilentPersist();
@@ -6087,7 +6494,7 @@ function endAuction() {
             announcementTitle: 'Auction Victory!',
             announcementBody: `${gameState.player.name} won ${completedAuction.currentItem.name} from the auction house.`
         });
-        addChatMessage('SYSTEM', `馃帀 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
+        addChatMessage('SYSTEM', `🎉 You won the auction! You received: ${completedAuction.currentItem.name}`, true);
         addItemLog('auction', completedAuction.currentItem.name);
     } else {
         if (completedAuction.highestBidder) {
@@ -6114,7 +6521,7 @@ function endAuction() {
 function renderAuction() {
     const container = document.getElementById('auction-screen-content');
     
-    let html = `<div class="section-title">馃彌锔?Auction House</div>`;
+    let html = `<div class="section-title">🏛️ Auction House</div>`;
     
     if (!auctionState.active) {
         html += `<div class="msg">No auction currently active. Check back soon! New auctions appear every 10-60 minutes.</div>`;
@@ -6146,7 +6553,7 @@ function renderAuction() {
     </div>`;
     
     html += `<div class="section-title">Auction Status</div>`;
-    html += `<div class="auction-timer">鈴憋笍 Time Remaining: ${mins}m ${secs}s</div>`;
+    html += `<div class="auction-timer">⏱️ Time Remaining: ${mins}m ${secs}s</div>`;
     html += `<div style="margin:10px 0;">
         <div>Current Price: <span style="color:#ffd700;font-weight:bold;font-size:1.1em">${auctionState.currentPrice} Gold</span></div>
         <div>Minimum Bid: <span style="color:#ffd700">${auctionState.minimumBid} Gold</span></div>
@@ -6378,7 +6785,7 @@ function applyWeaponLuckOil() {
             } else {
                 equip.weapon_luck = (equip.weapon_luck || 0) + 1;
                 addBattleMsg(`Blessing Oil succeeds! Weapon Luck increased by 1! (Current: +${equip.weapon_luck})`, 'reward');
-                addChatMessage('SYSTEM', `鉁?Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+                addChatMessage('SYSTEM', `✅ Blessing Oil succeeded! Weapon Luck +1! Current Weapon Luck: +${equip.weapon_luck}/9`, true);
             }
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
@@ -6387,13 +6794,13 @@ function applyWeaponLuckOil() {
     } else if (roll < 0.7) {
         // 30% chance: do nothing
         addBattleMsg('Blessing Oil does nothing. The oil shimmers and fades...', 'info');
-        addChatMessage('SYSTEM', `鉁?Blessing Oil fizzles and does nothing. Try again!`, true);
+        addChatMessage('SYSTEM', `✨ Blessing Oil fizzles and does nothing. Try again!`, true);
     } else if (roll < 0.9) {
         // 20% chance: decrease weapon luck by 1
         if (hasWeapon) {
             equip.weapon_luck = Math.max(0, (equip.weapon_luck || 0) - 1);
             addBattleMsg(`Blessing Oil backfires! Weapon Luck decreased by 1. (Current: +${equip.weapon_luck})`, 'damage');
-            addChatMessage('SYSTEM', `鉂?Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
+            addChatMessage('SYSTEM', `❌ Blessing Oil backfired! Weapon Luck -1. Current Weapon Luck: +${equip.weapon_luck}/9`, true);
         } else {
             addBattleMsg('Blessing Oil activates, but you have no weapon equipped! Luck unchanged.', 'info');
             addChatMessage('SYSTEM', `Sacred Blessing Oil: No weapon equipped. Luck unchanged.`, true);
@@ -6401,7 +6808,7 @@ function applyWeaponLuckOil() {
     } else {
         // 10% remainder: do nothing
         addBattleMsg('Blessing Oil does nothing. The oil shimmers and fades...', 'info');
-        addChatMessage('SYSTEM', `鉁?Sacred Blessing Oil shimmers... nothing happened.`, true);
+        addChatMessage('SYSTEM', `✨ Sacred Blessing Oil shimmers... nothing happened.`, true);
     }
     updateStats();
     renderTemple();
@@ -6656,7 +7063,7 @@ function generateDungeonEncounter() {
     
     // Generate enemy with scaled stats
     const enemy = {
-        name: isMiniboss ? `鈿旓笍 ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
+        name: isMiniboss ? `⚔️ ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
         hp: Math.floor(template.hp * totalMultiplier),
         maxHp: Math.floor(template.hp * totalMultiplier),
         atk: Math.floor(template.atk * totalMultiplier),
@@ -6672,7 +7079,7 @@ function generateDungeonEncounter() {
     dungeonState.inBattle = true;
     
     if (isMiniboss) {
-        addDungeonLog(`鈿旓笍 A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
+        addDungeonLog(`⚔️ A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
         addChatMessage('SYSTEM', `${p.name} encountered a Miniboss at Dungeon Stage ${stage}!`, true);
     } else {
         addDungeonLog(`A ${template.name} appears! (Stage ${stage})`);
@@ -6697,98 +7104,37 @@ function dungeonAction(action) {
     p.hp = dungeonState.hp;
     
     if (action === 'spell') {
-        // Spell attack: 0.5-3x damage at cost of 15 mana
-        if (p.mp < 15) {
-            addDungeonLog('Not enough mana! Requires 15 MP to cast spell.', 'damage');
-            renderDungeon();
-            return;
-        }
-        
-        p.mp -= 15;
-        
-        // Get scroll effect values (DOUBLE EFFECT FOR SPELLS)
-        const damageMult = getScrollDamageMultiplier() * 2;
-        const critBonus = getScrollCritBonus() * 2;
-        const invulnerable = isInvulnerable();
-        const totalDef = getEffectivePlayerDefense();
-        
-        // Calculate spell damage multiplier between 0.5x and 3x
-        const spellMultiplier = 0.5 + Math.random() * 2.5;
-        const totalAtk = getTotalAtk();
-        const totalCrit = getTotalCrit();
-        const effectiveEnemyDefense = getEffectiveEnemyDefense(e);
-        const totalAttackInstances = getTotalAttackInstances();
-        
-        let dmg = Math.max(1, totalAtk - effectiveEnemyDefense + rand(-3, 3));
-        let crit = Math.random() * 100 < (totalCrit + critBonus);
-        if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
-        
-        // Apply spell multiplier + scroll damage multiplier
-        dmg = Math.floor(dmg * spellMultiplier * damageMult);
-        dmg *= totalAttackInstances;
-        
-        e.hp = Math.max(0, e.hp - dmg);
-        
-        addDungeonLog(`You cast a spell for ${dmg} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
-
-        const spellHeal = calculateDamageBasedHealing(dmg);
-        if (spellHeal > 0) {
-            const actualHeal = Math.min(spellHeal, getTotalMaxHp() - p.hp);
-            if (actualHeal > 0) {
-                p.hp += actualHeal;
+        const result = runSpellCombatTurn(p, e, addDungeonLog, {
+            healCallback: (healAmt) => {
+                dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
+            },
+            afterTurnCallback: () => {
                 dungeonState.hp = p.hp;
-                addDungeonLog(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
             }
-        }
-        
-        tryTriggerActiveExecute(e, addDungeonLog);
-        
-        if (e.hp <= 0) {
-            dungeonEnemyDefeated();
-            return;
-        }
-        
-        const counterResult = resolveEnemyCounterAttack(p, e, addDungeonLog, (healAmt) => {
-            dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
-        }, {
-            invulnerable,
-            totalDef
         });
         dungeonState.hp = p.hp;
-
-        if (counterResult.enemyDied) {
+        if (result.aborted) {
+            renderDungeon();
+            updateStats();
+            return;
+        }
+        if (result.enemyDied) {
             dungeonEnemyDefeated();
             return;
         }
-
-        const endOfTurnResult = applyEndOfTurnScrollEffects(p, e, addDungeonLog);
-        dungeonState.hp = p.hp;
-        if (endOfTurnResult.enemyDied) {
-            dungeonEnemyDefeated();
-            return;
-        }
-        
-        if (p.hp <= 0) {
+        if (result.playerDied) {
             addDungeonLog('You have fallen in the dungeon!', 'damage');
             triggerDefeatRecovery(addDungeonLog);
             endDungeon();
             return;
         }
-        
-        // Decrement scroll effects at end of turn
-        decrementScrollEffects(addDungeonLog);
-        
-        // Mana regeneration: 5% of max MP + flat mana regen from equipment every turn
-        const maxMp = getTotalMaxMp();
-        const manaRegenAmount = getCombatManaRegenAmount();
-        p.mp = Math.min(maxMp, p.mp + manaRegenAmount);
-        
+
         renderDungeon();
         updateStats();
         return;
     }
 
-    // 鉁?CALL UNIVERSAL COMBAT ENGINE - SAME EXACT CODE AS BATTLE SYSTEM!
+    // ✅ CALL UNIVERSAL COMBAT ENGINE - SAME EXACT CODE AS BATTLE SYSTEM!
     const result = runUniversalCombatTurn(action, p, e, addDungeonLog, (healAmt) => {
         dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + healAmt);
     });
@@ -6898,7 +7244,7 @@ function dungeonEnemyDefeated() {
     if (dungeonState.stage > 0 && dungeonState.stage % 5 === 0) {
         p.atk += 1;
         p.def += 1;
-        addDungeonLog(`馃弳 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
+        addDungeonLog(`🏆 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
         addChatMessage('SYSTEM', `${p.name} reached Stage ${dungeonState.stage} in the Dungeon and gained permanent +1 ATK and +1 DEF!`, true);
     }
 
@@ -6908,7 +7254,7 @@ function dungeonEnemyDefeated() {
     // Track highest dungeon stage reached
     if (dungeonState.stage > gameState.highestDungeonStage) {
         gameState.highestDungeonStage = dungeonState.stage;
-        addDungeonLog(`馃弳 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
+        addDungeonLog(`🏆 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
         // Auto-save when new highest stage is achieved so it persists across refresh
         saveGame();
     }
@@ -6931,7 +7277,7 @@ function endDungeon() {
     // Track highest dungeon stage reached
     if (stage > gameState.highestDungeonStage) {
         gameState.highestDungeonStage = stage;
-        addDungeonLog(`馃弳 New record! Highest dungeon stage: ${stage}!`, 'reward');
+        addDungeonLog(`🏆 New record! Highest dungeon stage: ${stage}!`, 'reward');
     }
     
     addDungeonLog(`Dungeon complete! You reached Stage ${stage}.`, 'info');
@@ -6979,7 +7325,7 @@ function renderDungeon() {
     let html = `<div class="dungeon-info">
         <div class="dungeon-stage">Dungeon - Stage ${dungeonState.stage}</div>
         <div class="dungeon-rewards">Rewards so far: ${dungeonState.rewards.length} victories</div>
-        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">馃弳 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
+        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
     </div>`;
     
     html += `<div class="section-title">Battle - ${e.name}</div>`;
@@ -7028,17 +7374,18 @@ function dungeonUseItem(idx) {
     if (!item || item.type !== 'consumable') return;
 
     if (getPlayerStatusSnapshot().cannotUseItems) {
-        addDungeonLog('You are silenced and cannot use items right now!', 'damage');
+        addDungeonLog('You are unable to use items right now!', 'damage');
         return;
     }
     
     if (item.type === 'consumable') {
         if (item.effect === 'heal') {
-            dungeonState.hp = Math.min(dungeonState.maxHp, dungeonState.hp + item.value);
+            const actualHeal = applyHealingToTarget(gameState.player, item.value, dungeonState.maxHp, addDungeonLog, item.name);
+            dungeonState.hp = Math.min(dungeonState.maxHp, gameState.player.hp);
             gameState.player.hp = dungeonState.hp;
-            addDungeonLog(`Used ${item.name}: Healed ${item.value} HP`, 'heal');
+            addDungeonLog(`Used ${item.name}: Healed ${actualHeal} HP`, 'heal');
         } else if (item.effect === 'mana') {
-            gameState.player.mp = Math.min(gameState.player.maxMp, gameState.player.mp + item.value);
+            gameState.player.mp = Math.min(getTotalMaxMp(), gameState.player.mp + item.value);
             addDungeonLog(`Used ${item.name}: Restored ${item.value} MP`, 'heal');
         } else if (item.effect === 'blessing') {
             addDungeonLog(`Blessing Oil cannot be used from inventory! Go to the Temple to use it.`, 'info');
@@ -7438,17 +7785,17 @@ function buildFallbackItemDescription(item) {
     let desc = parts.join(', ');
     if (item.mergeLevel > 0) {
         const totalPercent = Math.round((Math.pow(1.5, item.mergeLevel) - 1) * 100);
-        desc += `${desc ? '\n' : ''}鉁?Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+        desc += `${desc ? '\n' : ''}✨ Merged ${item.mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
     }
 
     return desc;
 }
 
 function buildMergedDescription(baseDescription, mergeLevel) {
-    const rootDescription = String(baseDescription || '').split('\n鉁?)[0];
+    const rootDescription = String(baseDescription || '').split('\n✨')[0];
     if (!(mergeLevel > 0)) return rootDescription;
     const totalPercent = Math.round((Math.pow(1.5, mergeLevel) - 1) * 100);
-    return `${rootDescription}${rootDescription ? '\n' : ''}鉁?Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
+    return `${rootDescription}${rootDescription ? '\n' : ''}✨ Merged ${mergeLevel} times | ATK +${totalPercent}%, DEF +${totalPercent}% | All other stats increased`;
 }
 
 function ensureItemDescription(item) {
@@ -7748,6 +8095,8 @@ function ensurePlayerBaseStats(player) {
     if (player.baseAttackSpeed === undefined) player.baseAttackSpeed = 0;
     if (player.baseCdr === undefined) player.baseCdr = 0;
     if (player.baseMoveSpeed === undefined) player.baseMoveSpeed = 0;
+    if (player.baseHealthRegen === undefined) player.baseHealthRegen = 0;
+    if (player.baseManaRegen === undefined) player.baseManaRegen = 0;
 }
 
 function normalizeFiniteNumber(value, fallback = 0, options = {}) {
@@ -8526,20 +8875,20 @@ async function saveGame() {
         const result = await persistCurrentGameState();
 
         if (result.usedIndexedDbFallback) {
-            addChatMessage('SYSTEM', '鉁?Game saved using extended browser storage (localStorage quota workaround)!', true);
+            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage (localStorage quota workaround)!', true);
             console.warn('localStorage quota exceeded, save stored in IndexedDB instead', result.localError);
         } else if (result.localSaved && result.indexedDbSaved) {
-            addChatMessage('SYSTEM', '鉁?Game saved successfully!', true);
+            addChatMessage('SYSTEM', '✅ Game saved successfully!', true);
         } else if (result.localSaved) {
-            addChatMessage('SYSTEM', '鉁?Game saved locally!', true);
+            addChatMessage('SYSTEM', '✅ Game saved locally!', true);
         } else {
-            addChatMessage('SYSTEM', '鉁?Game saved using extended browser storage!', true);
+            addChatMessage('SYSTEM', '✅ Game saved using extended browser storage!', true);
         }
     } catch (e) {
         console.log('Save failed', e);
         addChatMessage('SYSTEM', isQuotaExceededError(e)
-            ? '鉂?Browser storage quota exceeded and fallback save also failed!'
-            : '鉂?Failed to save game!', true);
+            ? '❌ Browser storage quota exceeded and fallback save also failed!'
+            : '❌ Failed to save game!', true);
     }
 }
 
@@ -8551,14 +8900,14 @@ async function loadGame() {
             showScreen('travel');
             updateSidePanels();
             addChatMessage('SYSTEM', restored.source === 'indexedDB'
-                ? '鉁?Game loaded from extended browser storage!'
-                : '鉁?Game loaded successfully!', true);
+                ? '✅ Game loaded from extended browser storage!'
+                : '✅ Game loaded successfully!', true);
         } else {
-            addChatMessage('SYSTEM', '鈿狅笍 No save file found!', true);
+            addChatMessage('SYSTEM', '⚠️ No save file found!', true);
         }
     } catch (e) {
         console.log('Load failed', e);
-        addChatMessage('SYSTEM', '鉂?Failed to load game!', true);
+        addChatMessage('SYSTEM', '❌ Failed to load game!', true);
     }
 }
 
@@ -8619,7 +8968,11 @@ function autoRegen() {
     
     if (elapsed >= 5) {
         const p = gameState.player;
-        p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.02));
+        const combatContext = getCurrentCombatContext();
+        const allowNaturalHealthRegen = !combatContext || combatContext === 'worldboss';
+        if (allowNaturalHealthRegen) {
+            p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.02));
+        }
         p.mp = Math.min(p.maxMp, p.mp + Math.floor(p.maxMp * 0.03));
         gameState.lastRegen = now;
         updateStats();
@@ -8629,8 +8982,8 @@ function autoRegen() {
     if (Math.random() < 1/12000) {
         const gems = rand(1, 3);
         gameState.soulGems += gems;
-        addChatMessage('SYSTEM', `鉁?You found ${gems} Soul Gem${gems > 1 ? 's' : ''} while exploring!`, true);
-        addBattleMsg(`鉁?Found ${gems} Soul Gem${gems > 1 ? 's' : ''}!`, 'reward');
+        addChatMessage('SYSTEM', `✨ You found ${gems} Soul Gem${gems > 1 ? 's' : ''} while exploring!`, true);
+        addBattleMsg(`✨ Found ${gems} Soul Gem${gems > 1 ? 's' : ''}!`, 'reward');
         updateStats();
     }
     
@@ -8826,7 +9179,7 @@ function spawnWorldBoss() {
         maxHp: Math.floor(bossTemplate.hp * levelScale * WORLD_BOSS_HEALTH_MULTIPLIER),
         atk: Math.floor(bossTemplate.atk * levelScale * 0.7),
         def: Math.floor(bossTemplate.def * levelScale * 0.7),
-        name: `鈿旓笍 WORLD BOSS: ${bossTemplate.name} 鈿旓笍`
+        name: `⚔️ WORLD BOSS: ${bossTemplate.name} ⚔️`
     };
     
     gameState.worldBossActive = true;
@@ -8837,8 +9190,8 @@ function spawnWorldBoss() {
     
     setWorldBossBattleTabAlert(true);
     
-    addChatMessage('SYSTEM', `鈿狅笍 WORLD BOSS ${bossTemplate.name} HAS APPEARED! Go to the Battle tab!`, true);
-    addChatMessage('SYSTEM', `鈿狅笍 World Boss has ${gameState.currentWorldBoss.maxHp.toLocaleString()} HP! All players can attack!`, true);
+    addChatMessage('SYSTEM', `⚠️ WORLD BOSS ${bossTemplate.name} HAS APPEARED! Go to the Battle tab!`, true);
+    addChatMessage('SYSTEM', `⚠️ World Boss has ${gameState.currentWorldBoss.maxHp.toLocaleString()} HP! All players can attack!`, true);
     
     // Start fake player attacks
     startFakePlayerBossAttacks();
@@ -8861,7 +9214,7 @@ function despawnWorldBoss(defeated) {
     }
     
     if (defeated) {
-        addChatMessage('SYSTEM', `馃帀 WORLD BOSS ${gameState.currentWorldBoss.name} HAS BEEN DEFEATED! Rewards distributed!`, true);
+        addChatMessage('SYSTEM', `🎉 WORLD BOSS ${gameState.currentWorldBoss.name} HAS BEEN DEFEATED! Rewards distributed!`, true);
     } else {
         addChatMessage('SYSTEM', `World Boss has escaped! Better luck next time!`, true);
     }
@@ -8889,72 +9242,139 @@ function attackWorldBoss() {
     }
     
     const boss = gameState.currentWorldBoss;
+    const p = gameState.player;
     const totalAtk = getTotalAtk();
     const totalCrit = getTotalCrit();
+    const totalCritDmg = getTotalCritDmg();
     const damageMult = getScrollDamageMultiplier();
     const critBonus = getScrollCritBonus();
     const invulnerable = isInvulnerable();
     const playerStatus = getPlayerStatusSnapshot();
+    const enemyStatus = getEnemyStatusSnapshot(boss);
     const totalDef = getEffectivePlayerDefense();
-    
-    // Calculate damage
-    const effectiveEnemyDefense = getEffectiveEnemyDefense(boss, 0.3);
-    const totalAttackInstances = getTotalAttackInstances();
-    let dmg = Math.max(5, totalAtk - effectiveEnemyDefense + rand(-5, 10));
-    let crit = Math.random() * 100 < (totalCrit + critBonus);
-    if (crit) dmg = Math.floor(dmg * (1.5 + getTotalCritDmg() / 100));
-    dmg = Math.floor(dmg * damageMult);
 
-    // Apply special ability bonus damage
-    let bonusDmg = 0;
-    let specialMsg = '';
-    const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
-    eqSlots.forEach(slot => {
-        const eq = gameState.equipment[slot];
-        if (eq) {
-            if (eq.specialAbility === 'half_current_hp') {
-                bonusDmg += Math.floor(boss.hp * 0.5);
-                specialMsg += ' (Reaper Scythe bonus)';
+    let playerDied = false;
+    let enemyDied = false;
+
+    if (playerStatus.skipTurn || playerStatus.cannotAttack) {
+        addBattleMsg('You are unable to attack this turn!', 'damage');
+    } else if (playerStatus.missChance > 0 && Math.random() * 100 < playerStatus.missChance) {
+        addBattleMsg('Your debuffs cause your attack to miss completely!', 'damage');
+    } else {
+        const dodgeChance = boss.dodge || 0;
+        const cappedDodge = Math.min(0.95, Math.max(0, (dodgeChance * enemyStatus.dodgeMultiplier) + enemyStatus.dodgeBonus));
+        if (Math.random() < cappedDodge) {
+            addBattleMsg(`${boss.name} DODGED your attack! (Dodge: ${(cappedDodge * 100).toFixed(1)}%)`, 'damage');
+        } else {
+            const effectiveEnemyDefense = getEffectiveEnemyDefense(boss, 0.3);
+            let dmg = Math.max(5, totalAtk - effectiveEnemyDefense + rand(-5, 10));
+            let crit = Math.random() * 100 < ((totalCrit + critBonus) * playerStatus.critMultiplier);
+            if (crit) dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
+            dmg = Math.floor(dmg * damageMult);
+            dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
+
+            let bonusDmg = 0;
+            let specialMsg = '';
+            let attackCount = playerStatus.attackTwice ? 2 : 1;
+            let trueDamage = false;
+            let guaranteedCrit = false;
+            const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
+
+            if (typeof gameState.attackCounter === 'undefined') {
+                gameState.attackCounter = 0;
             }
-        }
-    });
-    dmg += bonusDmg;
-    dmg *= totalAttackInstances;
+            gameState.attackCounter++;
 
-    boss.hp = Math.max(0, boss.hp - dmg);
+            eqSlots.forEach(slot => {
+                const eq = gameState.equipment[slot];
+                if (!eq || !eq.specialAbility) return;
 
-    // Record player damage
-    recordWorldBossPlayerDamage(dmg);
-    scheduleSilentPersist();
-    
-    addBattleMsg(`You hit the World Boss for ${dmg} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
+                switch(eq.specialAbility) {
+                    case 'half_current_hp':
+                        bonusDmg += Math.floor(boss.hp * 0.5);
+                        specialMsg += ' (Reaper Scythe)';
+                        break;
+                    case 'crit_guaranteed':
+                        guaranteedCrit = true;
+                        crit = true;
+                        break;
+                    case 'low_hp_damage_buff':
+                        if (p.hp < (getTotalMaxHp() * 0.1)) {
+                            dmg = Math.floor(dmg * 2);
+                            specialMsg += ' (Low HP Bonus x2)';
+                        }
+                        break;
+                    case 'triple_attack_every_4':
+                        if (gameState.attackCounter % 4 === 0) {
+                            attackCount = 3;
+                            specialMsg += ' (Triple Attack!)';
+                        }
+                        break;
+                    case 'true_damage_every_3':
+                        if (gameState.attackCounter % 3 === 0) {
+                            trueDamage = true;
+                            specialMsg += ' (True Damage!)';
+                        }
+                        break;
+                }
+            });
 
-    tryTriggerActiveExecute(boss, addBattleMsg);
+            if (guaranteedCrit) {
+                crit = true;
+                dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
+            }
 
-    // Apply lifesteal
-    let healAmt = calculateDamageBasedHealing(dmg);
-    if (healAmt > 0) {
-        const p = gameState.player;
-        const actualHeal = Math.min(healAmt, getTotalMaxHp() - p.hp);
-        p.hp += actualHeal;
-        if (actualHeal > 0) {
-            addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+            if (trueDamage) {
+                dmg = totalAtk + bonusDmg;
+            } else {
+                dmg += bonusDmg;
+            }
+
+            const totalAttackInstances = getTotalAttackInstances(attackCount);
+            let totalDamageDealt = 0;
+            let landedHits = 0;
+            for (let i = 0; i < totalAttackInstances; i++) {
+                const appliedDamage = applyDamageToTarget(boss, dmg, addBattleMsg);
+                if (appliedDamage > 0) {
+                    totalDamageDealt += appliedDamage;
+                    landedHits++;
+                }
+                if (boss.hp <= 0) break;
+            }
+
+            recordWorldBossPlayerDamage(totalDamageDealt);
+            scheduleSilentPersist();
+            addBattleMsg(`You hit the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
+
+            if (landedHits > 0) {
+                tryApplyPlayerOnHitEffects(boss, addBattleMsg, { hitCount: landedHits });
+            }
+
+            const healAmt = calculateDamageBasedHealing(totalDamageDealt);
+            if (healAmt > 0) {
+                const actualHeal = applyHealingToTarget(p, healAmt, getTotalMaxHp(), addBattleMsg, 'Lifesteal');
+                if (actualHeal > 0) {
+                    addBattleMsg(`Lifesteal healed you for ${actualHeal} HP!`, 'heal');
+                }
+            }
+
+            tryTriggerActiveExecute(boss, addBattleMsg);
+            if (boss.hp <= 0) {
+                enemyDied = true;
+            }
         }
     }
 
-    // Check if boss is dead
-    if (boss.hp <= 0) {
+    if (enemyDied) {
         despawnWorldBoss(true);
         return;
     }
-    
-    const p = gameState.player;
+
     const counterResult = resolveEnemyCounterAttack(p, boss, addBattleMsg, null, {
         invulnerable,
         totalDef,
         defenseMitigationFactor: 0.4
     });
-
     if (counterResult.enemyDied) {
         despawnWorldBoss(true);
         return;
@@ -8966,13 +9386,36 @@ function attackWorldBoss() {
         return;
     }
 
+    if (boss.hp > 0) {
+        const enemyStatusResult = applyEndOfTurnEnemyStatusEffects(boss, addBattleMsg);
+        if (enemyStatusResult.targetDied) {
+            despawnWorldBoss(true);
+            return;
+        }
+    }
+
+    const playerStatusResult = applyEndOfTurnPlayerStatusEffects(p, addBattleMsg);
+    if (playerStatusResult.targetDied) {
+        playerDied = true;
+    }
+
+    if (!playerDied && p.hp <= 0) {
+        if (!tryConsumeReviveScroll(p, addBattleMsg)) {
+            playerDied = true;
+        }
+    }
+
     decrementScrollEffects(addBattleMsg);
-    
-    if (p.hp <= 0) {
+
+    const maxMp = getTotalMaxMp();
+    const manaRegenAmount = getCombatManaRegenAmount();
+    gameState.player.mp = Math.min(maxMp, gameState.player.mp + manaRegenAmount);
+
+    if (playerDied) {
         triggerDefeatRecovery(addBattleMsg);
         resetCombatScrollSession();
     }
-    
+
     renderBattle();
     updateStats();
 }
@@ -9112,7 +9555,7 @@ renderBattle = function() {
                 <div class="boss-hp-fill" style="width:${hpPct}%"></div>
             </div>
             <div style="color:#ff6600;margin:5px 0">HP: ${boss.hp.toLocaleString()} / ${boss.maxHp.toLocaleString()} (${hpPct}%)</div>
-            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `RECOVERING (${formatPvpCooldown(combatCooldownRemaining)})` : '鈿旓笍 ATTACK WORLD BOSS'}</button>
+            <button class="action-btn boss-btn" onclick="attackWorldBoss()" style="margin-top:10px;font-size:1.1em;padding:12px 25px;" ${combatLocked ? 'disabled' : ''}>${combatLocked ? `RECOVERING (${formatPvpCooldown(combatCooldownRemaining)})` : '⚔️ ATTACK WORLD BOSS'}</button>
         </div>`;
 
         const visibleScrolls = getVisibleCombatScrolls();
@@ -9131,7 +9574,7 @@ renderBattle = function() {
         
         if (playerRank > 0) {
             html += `<div style="background:#1a1a1a;padding:10px;margin:10px 0;border:1px solid #ffaa00;">
-                <div style="color:#ffaa00;font-weight:bold">馃搳 Your Contribution</div>
+                <div style="color:#ffaa00;font-weight:bold">📊 Your Contribution</div>
                 <div>Rank: #${playerRank} / ${damageSorted.length} participants</div>
                 <div>Damage Dealt: ${playerDamage.toLocaleString()}</div>
                 <div>Damage %: ${(playerDamage / gameState.worldBossTotalDamage * 100).toFixed(1)}%</div>
@@ -9152,5 +9595,3 @@ renderBattle = function() {
 
 // Start the game
 init();
-
-
