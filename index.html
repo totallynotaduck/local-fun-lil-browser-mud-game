@@ -263,7 +263,7 @@
         <div class="stat"><span class="stat-label">DEF:</span><span class="stat-value" id="stat-def">5</span></div>
         <div class="stat"><span class="stat-label">CRIT:</span><span class="stat-value" id="stat-crit" style="color:#ff00ff">0%</span></div>
         <div class="stat"><span class="stat-label">LVL:</span><span class="stat-value" id="stat-lvl">1</span></div>
-        <div class="stat"><span class="stat-label">XP:</span><span class="stat-value xp" id="stat-xp">0/100</span></div>
+        <div class="stat"><span class="stat-label" id="stat-xp-label">XP:</span><span class="stat-value xp" id="stat-xp">0/100</span></div>
         <div class="stat"><span class="stat-label">GOLD:</span><span class="stat-value gold" id="stat-gold">50</span></div>
         <div class="stat"><span class="stat-label">SOUL GEMS:</span><span class="stat-value soul" id="stat-soul">0</span></div>
     </div>
@@ -324,6 +324,8 @@
 <script>
 
 // GAME STATE
+const MAX_PLAYER_LEVEL = 60;
+
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0, permanentAtkBonus: 0, permanentDefBonus: 0 },
     saveName: 'Hero Save',
@@ -3636,6 +3638,7 @@ function updateStats() {
     const atkEl = document.getElementById('stat-atk');
     const defEl = document.getElementById('stat-def');
     const lvlEl = document.getElementById('stat-lvl');
+    const xpLabelEl = document.getElementById('stat-xp-label');
     const xpEl = document.getElementById('stat-xp');
     const goldEl = document.getElementById('stat-gold');
     const soulEl = document.getElementById('stat-soul');
@@ -3665,11 +3668,19 @@ function updateStats() {
     if (atkEl) atkEl.textContent = getTotalAtk();
     if (defEl) defEl.textContent = getTotalDef();
     if (critEl) critEl.textContent = `${actualCrit}%`;
-    if (lvlEl) lvlEl.textContent = p.level;
-    if (xpEl) xpEl.textContent = `${p.xp}/${p.xpToNext}`;
+    if (xpLabelEl) xpLabelEl.textContent = p.level >= MAX_PLAYER_LEVEL ? 'EXP Gained:' : 'XP:';
+    if (xpEl) xpEl.textContent = p.level >= MAX_PLAYER_LEVEL
+        ? formatScientificXp(p.xp)
+        : `${p.xp}/${p.xpToNext}`;
     if (goldEl) goldEl.textContent = p.gold;
     if (soulEl) soulEl.textContent = gameState.soulGems;
     refreshCooldownUi();
+}
+
+function formatScientificXp(value) {
+    const xpValue = Math.max(0, Number(value) || 0);
+    if (xpValue === 0) return '0.00e+0';
+    return xpValue.toExponential(2);
 }
 
 function showScreen(screenName) {
@@ -4710,7 +4721,13 @@ function enemyDefeated() {
 
 function checkLevelUp() {
     const p = gameState.player;
-    while (p.xp >= p.xpToNext) {
+    if (p.level >= MAX_PLAYER_LEVEL) {
+        p.level = MAX_PLAYER_LEVEL;
+        p.xpToNext = null;
+        return;
+    }
+
+    while (p.level < MAX_PLAYER_LEVEL && p.xp >= p.xpToNext) {
         p.xp -= p.xpToNext;
         p.level++;
         
@@ -4739,12 +4756,22 @@ function checkLevelUp() {
         p.hp = p.maxHp;
         p.mp = p.maxMp;
 
-        // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
-        p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
+        if (p.level >= MAX_PLAYER_LEVEL) {
+            p.level = MAX_PLAYER_LEVEL;
+            p.xpToNext = null;
+        } else {
+            // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
+            p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
+        }
         
         addBattleMsg(`LEVEL UP! You are now level ${p.level}!`, 'reward');
         addBattleMsg(`Max HP: ${p.maxHp}, Max MP: ${p.maxMp}, ATK: ${p.atk}, DEF: ${p.def}`, 'reward');
         addChatMessage('SYSTEM', `${p.name} reached level ${p.level}! Max HP: ${p.maxHp} ATK: ${p.atk} DEF: ${p.def}`, true);
+    }
+
+    if (p.level >= MAX_PLAYER_LEVEL) {
+        p.level = MAX_PLAYER_LEVEL;
+        p.xpToNext = null;
     }
 }
 
