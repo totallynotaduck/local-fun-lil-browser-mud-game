@@ -2443,6 +2443,27 @@ function getWanderRankTextStyle(rankData = getWanderRankData()) {
     return `color:${rankData.color};font-weight:bold;`;
 }
 
+function getWanderRewardRankMultiplier(rankKey = gameState.wandering?.rankKey) {
+    const baseMultiplier = Math.max(0.25, Number(getWanderRankData(rankKey)?.multiplier) || 1);
+    if (rankKey === 'SS' || rankKey === 'SSS') return baseMultiplier * 2;
+    return baseMultiplier;
+}
+
+function getWanderEnemyRankMultiplier(rankKey = gameState.wandering?.rankKey) {
+    const baseMultiplier = Math.max(0.25, Number(getWanderRankData(rankKey)?.multiplier) || 1);
+    if (rankKey === 'SSS') return baseMultiplier * 4;
+    return baseMultiplier;
+}
+
+function formatWanderScalingText(rankKey = gameState.wandering?.rankKey) {
+    const rewardMultiplier = getWanderRewardRankMultiplier(rankKey);
+    const enemyMultiplier = getWanderEnemyRankMultiplier(rankKey);
+    if (rankKey === 'SSS') {
+        return `Rewards: ${rewardMultiplier}x | Enemies: ${enemyMultiplier}x`;
+    }
+    return `${rewardMultiplier}x scaling`;
+}
+
 function rollWanderRank() {
     const totalWeight = WANDER_RANKS.reduce((sum, rank) => sum + rank.weight, 0);
     let roll = Math.random() * totalWeight;
@@ -2463,7 +2484,9 @@ function getWanderingRewardMultiplier() {
 }
 
 function applyWanderingRewardBoost(amount, expedition = gameState.wandering, extraMultiplier = 1) {
-    return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier() * getWanderingLocationRewardMultiplier(expedition) * Math.max(0, extraMultiplier || 1)));
+    const rankKey = expedition?.rankKey || gameState.wandering?.rankKey;
+    const effectiveRankMultiplier = getWanderRewardRankMultiplier(rankKey) * Math.max(0, extraMultiplier || 1);
+    return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier() * getWanderingLocationRewardMultiplier(expedition) * effectiveRankMultiplier));
 }
 
 function locationSupportsWandering(locationKey = gameState.player.location) {
@@ -5686,7 +5709,7 @@ function startWanderingExpedition() {
     };
     
     addWanderingLog('You begin your wandering expedition...', 'info');
-    addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${rankData.multiplier}x scaling)`, 'reward');
+    addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${formatWanderScalingText(rankData.key)})`, 'reward');
     addWanderingLog(`This journey will have ${totalEvents} events.`, 'info');
     if (WANDER_HIGH_RANK_KEYS.has(rankData.key)) {
         addWanderingLog(`⚠️ High-rank rules active: ${minStages}-${maxStages} stages, no expedition escape after stage 2, enemies may inflict extra debuffs.`, 'damage');
@@ -5729,7 +5752,9 @@ function generateWanderingEvent() {
     const p = gameState.player;
     const level = p.level;
     const luck = getTotalLuck();
-    const rankMultiplier = Math.max(0.25, w.rankMultiplier || 1);
+    const rewardRankMultiplier = getWanderRewardRankMultiplier(w.rankKey);
+    const enemyRankMultiplier = getWanderEnemyRankMultiplier(w.rankKey);
+    const itemRankMultiplier = Math.max(0.25, w.rankMultiplier || 1);
     
     const eventType = Math.random() * 100;
     
@@ -5737,7 +5762,7 @@ function generateWanderingEvent() {
         // 30% chance: Battle encounter
         const loc = locations[p.location];
         if (loc && loc.enemies && loc.enemies.length > 0) {
-            const enemy = generateEnemy(p.location, false, { statMultiplier: rankMultiplier, rewardMultiplier: rankMultiplier });
+            const enemy = generateEnemy(p.location, false, { statMultiplier: enemyRankMultiplier, rewardMultiplier: rewardRankMultiplier });
             if (enemy) {
                 w.inBattle = true;
                 w.currentEnemy = enemy;
@@ -5766,19 +5791,19 @@ function generateWanderingEvent() {
         // 10% chance: Find gold
         const goldFound = rand(Math.floor(level * 2) + 5, Math.floor(level * 5) + 20);
         const luckBonus = Math.floor(luck * 0.5);
-        const totalGold = applyWanderingRewardBoost(goldFound + luckBonus, w, rankMultiplier);
+        const totalGold = applyWanderingRewardBoost(goldFound + luckBonus, w, 1);
         w.rewards.gold += totalGold;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Found ${totalGold} gold!`, 'reward');
     } else if (eventType < 65) {
         // 10% chance: Gain XP
         const xpGained = rand(Math.floor(level * 2) + 10, Math.floor(level * 5) + 30);
         const luckBonus = Math.floor(luck * 0.2);
-        const totalXp = applyWanderingRewardBoost(xpGained + luckBonus, w, rankMultiplier);
+        const totalXp = applyWanderingRewardBoost(xpGained + luckBonus, w, 1);
         w.rewards.xp += totalXp;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Gained ${totalXp} XP from exploration!`, 'reward');
     } else if (eventType < 80) {
         // 15% chance: Find item
-        const droppedItem = getWanderItemDrop(rankMultiplier);
+        const droppedItem = getWanderItemDrop(itemRankMultiplier);
         if (droppedItem) {
             w.rewards.items.push({ ...droppedItem, qty: 1 });
             const rarityColor = getRarityColor(droppedItem.rarity);
@@ -6059,7 +6084,7 @@ function renderWandering() {
     html += `<div style="margin-bottom:10px; padding:10px; background-color:#1a1a1a; border:1px solid #333; border-radius:6px;">
         <span style="color:#888;">Expedition Rank: </span>
         <span style="${getWanderRankTextStyle(getWanderRankData(w.rankKey))}">${w.rankKey || 'C'}</span>
-        <span style="color:#888; margin-left:10px;">Scaling: ${w.rankMultiplier || 1}x</span>
+        <span style="color:#888; margin-left:10px;">Scaling: ${formatWanderScalingText(w.rankKey)}</span>
     </div>`;
     html += `<div class="description">Progress: ${w.currentEvent}/${w.totalEvents} events completed</div>`;
     
