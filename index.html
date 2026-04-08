@@ -3985,6 +3985,14 @@ function getPlayerItemDropLevelCap(enemyTier = Infinity) {
     return Math.min(enemyTierCap, playerLevelCap);
 }
 
+function getLocationItemDropLevelCap(locationKey = gameState?.wandering?.locationKey || gameState?.player?.location) {
+    const loc = locations?.[locationKey];
+    const rangeMax = Array.isArray(loc?.levelRange)
+        ? Math.max(0, Number(loc.levelRange[1]) || 0)
+        : Infinity;
+    return Math.min(rangeMax, getPlayerItemDropLevelCap(Infinity));
+}
+
 function isEligibleEquipmentDrop(item, maxItemLevel) {
     return !!(
         item &&
@@ -4037,7 +4045,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
 }
 
 // Get material/consumable drop (always allow, no level cap)
-function getMaterialDrop(enemyDrops) {
+function getMaterialDrop(enemyDrops, maxItemLevel = Infinity) {
     if (!enemyDrops || enemyDrops.length === 0) return null;
 
     const normalizedDrops = enemyDrops
@@ -4057,13 +4065,19 @@ function getMaterialDrop(enemyDrops) {
         })
         .filter(Boolean);
 
-    if (normalizedDrops.length === 0) return null;
+    const eligibleDrops = normalizedDrops.filter(drop => {
+        const item = itemPool?.[drop.name];
+        if (!item) return true;
+        if (!item.equipSlot) return true;
+        return isEligibleEquipmentDrop(item, maxItemLevel);
+    });
 
-    const totalWeight = normalizedDrops.reduce((sum, drop) => sum + drop.weight, 0);
+    if (eligibleDrops.length === 0) return null;
+
+    const totalWeight = eligibleDrops.reduce((sum, drop) => sum + drop.weight, 0);
     let roll = Math.random() * totalWeight;
-    let selectedDrop = normalizedDrops[normalizedDrops.length - 1];
-
-    for (const drop of normalizedDrops) {
+    let selectedDrop = eligibleDrops[eligibleDrops.length - 1];
+    for (const drop of eligibleDrops) {
         roll -= drop.weight;
         if (roll <= 0) {
             selectedDrop = drop;
@@ -4799,6 +4813,7 @@ function battleAction(action) {
 function enemyDefeated() {
     const p = gameState.player;
     const e = gameState.currentEnemy;
+    const maxDropLevel = getPlayerItemDropLevelCap(e?.tier);
     
     // Scale XP and Gold to enemy level/tier, not player level
     const scaledXp = e.xp;
@@ -4825,7 +4840,7 @@ function enemyDefeated() {
         // 40% chance for equipment drop (using new rarity system)
         if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
             // Material/consumable drop from enemy's loot table
-            const dropItem = getMaterialDrop(e.drops);
+            const dropItem = getMaterialDrop(e.drops, maxDropLevel);
             if (dropItem) {
                 addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
                 addBattleMsg(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
@@ -6094,7 +6109,7 @@ function wanderingEnemyDefeated() {
         // 40% chance for equipment drop (using new rarity system)
         if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
             // Material/consumable drop from enemy's loot table
-            const dropItem = getMaterialDrop(e.drops);
+            const dropItem = getMaterialDrop(e.drops, maxDropLevel);
             if (dropItem) {
                 w.rewards.items.push({ ...dropItem, qty: dropItem.qty || 1 });
                 addWanderingLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, 'reward');
@@ -7134,7 +7149,7 @@ function getWanderItemDrop(rankMultiplier = 1) {
         legendary: 2 * safeMultiplier
     }) || 'common';
     
-    const maxItemLevel = getPlayerItemDropLevelCap(Infinity);
+    const maxItemLevel = getLocationItemDropLevelCap();
 
     // Filter items of this rarity (equipment only, not materials/consumables/currency)
     const allItems = Object.values(itemPool);
