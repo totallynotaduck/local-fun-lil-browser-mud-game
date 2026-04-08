@@ -305,8 +305,8 @@
             <div id="auction-screen" class="screen"><div id="auction-screen-content"></div></div>
             <div id="players-screen" class="screen"><div id="players-screen-content"></div></div>
             <div id="save-screen" class="screen"><div id="save-screen-content"></div></div>
-            <div id="merge-screen" class="screen"><div id="merge-screen-content"></div></div>
-            <div id="wandering-screen" class="screen"><div id="wandering-content"></div></div>
+             <div id="merge-screen" class="screen"><div id="merge-screen-content"></div></div>
+             <div id="wandering-screen" class="screen"><div id="wandering-content"></div></div>
         </div>
         <div id="right-panel">
             <div class="side-panel-header" onclick="attemptShowScreen('inventory')">[] Inventory</div>
@@ -389,7 +389,7 @@ const gameState = {
 
 // LOCATIONS
 const locations = {
-    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple', 'enchantment_altar'] },
+    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple', 'enchantment_altar', 'potion_shop'] },
     forest: { name: 'Enchanted Forest', desc: 'A mystical forest teeming with life.', connections: ['town', 'mountains'], levelRange: [1, 10], minLevel: 1, enemies: ['rat', 'slime', 'wolf', 'goblin', 'forest_sprite', 'giant_bat'] },
     dark_forest: { name: 'Dark Forest', desc: 'A shadowy forest filled with danger.', connections: ['town', 'swamp'], levelRange: [10, 25], minLevel: 10, enemies: ['dark_wolf', 'wraith', 'rock_golem', 'harpy', 'orc_warrior'] },
     mountains: { name: 'Dragon Mountains', desc: 'Treacherous peaks inhabited by dragons.', connections: ['town', 'forest', 'dragon_lair'], levelRange: [8, 30], minLevel: 8, enemies: ['skeleton_knight', 'forest_troll', 'pixie_swarm', 'wolf_alpha', 'young_dragon'] },
@@ -400,8 +400,17 @@ const locations = {
     market: { name: 'Grand Market', desc: 'A marketplace for trading and shopping.', connections: ['town'], minLevel: 1 },
     guild: { name: "Adventurer's Guild", desc: 'Where quests and jobs are undertaken.', connections: ['town'], minLevel: 1 },
     temple: { name: 'Sacred Temple', desc: 'A place of healing and spiritual renewal.', connections: ['town'], minLevel: 1 },
-    enchantment_altar: { name: 'Enchantment Altar', desc: 'Runes drift above a silent altar where legendary gear can be reshaped with dangerous magic.', connections: ['town'], minLevel: 1 }
+    enchantment_altar: { name: 'Enchantment Altar', desc: 'Runes drift above a silent altar where legendary gear can be reshaped with dangerous magic.', connections: ['town'], minLevel: 1 },
+    potion_shop: { name: 'Potion Shop', desc: 'A shop specializing in healing potions for adventurers.', connections: ['town'], minLevel: 1 }
 };
+
+const potionShopItems = [
+    { name: 'Health Potion', price: 100, heal: 30, desc: 'Restores 30 HP when used.' },
+    { name: 'Greater Health Potion', price: 500, heal: 150, desc: 'Restores 150 HP when used.' },
+    { name: 'Superior Health Potion', price: 2500, heal: 750, desc: 'Restores 750 HP when used.' },
+    { name: 'Master Health Potion', price: 12500, heal: 3750, desc: 'Restores 3750 HP when used.' },
+    { name: 'Legendary Health Potion', price: 62500, heal: 18750, desc: 'Restores 18750 HP when used.' }
+];
 
 // BLESSING OIL
 const BLESSING_OIL = { name: 'Blessing Oil', type: 'consumable', effect: 'blessing', value: 50, desc: 'Chance to increase Weapon Luck.', rarity: 'epic', price: 500 };
@@ -6457,6 +6466,9 @@ function handleLocationAction(locKey) {
         case 'guild':
             renderGuildQuests();
             return true;
+        case 'potion_shop':
+            renderPotionShop();
+            return true;
         default:
             return false;
     }
@@ -6506,7 +6518,12 @@ function renderBattle() {
         renderEnchantmentAltar();
         return;
     }
-    
+
+    if (gameState.player.location === 'potion_shop' && !gameState.inBattle) {
+        renderPotionShop();
+        return;
+    }
+
     // Check if dungeon is active
     if (dungeonState.active) {
         renderDungeon();
@@ -8281,6 +8298,47 @@ function refreshMarketManually() {
     refreshMarketItems();
     addBattleMsg('The market has been refreshed with new items!', 'info');
     renderMarket();
+}
+
+function renderPotionShop() {
+    const container = document.getElementById('battle-content');
+
+    let html = `<div class="location-header" style="color:#00ff00">&#127851; Potion Shop &#127851;</div>`;
+    html += `<div class="description">Welcome to the Potion Shop! We sell healing potions of various strengths.</div>`;
+    html += `<div class="section-title">Available Potions</div>`;
+
+    potionShopItems.forEach((potion, idx) => {
+        const canAfford = gameState.player.gold >= potion.price;
+        html += `<div style="background:#1a1a1a;border:1px solid #00ff00;padding:10px;margin:5px 0;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <span style="color:#00ff00;font-weight:bold">${potion.name}</span>
+                <div style="color:#888;font-size:0.8em">${potion.desc}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="color:#ffd700">${potion.price} Gold</div>
+                <button class="action-btn" onclick="buyPotion(${idx})" ${canAfford ? '' : 'disabled'}>Buy</button>
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+function buyPotion(idx) {
+    const potion = potionShopItems[idx];
+    if (!potion) return;
+
+    if (gameState.player.gold < potion.price) {
+        addBattleMsg(`Not enough gold! This potion costs ${potion.price} gold.`, 'damage');
+        renderPotionShop();
+        return;
+    }
+
+    gameState.player.gold -= potion.price;
+    addToInventory({ name: potion.name, type: 'consumable', effect: 'heal', value: potion.heal, qty: 1, desc: potion.desc, rarity: 'common' });
+    addBattleMsg(`Purchased ${potion.name} for ${potion.price} gold!`, 'reward');
+    updateStats();
+    renderPotionShop();
 }
 
 // DUNGEON INFINITE CRAWLER
