@@ -332,6 +332,7 @@
 
 // GAME STATE
 const MAX_PLAYER_LEVEL = 60;
+const MAX_XP_REQUIREMENT = 2147483647;
 
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0, permanentAtkBonus: 0, permanentDefBonus: 0 },
@@ -1155,7 +1156,7 @@ function computePlayerLevelBaseStats(level = 1) {
 function getXpRequirementForLevel(level = 1) {
     const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
     if (safeLevel >= MAX_PLAYER_LEVEL) return null;
-    return Math.min(90000000, Math.floor(100 * Math.pow(1.5, safeLevel - 1)));
+    return Math.min(MAX_XP_REQUIREMENT, Math.floor(100 * Math.pow(1.5, safeLevel - 1)));
 }
 
 function applyLegacySaveMigrations(state) {
