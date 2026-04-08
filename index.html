@@ -388,6 +388,7 @@ const gameState = {
         currentEnemy: null,
         slotMachineActive: false,
         slotMachineRarity: null,
+         slotMachineLastResults: null,
         slotMachineBet: 0,
         slotMachineFreeSpins: 0,
         slotMachineJackpots: { minor: false, major: false, grand: false },
@@ -6425,12 +6426,13 @@ function renderSlotMachineUI() {
     }
 
     // Slot reels (3x5 grid)
+    const reelHtml = w.slotMachineLastResults
+        ? renderSlotMachineGrid(w.slotMachineLastResults)
+        : `<div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>`;
     html += `<div class="section-title">🎰 The Reels (243 Ways)</div>`;
-    html += `<div id="slot-reels" style="background:#000;border:2px solid #00ff00;padding:20px;margin:10px 0;text-align:center;font-size:1.8em;font-family:monospace;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
-        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
-        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
-        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
-    </div>`;
+    html += `<div id="slot-reels" style="background:#000;border:2px solid #00ff00;padding:20px;margin:10px 0;text-align:center;font-size:1.8em;font-family:monospace;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">${reelHtml}</div>`;
 
     // Spin button
     const canSpin = (freeSpins > 0 || (bet > 0 && bet >= info.minBet && (!info.maxBet || bet <= info.maxBet) && playerGold >= bet));
@@ -6548,6 +6550,21 @@ function generateSlotResults() {
     return grid;
 }
 
+function renderSlotMachineGrid(results) {
+    const symbols = [];
+    for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 5; col++) {
+            const r = results[row][col];
+            let color = '#00ff00';
+            if (r.type === 'wild') color = '#ffff00';
+            else if (r.type === 'scatter') color = '#ff00ff';
+            else if (r.type === 'bonus') color = '#ff6600';
+            symbols.push(`<div><span style="color:${color}">[ ${r.symbol} ]</span></div>`);
+        }
+    }
+    return symbols.join('');
+}
+
 function animateSlotSpin(results) {
     const reelsDiv = document.getElementById('slot-reels');
     let spinCount = 0;
@@ -6580,18 +6597,8 @@ function animateSlotSpin(results) {
         if (spinCount >= maxSpins) {
             clearInterval(spinInterval);
             // Show final results
-            const finalSymbols = [];
-            for (let row = 0; row < 3; row++) {
-                for (let col = 0; col < 5; col++) {
-                    const r = results[row][col];
-                    let color = '#00ff00'; // default green for cards
-                    if (r.type === 'wild') color = '#ffff00';
-                    else if (r.type === 'scatter') color = '#ff00ff';
-                    else if (r.type === 'bonus') color = '#ff6600';
-                    finalSymbols.push(`<div><span style="color:${color}">[ ${r.symbol} ]</span></div>`);
-                }
-            }
-            reelsDiv.innerHTML = finalSymbols.join('');
+            gameState.wandering.slotMachineLastResults = results;
+            reelsDiv.innerHTML = renderSlotMachineGrid(results);
             // Calculate win
             setTimeout(() => processSlotWin(results), 500);
         }
@@ -6630,34 +6637,29 @@ function processSlotWin(results) {
     }
 
     const waysWins = calculate243Ways(results);
+    const bestWay = waysWins.reduce((best, way) => (way.win > (best?.win || 0) ? way : best), null);
 
-    // Separate jackpots and regular wins
-    waysWins.forEach(way => {
-        if (way.win >= 400 && way.count === 5) {
-            if (!jackpotType) {
-                jackpotType = 'grand';
-                totalWin += bet * 400;
-                gameState.soulGems += 1;
-                addWanderingLog(`GRAND JACKPOT! ${bet * 400} gold + 1 Soul Gem!`, 'reward');
-                triggerRainbowAnimation();
-            }
-        } else if (way.win >= 40 && way.count === 5) {
-            if (!jackpotType) {
-                jackpotType = 'major';
-                totalWin += bet * 40;
-                addWanderingLog(`MAJOR JACKPOT! ${bet * 40} gold!`, 'reward');
-            }
-        } else if (way.win >= 10 && way.count === 5) {
-            if (!jackpotType) {
-                jackpotType = 'minor';
-                totalWin += bet * 10;
-                addWanderingLog(`MINOR JACKPOT! ${bet * 10} gold!`, 'reward');
-            }
-        } else if (way.win > 0) {
-            totalWin += way.win * bet;
-            addWanderingLog(`Way Win: ${way.count} ${way.symbol} - ${way.win}x bet`, 'reward');
+    // Rebalanced payout model: only the single best 243-way result pays.
+    if (bestWay && bestWay.win > 0) {
+        if (bestWay.count === 5 && bestWay.symbol === 'A') {
+            jackpotType = 'grand';
+            totalWin += bet * bestWay.win;
+            gameState.soulGems += 1;
+            addWanderingLog(`GRAND JACKPOT! ${bet * bestWay.win} gold + 1 Soul Gem!`, 'reward');
+            triggerRainbowAnimation();
+        } else if (bestWay.count === 5 && bestWay.symbol === 'K') {
+            jackpotType = 'major';
+            totalWin += bet * bestWay.win;
+            addWanderingLog(`MAJOR JACKPOT! ${bet * bestWay.win} gold!`, 'reward');
+        } else if (bestWay.count === 5 && bestWay.symbol === 'Q') {
+            jackpotType = 'minor';
+            totalWin += bet * bestWay.win;
+            addWanderingLog(`MINOR JACKPOT! ${bet * bestWay.win} gold!`, 'reward');
+        } else {
+            totalWin += bestWay.win * bet;
+            addWanderingLog(`Best Way Win: ${bestWay.count} ${bestWay.symbol} - ${bestWay.win}x bet`, 'reward');
         }
-    });
+    }
 
     if (totalWin > 0) {
         gameState.player.gold += totalWin;
@@ -6680,11 +6682,11 @@ function calculate243Ways(results) {
     // 243 ways: all possible combinations of one symbol per column
     const ways = [];
     const multipliers = {
-        'A': 4,
-        'K': 2.5,
-        'Q': 1.5,
-        'J': 1,
-        '10': 0.5
+        'A': 0.14256,
+        'K': 0.09504,
+        'Q': 0.057024,
+        'J': 0.038016,
+        '10': 0.019008
     };
 
     // Generate all 3^5 = 243 combinations
@@ -6715,14 +6717,14 @@ function evaluateWay(way, multipliers) {
     for (let symbol of symbols) {
         let count = 0;
         let mult = 1;
-        let hasScatter = false;
 
         for (let i = 0; i < 5; i++) {
             const cell = way[i];
-            if (cell.symbol === symbol || cell.type === 'wild' || cell.type === 'scatter') {
+            // Scatters are counted separately for free spins and should not also
+            // behave like wild substitutions inside 243-ways line evaluation.
+            if (cell.symbol === symbol || cell.type === 'wild') {
                 count++;
                 if (cell.type === 'wild') mult *= cell.multiplier;
-                if (cell.type === 'scatter') hasScatter = true;
             } else {
                 break;
             }
@@ -6731,11 +6733,12 @@ function evaluateWay(way, multipliers) {
         if (count >= 3) {
             let baseMult = multipliers[symbol];
             if (count === 5) {
-                // Jackpot payouts
-                if (symbol === 'A') baseMult = 400;
-                else if (symbol === 'K') baseMult = 40;
-                else if (symbol === 'Q') baseMult = 10;
-                else baseMult = 5; // For J or 10, smaller jackpot
+                // Rebalanced jackpot payouts tuned toward ~95% RTP.
+                if (symbol === 'A') baseMult = 5.7024;
+                else if (symbol === 'K') baseMult = 2.8512;
+                else if (symbol === 'Q') baseMult = 1.4256;
+                else if (symbol === 'J') baseMult = 0.76032;
+                else baseMult = 0.4752;
             }
             const totalMult = baseMult * mult;
             if (totalMult > bestWin.win) {
@@ -6863,6 +6866,7 @@ function leaveSlotMachine() {
     const w = gameState.wandering;
     w.slotMachineActive = false;
     w.slotMachineRarity = null;
+    w.slotMachineLastResults = null;
     w.slotMachineBet = 0;
     w.slotMachineFreeSpins = 0;
     w.slotMachineJackpots = { minor: false, major: false, grand: false };
@@ -6911,53 +6915,86 @@ function pickSlotMachineRarity() {
     return 'silver';
 }
 
-// Simulation function to calculate RTP
-function simulateSlotRTP(numSpins = 10000) {
-    let totalBet = 0;
-    let totalWin = 0;
+// Simulation helper: run many short sessions instead of one huge continuous block.
+function simulateSlotRTP(batchCount = 100, playsPerBatch = 100, bet = 100) {
+    const batchRtps = [];
 
-    for (let i = 0; i < numSpins; i++) {
-        const bet = 100; // Assume 100 gold bet for simplicity
-        totalBet += bet;
+    function sampleBonusGoldPrize() {
+        const prizes = [
+            { multiplier: 2, chance: 20 },
+            { multiplier: 5, chance: 15 },
+            { multiplier: 10, chance: 10 },
+            { multiplier: 25, chance: 5 },
+            { freeSpins: 5, chance: 15 },
+            { freeSpins: 10, chance: 10 },
+            { soulGem: 1, chance: 5 },
+            { jackpotReset: true, chance: 5 },
+            { multiplier: 0, chance: 15 }
+        ];
+        let roll = Math.random() * prizes.reduce((sum, prize) => sum + prize.chance, 0);
+        for (const prize of prizes) {
+            roll -= prize.chance;
+            if (roll <= 0) {
+                if (prize.multiplier !== undefined) return bet * prize.multiplier;
+                if (prize.jackpotReset) return bet * 50;
+                return 0;
+            }
+        }
+        return 0;
+    }
 
-        const results = generateSlotResults();
-        const waysWins = calculate243Ways(results);
+    for (let batch = 0; batch < batchCount; batch++) {
+        let totalBet = 0;
+        let totalWin = 0;
 
-        let spinWin = 0;
-        let scatters = 0;
-        let bonuses = 0;
+        for (let play = 0; play < playsPerBatch; play++) {
+            totalBet += bet;
 
-        // Count scatters and bonuses
-        for (let row = 0; row < 3; row++) {
-            for (let col = 0; col < 5; col++) {
-                if (results[row][col].type === 'scatter') scatters++;
-                if (results[row][col].type === 'bonus') bonuses++;
+            let pendingSpins = 1;
+            let freeSpins = 0;
+
+            while (pendingSpins > 0) {
+                pendingSpins--;
+                const results = generateSlotResults();
+                const waysWins = calculate243Ways(results);
+                const bestWay = waysWins.reduce((best, way) => (way.win > (best?.win || 0) ? way : best), null);
+
+                let spinWin = 0;
+                let scatters = 0;
+                let bonuses = 0;
+
+                for (let row = 0; row < 3; row++) {
+                    for (let col = 0; col < 5; col++) {
+                        if (results[row][col].type === 'scatter') scatters++;
+                        if (results[row][col].type === 'bonus') bonuses++;
+                    }
+                }
+
+                if (scatters >= 3) freeSpins = 5;
+                if (bonuses >= 3) spinWin += sampleBonusGoldPrize();
+                if (bestWay && bestWay.win > 0) spinWin += bestWay.win * bet;
+
+                totalWin += spinWin;
+
+                if (freeSpins > 0) {
+                    freeSpins--;
+                    pendingSpins++;
+                }
             }
         }
 
-        // Calculate wins
-        waysWins.forEach(way => {
-            if (way.win >= 400 && way.count === 5) spinWin += bet * 400;
-            else if (way.win >= 40 && way.count === 5) spinWin += bet * 40;
-            else if (way.win >= 10 && way.count === 5) spinWin += bet * 10;
-            else spinWin += way.win * bet;
-        });
-
-        // Bonus prizes (simplified average)
-        if (bonuses >= 3) {
-            // Average bonus value: estimate based on prizes
-            const avgBonus = (2*20 + 5*15 + 10*10 + 25*5 + 0*15 + 5*15 + 10*10 + 1*5 + 50*5) / 100; // Weighted average
-            spinWin += bet * avgBonus;
-        }
-
-        // Free spins not included in this simple RTP calc, as they continue play
-
-        totalWin += spinWin;
+        batchRtps.push((totalWin / totalBet) * 100);
     }
 
-    const rtp = (totalWin / totalBet) * 100;
-    console.log(`Simulated RTP: ${rtp.toFixed(2)}%`);
-    return rtp;
+    const avgRtp = batchRtps.reduce((sum, rtp) => sum + rtp, 0) / batchRtps.length;
+    console.log(`Simulated RTP across ${batchCount} batches of ${playsPerBatch} plays: ${avgRtp.toFixed(2)}%`);
+    console.log('Batch RTPs:', batchRtps.map(rtp => rtp.toFixed(2)).join(', '));
+    return {
+        averageRtp: avgRtp,
+        minRtp: Math.min(...batchRtps),
+        maxRtp: Math.max(...batchRtps),
+        batchRtps
+    };
 }
 
 function generateMerchantItems() {
