@@ -357,7 +357,14 @@ const gameState = {
     jobPoints: 5, maxJobPoints: 5, lastJobPointRegen: Date.now(),
     scrollSlots: 5, unlockedScrollSlots: 1, equippedScrolls: [null, null, null, null, null], scrolls: [],
     lastRegen: Date.now(),
-    dungeonStage: 0, dungeonActive: false, dungeonHP: 0, dungeonMaxHP: 0, highestDungeonStage: 0,
+    dungeonStage: 0, dungeonActive: false, dungeonHP: 0, dungeonMaxHP: 0, highestDungeonStage: 0, highestDungeonRebalanceStage: 1,
+    saveMigrationFlags: {
+        dungeonRebalanceInitialized: true,
+        legacyDungeonStageBonusRemoved: true,
+        legacyLevel35RollbackApplied: true,
+        level35RollbackHotfixApplied: true,
+        saveLegibleVersion: 6
+    },
     bossActive: false, currentBoss: null,
     worldBossActive: false, currentWorldBoss: null, worldBossDamage: {}, worldBossTotalDamage: 0, worldBossSpawnTime: 0, worldBossNextSpawn: 0,
     auctionItems: [], chatMessages: [], fakePlayers: [],
@@ -498,6 +505,18 @@ const COMBAT_STATUS_RULES = {
 };
 const PLAYER_DEBUFF_TEMPLATES = COMBAT_STATUS_TEMPLATES;
 const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(COMBAT_STATUS_TEMPLATES).filter(effectId => COMBAT_STATUS_TEMPLATES[effectId].type === 'debuff');
+const DUNGEON_REBALANCE_ENEMY_NAME = 'Dungeon Guard';
+const DUNGEON_REBALANCE_BASE_ENEMY = {
+    hp: 250,
+    atk: 20,
+    def: 20,
+    crit: 20,
+    block: 20,
+    dodge: 0.25,
+    randomDebuffChance: 1,
+    randomDebuffCountRange: [1, 4],
+    debuffPool: DEFAULT_RANDOM_DEBUFF_POOL
+};
 const ENCHANT_RARITY_ROLL_RANGES = {
     legendary: { min: 1, max: 3 },
     unique: { min: 2, max: 4 },
@@ -1122,6 +1141,97 @@ function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + m
 function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function randFloat(min, max) { return Math.random() * (max - min) + min; }
+function computePlayerLevelBaseStats(level = 1) {
+    const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+    return {
+        maxHp: Math.floor(100 * Math.pow(1.10, safeLevel - 1)),
+        maxMp: Math.floor(50 * Math.pow(1.10, safeLevel - 1)),
+        atk: 10 + ((safeLevel - 1) * 3),
+        def: 5 + ((safeLevel - 1) * 3)
+    };
+}
+
+function getXpRequirementForLevel(level = 1) {
+    const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+    if (safeLevel >= MAX_PLAYER_LEVEL) return null;
+    return Math.min(90000000, Math.floor(100 * Math.pow(1.5, safeLevel - 1)));
+}
+
+function applyLegacySaveMigrations(state) {
+    if (!state || !state.player) return;
+
+    const player = state.player;
+    const flags = state.saveMigrationFlags && typeof state.saveMigrationFlags === 'object'
+        ? state.saveMigrationFlags
+        : {};
+    const saveVersion = Math.floor(Number(state.__saveVersion) || 1);
+    const legacyDungeonStage = Math.max(0, Number(state.highestDungeonStage) || 0);
+
+    if (!flags.legacyDungeonStageBonusRemoved && legacyDungeonStage > 0 && saveVersion < 4) {
+        const legacyBonus = legacyDungeonStage * 0.2;
+        player.baseAtk = Math.max(10, Number((player.baseAtk ?? computePlayerLevelBaseStats(player.level).atk) - legacyBonus) || 10);
+        player.baseDef = Math.max(5, Number((player.baseDef ?? computePlayerLevelBaseStats(player.level).def) - legacyBonus) || 5);
+        flags.legacyDungeonStageBonusRemoved = true;
+    }
+
+    if (!flags.legacyLevel35RollbackApplied && saveVersion < 4 && (player.level || 1) > 35) {
+        player.level = 35;
+        player.xp = 0;
+        player.xpToNext = getXpRequirementForLevel(35);
+        const rolledBackStats = computePlayerLevelBaseStats(35);
+        player.baseMaxHp = rolledBackStats.maxHp;
+        player.baseMaxMp = rolledBackStats.maxMp;
+        player.baseAtk = rolledBackStats.atk;
+        player.baseDef = rolledBackStats.def;
+        player.maxHp = rolledBackStats.maxHp;
+        player.maxMp = rolledBackStats.maxMp;
+        player.atk = rolledBackStats.atk;
+        player.def = rolledBackStats.def;
+        player.hp = rolledBackStats.maxHp;
+        player.mp = rolledBackStats.maxMp;
+        flags.legacyLevel35RollbackApplied = true;
+    }
+
+    if (!flags.level35RollbackHotfixApplied && saveVersion < 6) {
+        if ((player.level || 1) > 35) {
+            player.level = 35;
+            player.xp = 0;
+            player.xpToNext = getXpRequirementForLevel(35);
+            const rolledBackStats = computePlayerLevelBaseStats(35);
+            player.baseMaxHp = rolledBackStats.maxHp;
+            player.baseMaxMp = rolledBackStats.maxMp;
+            player.baseAtk = rolledBackStats.atk;
+            player.baseDef = rolledBackStats.def;
+            player.maxHp = rolledBackStats.maxHp;
+            player.maxMp = rolledBackStats.maxMp;
+            player.atk = rolledBackStats.atk;
+            player.def = rolledBackStats.def;
+            player.hp = rolledBackStats.maxHp;
+            player.mp = rolledBackStats.maxMp;
+            delete player.maxAtk;
+            delete player.maxDef;
+            flags.legacyLevel35RollbackApplied = true;
+        }
+
+        flags.level35RollbackHotfixApplied = true;
+    }
+
+    if (!flags.dungeonRebalanceInitialized) {
+        state.highestDungeonRebalanceStage = 1;
+        flags.dungeonRebalanceInitialized = true;
+    }
+
+    flags.saveLegibleVersion = 6;
+
+    state.saveMigrationFlags = {
+        dungeonRebalanceInitialized: !!flags.dungeonRebalanceInitialized,
+        legacyDungeonStageBonusRemoved: !!flags.legacyDungeonStageBonusRemoved,
+        legacyLevel35RollbackApplied: !!flags.legacyLevel35RollbackApplied,
+        level35RollbackHotfixApplied: !!flags.level35RollbackHotfixApplied,
+        saveLegibleVersion: Math.max(1, Math.floor(Number(flags.saveLegibleVersion) || 6))
+    };
+}
+
 function sanitizeProfileText(value, fallback = '', maxLength = 24) {
     const cleaned = String(value ?? '')
         .replace(/[\r\n\t]+/g, ' ')
@@ -4785,21 +4895,11 @@ function checkLevelUp() {
     while (p.level < MAX_PLAYER_LEVEL && p.xp >= p.xpToNext) {
         p.xp -= p.xpToNext;
         p.level++;
-        
-        // ✅ HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
-        // Base stats are ALWAYS recalculated from level 1 formula
-        const BASE_HP = 100;
-        const BASE_MP = 50;
-        const BASE_ATK = 10;
-        const BASE_DEF = 5;
-        
-        // Exact 10% per level compound growth FOR ALL LEVELS - NO CAP
-        p.maxHp = Math.floor(BASE_HP * Math.pow(1.10, p.level - 1));
-        p.maxMp = Math.floor(BASE_MP * Math.pow(1.10, p.level - 1));
-        
-        // Exact flat +3 per level FOR ALL LEVELS - NO CAP
-        p.atk = BASE_ATK + ((p.level - 1) * 3);
-        p.def = BASE_DEF + ((p.level - 1) * 3);
+        const computedStats = computePlayerLevelBaseStats(p.level);
+        p.maxHp = computedStats.maxHp;
+        p.maxMp = computedStats.maxMp;
+        p.atk = computedStats.atk;
+        p.def = computedStats.def;
         
         // Update base stat references for equipment calculation
         p.baseMaxHp = p.maxHp;
@@ -4815,8 +4915,7 @@ function checkLevelUp() {
             p.level = MAX_PLAYER_LEVEL;
             p.xpToNext = null;
         } else {
-            // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
-            p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
+            p.xpToNext = getXpRequirementForLevel(p.level);
         }
         
         addBattleMsg(`LEVEL UP! You are now level ${p.level}!`, 'reward');
@@ -8907,88 +9006,62 @@ function buyPotion(idx) {
     renderPotionShop();
 }
 
-// DUNGEON INFINITE CRAWLER
 function startDungeon() {
     if (dungeonState.active) return;
-    if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
 
     dungeonState.active = true;
-    // Start from highest stage reached, but track highest stage across runs
-    dungeonState.stage = gameState.highestDungeonStage > 0 ? gameState.highestDungeonStage : 1;
+    dungeonState.stage = Math.max(1, Number(gameState.highestDungeonRebalanceStage) || 1);
     dungeonState.hp = gameState.player.hp;
     dungeonState.maxHp = gameState.player.maxHp;
     dungeonState.rewards = [];
     dungeonState.log = [];
     dungeonState.inBattle = false;
 
-    // Show highest stage reached if previously recorded
-    if (gameState.highestDungeonStage > 0) {
-        addDungeonLog(`Your highest stage reached: ${gameState.highestDungeonStage}. Continuing from this stage...`, 'info');
+    if ((gameState.highestDungeonRebalanceStage || 1) > 1) {
+        addDungeonLog(`Your highest dungeon stage is ${gameState.highestDungeonRebalanceStage}. Continuing from this stage...`, 'info');
     } else {
         addDungeonLog('You enter the Dungeon of Shadows. How deep can you go?');
     }
+
     generateDungeonEncounter();
     showScreen('battle');
 }
 
 function generateDungeonEncounter() {
     const p = gameState.player;
-    const stage = dungeonState.stage;
+    const stage = Math.max(1, Number(dungeonState.stage) || 1);
     const isMiniboss = stage % 5 === 0 && stage > 0;
-    
-    // Progressive difficulty scaling: starts very easy, gets harder
-    // Stage 1: 0.3x (really easy), scales up quadratically
-    let stageMultiplier;
-    if (stage === 1) {
-        stageMultiplier = 0.3; // First stage is really easy
-    } else {
-        // Linear 10% stat boost per stage
-        stageMultiplier = 1 + (stage - 1) * 0.1;
-    }
-    
-    // Miniboss bonus: additional 50% stats for minibosses
-    const minibossMultiplier = isMiniboss ? 1.5 : 1;
+    const stageMultiplier = Math.pow(1.07, Math.max(0, stage - 1));
+    const minibossMultiplier = isMiniboss ? 3 : 1;
     const totalMultiplier = stageMultiplier * minibossMultiplier;
-    
-    // Select enemy based on stage tier
-    let tier;
-    if (stage >= 501) {
-        // Original dynamic scaling ONLY for stages 501 and above
-        tier = Math.min(Math.floor((stage - 1) / 5), 10);
-    } else {
-        // Fixed tier progression for first 500 stages: 50 stages per tier
-        // OLD DYNAMIC SYSTEM IS FULLY DISABLED HERE
-        tier = Math.min(Math.ceil(stage / 50), 10);
-    }
-    const tierKey = Object.keys(ENEMY_TIERS)[tier];
-    const baseTier = ENEMY_TIERS[tierKey];
-    
-    // DUNGEON ONLY: COMPLETELY RANDOM ENEMIES FROM FULL LIST - NO RESTRICTIONS
-    const key = pick(Object.keys(enemies));
-    const template = enemies[key];
-    
-    // Generate enemy with scaled stats
+    const enemyName = DUNGEON_REBALANCE_ENEMY_NAME;
     const enemy = {
-        name: isMiniboss ? `⚔️ ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
-        hp: Math.floor(template.hp * totalMultiplier),
-        maxHp: Math.floor(template.hp * totalMultiplier),
-        atk: Math.floor(template.atk * totalMultiplier),
-        def: Math.floor(template.def * totalMultiplier),
-        xp: Math.floor(template.xp * totalMultiplier * (isMiniboss ? 3 : 2)),
-        gold: Math.floor(template.gold * totalMultiplier * (isMiniboss ? 3 : 2)),
-        drops: template.drops,
-        rarity: template.rarity,
-        isMiniboss: isMiniboss // Track if this is a miniboss for drop multiplier
+        name: isMiniboss ? `⚔️ ${enemyName} [MINIBOSS Stage ${stage}]` : `${enemyName} [Stage ${stage}]`,
+        hp: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.hp * totalMultiplier)),
+        maxHp: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.hp * totalMultiplier)),
+        atk: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.atk * totalMultiplier)),
+        def: Math.max(0, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.def * totalMultiplier)),
+        crit: DUNGEON_REBALANCE_BASE_ENEMY.crit,
+        block: DUNGEON_REBALANCE_BASE_ENEMY.block,
+        dodge: DUNGEON_REBALANCE_BASE_ENEMY.dodge,
+        xp: (200 + (100 * stage)) * minibossMultiplier,
+        gold: Math.max(1, Math.floor(20 * stageMultiplier * minibossMultiplier)),
+        rarity: 'dungeon',
+        randomDebuffChance: DUNGEON_REBALANCE_BASE_ENEMY.randomDebuffChance,
+        randomDebuffCountRange: [...DUNGEON_REBALANCE_BASE_ENEMY.randomDebuffCountRange],
+        debuffPool: [...DUNGEON_REBALANCE_BASE_ENEMY.debuffPool],
+        isMiniboss: isMiniboss
     };
-    
+
     dungeonState.currentEnemy = enemy;
     dungeonState.inBattle = true;
-    
+
     if (isMiniboss) {
-        addDungeonLog(`⚔️ A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
+        addDungeonLog(`⚔️ A powerful ${enemyName} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
         addChatMessage('SYSTEM', `${p.name} encountered a Miniboss at Dungeon Stage ${stage}!`, true);
     } else {
-        addDungeonLog(`A ${template.name} appears! (Stage ${stage})`);
+        addDungeonLog(`A ${enemyName} appears! (Stage ${stage})`, 'damage');
+        addChatMessage('SYSTEM', `${p.name} encountered ${enemyName} at Dungeon Stage ${stage}.`, true);
     }
     renderDungeon();
 }
@@ -9073,58 +9146,33 @@ function dungeonAction(action) {
 function dungeonEnemyDefeated() {
     const p = gameState.player;
     const e = dungeonState.currentEnemy;
-    const isMiniboss = e.isMiniboss;
-
-    // Scale XP and Gold to enemy level/tier, not player level
-    // Minibosses give triple XP and Gold
-    const dropMultiplier = isMiniboss ? 3 : 1;
-    const scaledXp = e.xp * dropMultiplier;
-    const scaledGold = e.gold * dropMultiplier;
+    const clearedStage = Math.max(1, Number(dungeonState.stage) || 1);
+    const scaledXp = e.xp;
+    const scaledGold = e.gold;
 
     p.xp += scaledXp;
     p.gold += scaledGold;
     dungeonState.rewards.push(`${scaledXp} XP, ${scaledGold} Gold`);
 
-    if (isMiniboss) {
-        addDungeonLog(`You defeated the MINIBOSS ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold! (3x rewards!)`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} defeated a MINIBOSS at Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
-    } else {
-        addDungeonLog(`You defeated ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} defeated ${e.name} in Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
-    }
+    addDungeonLog(`You defeated ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold!`, 'reward');
+    addChatMessage('SYSTEM', `${p.name} defeated ${e.name} in Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
 
-    // Drop system with new rarity rates
-    // 35% base chance to drop something (tripled for miniboss = 3 rolls)
     const dropChance = Math.min(1, (0.35 + getTotalLuck() * 0.01) * (1 + getScrollDropBoost()));
-    const numDropRolls = isMiniboss ? 3 : 1;
+    const numDropRolls = 1;
 
     for (let roll = 0; roll < numDropRolls; roll++) {
         if (Math.random() < dropChance) {
-            // 60% chance for material/consumable drop (from enemy's loot table)
-            // 40% chance for equipment drop (using new rarity system)
-            if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
-                // Material/consumable drop from enemy's loot table
-                const dropItem = getMaterialDrop(e.drops);
-                if (dropItem) {
-                    addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
-                    addDungeonLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                    addItemLog('dungeon', dropItem.name);
-                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${formatChatItemMention(dropItem)}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
-                }
-            } else {
-                // Equipment drop using new rarity system
-                const targetRarity = getItemDropByRarity();
-                const droppedItem = getLeveledItemDrop(targetRarity, e.tier);
+            const targetRarity = getItemDropByRarity();
+            const droppedItem = getLeveledItemDrop(targetRarity, Math.max(1, Math.floor(dungeonState.stage / 5)));
 
-                if (droppedItem) {
-                    addToInventory({ ...droppedItem, qty: 1 });
-                    const rarityColor = getRarityColor(droppedItem.rarity);
-                    const isUber = isUberUnique(droppedItem);
-                    const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
-                    addDungeonLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                    addItemLog('dungeon', droppedItem.name);
-                    addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${formatChatItemMention(droppedItem)}!`, true);
-                }
+            if (droppedItem) {
+                addToInventory({ ...droppedItem, qty: 1 });
+                const rarityColor = getRarityColor(droppedItem.rarity);
+                const isUber = isUberUnique(droppedItem);
+                const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
+                addDungeonLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})!`, 'reward');
+                addItemLog('dungeon', droppedItem.name);
+                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${droppedItem.name}!`, true);
             }
         }
     }
@@ -9135,7 +9183,7 @@ function dungeonEnemyDefeated() {
             const scrollName = getRandomScrollDropName();
             if (scrollName && scrollPool[scrollName]) {
                 addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
-                addDungeonLog(`Dropped scroll: ${scrollName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
+                addDungeonLog(`Dropped scroll: ${scrollName}!`, 'reward');
                 addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${formatChatItemMention(scrollName)}!`, true);
             }
         }
@@ -9145,26 +9193,13 @@ function dungeonEnemyDefeated() {
     checkLevelUp();
 
     resetCombatScrollSession();
-
-    // Every 5 stages: permanent +1 ATK and +1 DEF reward (check BEFORE incrementing)
-    if (dungeonState.stage > 0 && dungeonState.stage % 5 === 0) {
-        p.atk += 1;
-        p.def += 1;
-        addDungeonLog(`🏆 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} reached Stage ${dungeonState.stage} in the Dungeon and gained permanent +1 ATK and +1 DEF!`, true);
+    if (clearedStage > gameState.highestDungeonRebalanceStage) {
+        gameState.highestDungeonRebalanceStage = clearedStage;
+        addDungeonLog(`🏆 New dungeon record: Stage ${clearedStage}!`, 'reward');
     }
+    gameState.highestDungeonStage = 0;
 
-    // Advance to next stage
-    dungeonState.stage++;
-    
-    // Track highest dungeon stage reached
-    if (dungeonState.stage > gameState.highestDungeonStage) {
-        gameState.highestDungeonStage = dungeonState.stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
-        // Auto-save when new highest stage is achieved so it persists across refresh
-        saveGame();
-    }
-    
+    dungeonState.stage = clearedStage + 1;
     addDungeonLog(`--- Stage ${dungeonState.stage} ---`, 'info');
 
     // Heal slightly between stages
@@ -9181,9 +9216,8 @@ function endDungeon() {
     const stage = dungeonState.stage;
     
     // Track highest dungeon stage reached
-    if (stage > gameState.highestDungeonStage) {
-        gameState.highestDungeonStage = stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${stage}!`, 'reward');
+    if (dungeonState.stage > gameState.highestDungeonRebalanceStage) {
+        gameState.highestDungeonRebalanceStage = dungeonState.stage;
     }
     
     addDungeonLog(`Dungeon complete! You reached Stage ${stage}.`, 'info');
@@ -9231,7 +9265,7 @@ function renderDungeon() {
     let html = `<div class="dungeon-info">
         <div class="dungeon-stage">Dungeon - Stage ${dungeonState.stage}</div>
         <div class="dungeon-rewards">Rewards so far: ${dungeonState.rewards.length} victories</div>
-        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
+        <div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Rebalance Highest Stage: ${Math.max(1, gameState.highestDungeonRebalanceStage || 1)}</div>
     </div>`;
     
     html += `<div class="section-title">Battle - ${e.name}</div>`;
@@ -9421,7 +9455,7 @@ function decryptData(encryptedBase64) {
 }
 
 // COMPACT SAVE UTILITIES
-const SAVE_SCHEMA_VERSION = 3;
+const SAVE_SCHEMA_VERSION = 6;
 const SAVE_STORAGE_KEY = 'realmOfShadows';
 const SAVE_DB_NAME = 'realmOfShadowsStorage';
 const SAVE_DB_VERSION = 1;
@@ -10110,9 +10144,63 @@ function addSanitizedInventoryItem(targetInventory, item, stackIndexByKey = null
 
     targetInventory.push(item);
 }
-
 function sanitizeLoadedStateData(state) {
     const allowedLuckTypes = ['weapon', 'charm'];
+    const player = state.player;
+    const flags = state.saveMigrationFlags && typeof state.saveMigrationFlags === 'object'
+        ? state.saveMigrationFlags
+        : {};
+    const saveVersion = Math.floor(Number(state.__saveVersion) || 1);
+    const legacyDungeonStage = Math.max(0, Number(state.highestDungeonStage) || 0);
+
+    if (!flags.legacyDungeonStageBonusRemoved && legacyDungeonStage > 0 && saveVersion < 4) {
+        const legacyBonus = legacyDungeonStage * 0.2;
+        player.baseAtk = Math.max(10, Number((player.baseAtk ?? computePlayerLevelBaseStats(player.level).atk) - legacyBonus) || 10);
+        player.baseDef = Math.max(5, Number((player.baseDef ?? computePlayerLevelBaseStats(player.level).def) - legacyBonus) || 5);
+        delete player.maxAtk;
+        delete player.maxDef;
+        flags.legacyDungeonStageBonusRemoved = true;
+    }
+
+    if (!flags.dungeonRebalanceInitialized) {
+        state.highestDungeonRebalanceStage = 1;
+        flags.dungeonRebalanceInitialized = true;
+    }
+
+    // Normalize legacy pre-v6 high-level saves back to level 35 when loading.
+    // This intentionally ignores migration flags, because some imported legacy
+    // saves already carry copied flags that incorrectly mark the rollback as done.
+    // Current/future schema-v6 saves must NOT be rolled back.
+    if (saveVersion < 6 && (player.level || 1) > 35) {
+        const rolledBackStats = computePlayerLevelBaseStats(35);
+        player.level = 35;
+        player.xp = 0;
+        player.xpToNext = getXpRequirementForLevel(35);
+        player.baseMaxHp = rolledBackStats.maxHp;
+        player.baseMaxMp = rolledBackStats.maxMp;
+        player.baseAtk = rolledBackStats.atk;
+        player.baseDef = rolledBackStats.def;
+        player.maxHp = rolledBackStats.maxHp;
+        player.maxMp = rolledBackStats.maxMp;
+        player.atk = rolledBackStats.atk;
+        player.def = rolledBackStats.def;
+        player.hp = rolledBackStats.maxHp;
+        player.mp = rolledBackStats.maxMp;
+        delete player.maxAtk;
+        delete player.maxDef;
+        flags.legacyLevel35RollbackApplied = true;
+        flags.level35RollbackHotfixApplied = true;
+    }
+
+    state.highestDungeonRebalanceStage = Math.max(1, Number(state.highestDungeonRebalanceStage) || 1);
+    state.highestDungeonStage = 0;
+    state.saveMigrationFlags = {
+        dungeonRebalanceInitialized: !!flags.dungeonRebalanceInitialized,
+        legacyDungeonStageBonusRemoved: !!flags.legacyDungeonStageBonusRemoved,
+        legacyLevel35RollbackApplied: !!flags.legacyLevel35RollbackApplied,
+        level35RollbackHotfixApplied: !!flags.level35RollbackHotfixApplied,
+        saveLegibleVersion: 6
+    };
     if (!state.player || typeof state.player !== 'object') state.player = cloneData(INITIAL_GAME_STATE_SNAPSHOT.player);
     state.enchanting = {
         selectedSlot: SAVE_EQUIPMENT_SLOT_KEYS.includes(state.enchanting?.selectedSlot) ? state.enchanting.selectedSlot : null,
@@ -10508,6 +10596,8 @@ async function restorePersistedGameState() {
 
 function buildCompactSaveData() {
     ensureCollectionItemInstanceIds(gameState);
+    gameState.highestDungeonStage = 0;
+    gameState.highestDungeonRebalanceStage = Math.max(1, Number(gameState.highestDungeonRebalanceStage) || 1);
     const save = {
         v: SAVE_SCHEMA_VERSION,
         t: Date.now(),
@@ -10556,7 +10646,7 @@ function buildCompactSaveData() {
     const equippedScrolls = (gameState.equippedScrolls || []).map(scroll => scroll ? encodeItemForSave(scroll) : 0);
     if (equippedScrolls.some(Boolean)) save.es = equippedScrolls;
     if (gameState.lastRegen !== INITIAL_GAME_STATE_SNAPSHOT.lastRegen) save.lr = gameState.lastRegen || Date.now();
-    if (gameState.highestDungeonStage) save.hd = gameState.highestDungeonStage;
+    save.hrd = gameState.highestDungeonRebalanceStage || 1;
     const worldBossState = encodeWorldBossStateForSave();
     if (worldBossState) save.wb = worldBossState;
     if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
@@ -10590,6 +10680,7 @@ function buildCompactSaveData() {
 
 function decodeCompactSaveData(data) {
     const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+    hydrated.__saveVersion = data.v;
     hydrated.player = {
         ...hydrated.player,
         ...decodeAliasedObject(data.p || {}, SAVE_PLAYER_KEY_FROM_ALIAS)
@@ -10631,6 +10722,7 @@ function decodeCompactSaveData(data) {
     }
     if (data.lr !== undefined) hydrated.lastRegen = data.lr;
     if (data.hd !== undefined) hydrated.highestDungeonStage = data.hd;
+    if (data.hrd !== undefined) hydrated.highestDungeonRebalanceStage = data.hrd;
     const restoredWorldBoss = decodeWorldBossStateFromSave(data.wb);
     if (restoredWorldBoss) {
         hydrated.worldBossActive = true;
@@ -10666,6 +10758,7 @@ function decodeCompactSaveData(data) {
 
 function decodeLegacySaveData(data) {
     const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+    hydrated.__saveVersion = Math.floor(Number(data?.v) || 1);
 
     Object.keys(hydrated).forEach(key => {
         if (data[key] !== undefined) {

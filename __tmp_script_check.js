@@ -1,4 +1,8 @@
+
+
 // GAME STATE
+const MAX_PLAYER_LEVEL = 60;
+
 const gameState = {
     player: { name: 'Hero', hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 10, def: 5, level: 1, xp: 0, xpToNext: 100, gold: 50, location: 'town', luck: 0, crit: 0, permanentAtkBonus: 0, permanentDefBonus: 0 },
     saveName: 'Hero Save',
@@ -23,7 +27,12 @@ const gameState = {
     jobPoints: 5, maxJobPoints: 5, lastJobPointRegen: Date.now(),
     scrollSlots: 5, unlockedScrollSlots: 1, equippedScrolls: [null, null, null, null, null], scrolls: [],
     lastRegen: Date.now(),
-    dungeonStage: 0, dungeonActive: false, dungeonHP: 0, dungeonMaxHP: 0, highestDungeonStage: 0,
+    dungeonStage: 0, dungeonActive: false, dungeonHP: 0, dungeonMaxHP: 0, highestDungeonStage: 0, highestDungeonRebalanceStage: 1,
+    saveMigrationFlags: {
+        dungeonRebalanceInitialized: true,
+        legacyDungeonStageBonusRemoved: true,
+        legacyLevel35RollbackApplied: true
+    },
     bossActive: false, currentBoss: null,
     worldBossActive: false, currentWorldBoss: null, worldBossDamage: {}, worldBossTotalDamage: 0, worldBossSpawnTime: 0, worldBossNextSpawn: 0,
     auctionItems: [], chatMessages: [], fakePlayers: [],
@@ -44,7 +53,13 @@ const gameState = {
         rewards: { xp: 0, gold: 0, items: [] },
         log: [],
         inBattle: false,
-        currentEnemy: null
+        currentEnemy: null,
+        slotMachineActive: false,
+        slotMachineRarity: null,
+        slotMachineBet: 0,
+        slotMachineFreeSpins: 0,
+        slotMachineJackpots: { minor: false, major: false, grand: false },
+        slotMachineBonusActive: false
     },
     // Force refresh cost tracking
     forceRefreshCost: 100,
@@ -62,18 +77,28 @@ const gameState = {
 
 // LOCATIONS
 const locations = {
-    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple', 'enchantment_altar'] },
+    town: { name: 'Town Hub', desc: 'A bustling town center. Various paths lead out from here.', connections: ['forest', 'dark_forest', 'mountains', 'swamp', 'dragon_lair', 'market', 'guild', 'temple', 'enchantment_altar', 'potion_shop'] },
     forest: { name: 'Enchanted Forest', desc: 'A mystical forest teeming with life.', connections: ['town', 'mountains'], levelRange: [1, 10], minLevel: 1, enemies: ['rat', 'slime', 'wolf', 'goblin', 'forest_sprite', 'giant_bat'] },
     dark_forest: { name: 'Dark Forest', desc: 'A shadowy forest filled with danger.', connections: ['town', 'swamp'], levelRange: [10, 25], minLevel: 10, enemies: ['dark_wolf', 'wraith', 'rock_golem', 'harpy', 'orc_warrior'] },
     mountains: { name: 'Dragon Mountains', desc: 'Treacherous peaks inhabited by dragons.', connections: ['town', 'forest', 'dragon_lair'], levelRange: [8, 30], minLevel: 8, enemies: ['skeleton_knight', 'forest_troll', 'pixie_swarm', 'wolf_alpha', 'young_dragon'] },
-    swamp: { name: 'Murky Swamp', desc: 'A foul swamp riddled with dark creatures.', connections: ['dark_forest'], levelRange: [15, 35], minLevel: 15, enemies: ['dark_knight', 'cave_troll', 'dark_guard', 'necromancer'] },
+    swamp: { name: 'Murky Swamp', desc: 'A foul swamp riddled with dark creatures.', connections: ['dark_forest', 'gates_of_shadow'], levelRange: [15, 35], minLevel: 15, enemies: ['dark_knight', 'cave_troll', 'dark_guard', 'necromancer'] },
+    gates_of_shadow: { name: 'Gates of Shadow', desc: 'Ancient obsidian gates rise from the swamp mist, guarded by duskbound horrors that punish the unprepared with layered afflictions.', connections: ['swamp'], levelRange: [30, 42], minLevel: 30, enemies: ['shade_stalker', 'gloomfang', 'veilwarden', 'umbra_sorcerer', 'gate_revenant'], wanderRewardMultiplier: 1.8 },
     dragon_lair: { name: "Dragon's Lair", desc: 'The fiery domain of ancient dragons.', connections: ['mountains', 'ceaseless_void'], levelRange: [25, 50], minLevel: 25, enemies: ['wyvern', 'stone_giant', 'phantom_warrior', 'elder_troll', 'dragon', 'elder_dragon'] },
     ceaseless_void: { name: 'Ceaseless Void', desc: 'A collapsing abyss where reality tears and cursed horrors strike with layered debuffs.', connections: ['dragon_lair'], levelRange: [55, 70], minLevel: 55, enemies: ['void_seraph', 'entropy_behemoth', 'null_watcher', 'ceaseless_maw', 'paradox_harbinger'], wanderRewardMultiplier: 3 },
     market: { name: 'Grand Market', desc: 'A marketplace for trading and shopping.', connections: ['town'], minLevel: 1 },
     guild: { name: "Adventurer's Guild", desc: 'Where quests and jobs are undertaken.', connections: ['town'], minLevel: 1 },
     temple: { name: 'Sacred Temple', desc: 'A place of healing and spiritual renewal.', connections: ['town'], minLevel: 1 },
-    enchantment_altar: { name: 'Enchantment Altar', desc: 'Runes drift above a silent altar where legendary gear can be reshaped with dangerous magic.', connections: ['town'], minLevel: 1 }
+    enchantment_altar: { name: 'Enchantment Altar', desc: 'Runes drift above a silent altar where legendary gear can be reshaped with dangerous magic.', connections: ['town'], minLevel: 1 },
+    potion_shop: { name: 'Potion Shop', desc: 'A shop specializing in healing potions for adventurers.', connections: ['town'], minLevel: 1 }
 };
+
+const potionShopItems = [
+    { name: 'Health Potion', price: 100, heal: 30, desc: 'Restores 30 HP when used.' },
+    { name: 'Greater Health Potion', price: 500, heal: 150, desc: 'Restores 150 HP when used.' },
+    { name: 'Superior Health Potion', price: 2500, heal: 750, desc: 'Restores 750 HP when used.' },
+    { name: 'Master Health Potion', price: 12500, heal: 3750, desc: 'Restores 3750 HP when used.' },
+    { name: 'Legendary Health Potion', price: 62500, heal: 18750, desc: 'Restores 18750 HP when used.' }
+];
 
 // BLESSING OIL
 const BLESSING_OIL = { name: 'Blessing Oil', type: 'consumable', effect: 'blessing', value: 50, desc: 'Chance to increase Weapon Luck.', rarity: 'epic', price: 500 };
@@ -126,7 +151,7 @@ const COMBAT_STATUS_TEMPLATES = {
     frostbite: { id: 'frostbite', name: 'Frostbite', type: 'debuff', icon: '❄️', color: '#74b9ff', duration: 3, dotFlat: 10, defenseMultiplier: 0.8 },
     paralysis: { id: 'paralysis', name: 'Paralyzed', type: 'debuff', icon: '⚡', color: '#f1c40f', duration: 1, missChance: 100, cannotUseItems: true },
     freeze: { id: 'freeze', name: 'Frozen', type: 'debuff', icon: '🧊', color: '#74b9ff', duration: 1, skipTurn: true, damageTakenMultiplier: 1.5 },
-    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, cannotAttack: true, defenseMultiplier: 0.5 },
+    stun: { id: 'stun', name: 'Stunned', type: 'debuff', icon: '💫', color: '#9b59b6', duration: 1, missChance: 100, enemyGuaranteedCrit: true, defenseMultiplier: 0.8 },
     root: { id: 'root', name: 'Rooted', type: 'debuff', icon: '🌿', color: '#27ae60', duration: 2, cannotEscape: true, dodgeMultiplier: 0.25 },
     silence: { id: 'silence', name: 'Silenced', type: 'debuff', icon: '🔇', color: '#95a5a6', duration: 2, cannotUseItems: true, cannotUseAbilities: true },
     slow: { id: 'slow', name: 'Slowed', type: 'debuff', icon: '🐌', color: '#74b9ff', duration: 3, missChance: 40, damageDealtMultiplier: 0.7 },
@@ -148,6 +173,18 @@ const COMBAT_STATUS_RULES = {
 };
 const PLAYER_DEBUFF_TEMPLATES = COMBAT_STATUS_TEMPLATES;
 const DEFAULT_RANDOM_DEBUFF_POOL = Object.keys(COMBAT_STATUS_TEMPLATES).filter(effectId => COMBAT_STATUS_TEMPLATES[effectId].type === 'debuff');
+const DUNGEON_REBALANCE_ENEMY_NAME = 'Ceaseless Void';
+const DUNGEON_REBALANCE_BASE_ENEMY = {
+    hp: 250,
+    atk: 20,
+    def: 20,
+    crit: 20,
+    block: 20,
+    dodge: 0.25,
+    randomDebuffChance: 1,
+    randomDebuffCountRange: [1, 4],
+    debuffPool: DEFAULT_RANDOM_DEBUFF_POOL
+};
 const ENCHANT_RARITY_ROLL_RANGES = {
     legendary: { min: 1, max: 3 },
     unique: { min: 2, max: 4 },
@@ -181,6 +218,19 @@ const WANDER_COMPLETION_CONGRATS = [
     'I would have folded halfway through that {rank} expedition, {player}.',
     '{player} finished the whole {rank} wander? That build is filthy.'
 ];
+
+const LEGACY_ITEM_NAME_ALIASES = {
+    'Void Reaper': 'Void Scythe'
+};
+
+const INVENTORY_FILTER_RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'unique', 'uber_unique'];
+let inventoryViewFilters = {
+    search: '',
+    rarity: 'all',
+    type: 'all',
+    minLevel: '',
+    maxLevel: ''
+};
 
 // Transient per-battle scroll usage state
 let combatScrollState = {
@@ -402,7 +452,12 @@ const questDefs = [
     { id: 'q4', name: 'Dark Wolves', desc: 'Defeat 5 dark wolves', target: 'dark_wolf', count: 5, reward: createFixedQuestReward('dark_wolf', 5, 1.15), location: 'guild' },
     { id: 'q5', name: 'Wraith Hunter', desc: 'Defeat 5 wraiths', target: 'wraith', count: 5, reward: createFixedQuestReward('wraith', 5, 1.35), location: 'guild' },
     { id: 'q6', name: 'Dragon Slayer', desc: 'Defeat 3 young dragons', target: 'young_dragon', count: 3, reward: createFixedQuestReward('young_dragon', 3, 1.5), location: 'guild' },
-    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: createFixedQuestReward('skeleton_knight', 5, 1.45), location: 'guild' }
+    { id: 'q7', name: 'Ancient Evil', desc: 'Defeat 5 liches', target: 'skeleton_knight', count: 5, reward: createFixedQuestReward('skeleton_knight', 5, 1.45), location: 'guild' },
+    { id: 'q8', name: 'Through the Black Gate', desc: 'Defeat 4 Shade Stalkers in the Gates of Shadow', target: 'shade_stalker', count: 4, reward: createFixedQuestReward('shade_stalker', 4, 1.55), location: 'guild' },
+    { id: 'q9', name: 'Fangs in the Fog', desc: 'Defeat 4 Gloomfangs stalking the shadow marsh', target: 'gloomfang', count: 4, reward: createFixedQuestReward('gloomfang', 4, 1.58), location: 'guild' },
+    { id: 'q10', name: 'Break the Veilward', desc: 'Defeat 3 Veilwardens at the obsidian threshold', target: 'veilwarden', count: 3, reward: createFixedQuestReward('veilwarden', 3, 1.65), location: 'guild' },
+    { id: 'q11', name: 'Silence the Umbra', desc: 'Defeat 3 Umbra Sorcerers before they curse the marsh', target: 'umbra_sorcerer', count: 3, reward: createFixedQuestReward('umbra_sorcerer', 3, 1.72), location: 'guild' },
+    { id: 'q12', name: 'Revenant at the Threshold', desc: 'Defeat 2 Gate Revenants in the Gates of Shadow', target: 'gate_revenant', count: 2, reward: createFixedQuestReward('gate_revenant', 2, 1.8), location: 'guild' }
 ];
 
 const DAILY_QUEST_TIER_META = {
@@ -754,6 +809,69 @@ function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + m
 function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function randFloat(min, max) { return Math.random() * (max - min) + min; }
+function computePlayerLevelBaseStats(level = 1) {
+    const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+    return {
+        maxHp: Math.floor(100 * Math.pow(1.10, safeLevel - 1)),
+        maxMp: Math.floor(50 * Math.pow(1.10, safeLevel - 1)),
+        atk: 10 + ((safeLevel - 1) * 3),
+        def: 5 + ((safeLevel - 1) * 3)
+    };
+}
+
+function getXpRequirementForLevel(level = 1) {
+    const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+    if (safeLevel >= MAX_PLAYER_LEVEL) return null;
+    return Math.min(100000000, Math.floor(100 * Math.pow(1.5, safeLevel - 1)));
+}
+
+function applyLegacySaveMigrations(state) {
+    if (!state || !state.player) return;
+
+    const player = state.player;
+    const flags = state.saveMigrationFlags && typeof state.saveMigrationFlags === 'object'
+        ? state.saveMigrationFlags
+        : {};
+    const saveVersion = Math.floor(Number(state.__saveVersion) || 1);
+    const legacyDungeonStage = Math.max(0, Number(state.highestDungeonStage) || 0);
+
+    if (!flags.legacyDungeonStageBonusRemoved && legacyDungeonStage > 0 && saveVersion < 4) {
+        const legacyBonus = legacyDungeonStage * 0.2;
+        player.baseAtk = Math.max(10, Number((player.baseAtk ?? computePlayerLevelBaseStats(player.level).atk) - legacyBonus) || 10);
+        player.baseDef = Math.max(5, Number((player.baseDef ?? computePlayerLevelBaseStats(player.level).def) - legacyBonus) || 5);
+        flags.legacyDungeonStageBonusRemoved = true;
+    }
+
+    if (!flags.legacyLevel35RollbackApplied && saveVersion < 4 && (player.level || 1) > 35) {
+        player.level = 35;
+        player.xp = 0;
+        player.xpToNext = getXpRequirementForLevel(35);
+        const rolledBackStats = computePlayerLevelBaseStats(35);
+        player.baseMaxHp = rolledBackStats.maxHp;
+        player.baseMaxMp = rolledBackStats.maxMp;
+        player.baseAtk = rolledBackStats.atk;
+        player.baseDef = rolledBackStats.def;
+        player.maxHp = rolledBackStats.maxHp;
+        player.maxMp = rolledBackStats.maxMp;
+        player.atk = rolledBackStats.atk;
+        player.def = rolledBackStats.def;
+        player.hp = rolledBackStats.maxHp;
+        player.mp = rolledBackStats.maxMp;
+        flags.legacyLevel35RollbackApplied = true;
+    }
+
+    if (!flags.dungeonRebalanceInitialized) {
+        state.highestDungeonRebalanceStage = 1;
+        flags.dungeonRebalanceInitialized = true;
+    }
+
+    state.saveMigrationFlags = {
+        dungeonRebalanceInitialized: !!flags.dungeonRebalanceInitialized,
+        legacyDungeonStageBonusRemoved: !!flags.legacyDungeonStageBonusRemoved,
+        legacyLevel35RollbackApplied: !!flags.legacyLevel35RollbackApplied
+    };
+}
+
 function sanitizeProfileText(value, fallback = '', maxLength = 24) {
     const cleaned = String(value ?? '')
         .replace(/[\r\n\t]+/g, ' ')
@@ -1569,6 +1687,7 @@ function seededPick(seed, arr) {
 function getFakePlayerRegion(level) {
     if (level >= 55) return locations.ceaseless_void.name;
     if (level >= 45) return locations.dragon_lair.name;
+    if (level >= 30) return locations.gates_of_shadow.name;
     if (level >= 28) return locations.swamp.name;
     if (level >= 16) return locations.dark_forest.name;
     if (level >= 8) return locations.mountains.name;
@@ -2105,6 +2224,27 @@ function getWanderRankTextStyle(rankData = getWanderRankData()) {
     return `color:${rankData.color};font-weight:bold;`;
 }
 
+function getWanderRewardRankMultiplier(rankKey = gameState.wandering?.rankKey) {
+    const baseMultiplier = Math.max(0.25, Number(getWanderRankData(rankKey)?.multiplier) || 1);
+    if (rankKey === 'SS' || rankKey === 'SSS') return baseMultiplier * 2;
+    return baseMultiplier;
+}
+
+function getWanderEnemyRankMultiplier(rankKey = gameState.wandering?.rankKey) {
+    const baseMultiplier = Math.max(0.25, Number(getWanderRankData(rankKey)?.multiplier) || 1);
+    if (rankKey === 'SSS') return baseMultiplier * 4;
+    return baseMultiplier;
+}
+
+function formatWanderScalingText(rankKey = gameState.wandering?.rankKey) {
+    const rewardMultiplier = getWanderRewardRankMultiplier(rankKey);
+    const enemyMultiplier = getWanderEnemyRankMultiplier(rankKey);
+    if (rankKey === 'SSS') {
+        return `Rewards: ${rewardMultiplier}x | Enemies: ${enemyMultiplier}x`;
+    }
+    return `${rewardMultiplier}x scaling`;
+}
+
 function rollWanderRank() {
     const totalWeight = WANDER_RANKS.reduce((sum, rank) => sum + rank.weight, 0);
     let roll = Math.random() * totalWeight;
@@ -2125,7 +2265,9 @@ function getWanderingRewardMultiplier() {
 }
 
 function applyWanderingRewardBoost(amount, expedition = gameState.wandering, extraMultiplier = 1) {
-    return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier() * getWanderingLocationRewardMultiplier(expedition) * Math.max(0, extraMultiplier || 1)));
+    const rankKey = expedition?.rankKey || gameState.wandering?.rankKey;
+    const effectiveRankMultiplier = getWanderRewardRankMultiplier(rankKey) * Math.max(0, extraMultiplier || 1);
+    return Math.max(0, Math.floor((amount || 0) * getWanderingRewardMultiplier() * getWanderingLocationRewardMultiplier(expedition) * effectiveRankMultiplier));
 }
 
 function locationSupportsWandering(locationKey = gameState.player.location) {
@@ -2246,7 +2388,8 @@ function getStatusSnapshot(target) {
         missChance: 0,
         skipTurn: false,
         cannotAttack: false,
-        cannotUseItems: false,
+        immuneToDebuffs: false,
+        enemyGuaranteedCrit: false,
         cannotUseAbilities: false,
         cannotEscape: false,
         attackTwice: false,
@@ -2262,6 +2405,7 @@ function getStatusSnapshot(target) {
         if (effect.dodgeBonus !== undefined) snapshot.dodgeBonus += effect.dodgeBonus;
         if (effect.critMultiplier !== undefined) snapshot.critMultiplier *= effect.critMultiplier;
         if (effect.missChance !== undefined) snapshot.missChance = Math.max(snapshot.missChance, effect.missChance);
+        if (effect.enemyGuaranteedCrit) snapshot.enemyGuaranteedCrit = true;
         if (effect.skipTurn) snapshot.skipTurn = true;
         if (effect.cannotAttack) snapshot.cannotAttack = true;
         if (effect.cannotUseItems) snapshot.cannotUseItems = true;
@@ -2692,6 +2836,11 @@ function calculateDamageBasedHealing(damageDealt) {
     return healAmt;
 }
 
+function getShadowCritMultiplier() {
+    if (!hasEquippedSpecialAbility('shadow_crit')) return 1;
+    return Math.random() < 0.5 ? 4 : 1;
+}
+
 function recordWorldBossPlayerDamage(dmg) {
     if (!gameState.worldBossActive || !gameState.currentWorldBoss || dmg <= 0) return;
 
@@ -2766,6 +2915,12 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
     enemyDmg = Math.ceil(enemyDmg * getScrollEnemyDamageMultiplier());
     enemyDmg = Math.max(1, Math.ceil(enemyDmg * enemyStatus.damageDealtMultiplier));
 
+    const enemyCritChance = Math.max(0, Number(enemyObj?.crit) || 0);
+    const enemyCrit = !!playerStatus.enemyGuaranteedCrit || (enemyCritChance > 0 && Math.random() * 100 < enemyCritChance);
+    if (enemyCrit) {
+        enemyDmg = Math.max(1, Math.floor(enemyDmg * 1.5));
+    }
+
     const drPercent = Math.min(gameState.player.dmgReduction || gameState.player.damageReduction || 0, 95) / 100;
     if (gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75')) {
         enemyDmg = Math.ceil(enemyDmg * 0.25);
@@ -2800,7 +2955,7 @@ function resolveEnemyCounterAttack(playerObj, enemyObj, logCallback = addBattleM
 
     const actualDamageTaken = applyDamageToTarget(playerObj, enemyDmg, logCallback);
     if (actualDamageTaken > 0) {
-        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, 'damage');
+        logCallback(`${enemyObj.name} hits you for ${actualDamageTaken} damage${enemyCrit ? ' (CRIT!)' : ''}!${gameState.has75DamageReduction || hasEquippedSpecialAbility('damage_reduction_75') ? ' (75% DR ACTIVE)' : ` (DR: ${(drPercent * 100).toFixed(1)}%)`}`, enemyCrit ? 'reward' : 'damage');
         tryApplyEnemyOnHitEffects(enemyObj, logCallback);
     }
     if (playerObj.hp <= 0 && tryConsumeReviveScroll(playerObj, logCallback)) {
@@ -2994,6 +3149,86 @@ function getInventoryQuicksellRarities() {
     const orderedRarities = INVENTORY_QUICKSELL_RARITY_ORDER.filter(rarity => availableRarities.includes(rarity));
     const extraRarities = availableRarities.filter(rarity => !orderedRarities.includes(rarity));
     return [...orderedRarities, ...extraRarities];
+}
+
+function normalizeInventoryViewFilters() {
+    const normalizeBound = value => {
+        if (value === '' || value === null || value === undefined) return '';
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return '';
+        return Math.max(0, parsed);
+    };
+
+    inventoryViewFilters = {
+        search: String(inventoryViewFilters?.search || ''),
+        rarity: inventoryViewFilters?.rarity || 'all',
+        type: inventoryViewFilters?.type || 'all',
+        minLevel: normalizeBound(inventoryViewFilters?.minLevel),
+        maxLevel: normalizeBound(inventoryViewFilters?.maxLevel)
+    };
+
+    return inventoryViewFilters;
+}
+
+function getInventoryFilterTypeOptions() {
+    const types = new Set();
+    gameState.inventory.forEach(item => {
+        const type = resolveEquipSlot(item) || item?.type;
+        if (type) types.add(String(type));
+    });
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+}
+
+function getInventoryFilterRarityOptions() {
+    const raritySet = new Set(gameState.inventory.map(item => item?.rarity).filter(Boolean));
+    const ordered = INVENTORY_FILTER_RARITY_ORDER.filter(rarity => raritySet.has(rarity));
+    const extras = Array.from(raritySet).filter(rarity => !ordered.includes(rarity)).sort((a, b) => a.localeCompare(b));
+    return [...ordered, ...extras];
+}
+
+function doesInventoryItemMatchFilters(item) {
+    if (!item) return false;
+
+    const filters = normalizeInventoryViewFilters();
+    const search = filters.search.trim().toLowerCase();
+    const itemType = String(resolveEquipSlot(item) || item.type || '').toLowerCase();
+    const itemLevel = Number.isFinite(item.levelReq) ? item.levelReq : 0;
+    const haystack = [item.name, item.desc, item.rarity, item.type, item.equipSlot]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    if (search && !haystack.includes(search)) return false;
+    if (filters.rarity !== 'all' && item.rarity !== filters.rarity) return false;
+    if (filters.type !== 'all' && itemType !== String(filters.type).toLowerCase()) return false;
+    if (filters.minLevel !== '' && itemLevel < filters.minLevel) return false;
+    if (filters.maxLevel !== '' && itemLevel > filters.maxLevel) return false;
+
+    return true;
+}
+
+function getFilteredInventoryEntries() {
+    return gameState.inventory
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => doesInventoryItemMatchFilters(item));
+}
+
+function setInventoryViewFilter(key, value) {
+    if (!['search', 'rarity', 'type', 'minLevel', 'maxLevel'].includes(key)) return;
+    inventoryViewFilters[key] = value;
+    normalizeInventoryViewFilters();
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) renderInventory();
+}
+
+function resetInventoryViewFilters() {
+    inventoryViewFilters = {
+        search: '',
+        rarity: 'all',
+        type: 'all',
+        minLevel: '',
+        maxLevel: ''
+    };
+    if (document.getElementById('inventory-screen')?.classList.contains('active')) renderInventory();
 }
 
 function normalizeInventoryQuicksellFilters() {
@@ -3195,6 +3430,7 @@ function updateStats() {
     const atkEl = document.getElementById('stat-atk');
     const defEl = document.getElementById('stat-def');
     const lvlEl = document.getElementById('stat-lvl');
+    const xpLabelEl = document.getElementById('stat-xp-label');
     const xpEl = document.getElementById('stat-xp');
     const goldEl = document.getElementById('stat-gold');
     const soulEl = document.getElementById('stat-soul');
@@ -3225,10 +3461,19 @@ function updateStats() {
     if (defEl) defEl.textContent = getTotalDef();
     if (critEl) critEl.textContent = `${actualCrit}%`;
     if (lvlEl) lvlEl.textContent = p.level;
-    if (xpEl) xpEl.textContent = `${p.xp}/${p.xpToNext}`;
+    if (xpLabelEl) xpLabelEl.textContent = p.level >= MAX_PLAYER_LEVEL ? 'EXP Gained:' : 'XP:';
+    if (xpEl) xpEl.textContent = p.level >= MAX_PLAYER_LEVEL
+        ? formatScientificXp(p.xp)
+        : `${p.xp}/${p.xpToNext}`;
     if (goldEl) goldEl.textContent = p.gold;
     if (soulEl) soulEl.textContent = gameState.soulGems;
     refreshCooldownUi();
+}
+
+function formatScientificXp(value) {
+    const xpValue = Math.max(0, Number(value) || 0);
+    if (xpValue === 0) return '0.00e+0';
+    return xpValue.toExponential(2);
 }
 
 function showScreen(screenName) {
@@ -3346,7 +3591,7 @@ function generateEnemy(location, isBoss = false, options = {}) {
 }
 
 // ITEM DROP SYSTEM WITH RARITY RATES
-// Common: 62.04%, Uncommon: 25%, Rare: 10%, Epic: 1.83%, Legendary: 0.67%, Unique: 0.45%, Uber Unique: 0.01%
+// Common: 62.04%, Uncommon: 25%, Rare: 10%, Epic: 1.83%, Legendary: 0.67%, Unique: 0.0225%, Uber Unique: 0.0005%
 function getItemDropByRarity() {
     let targetRarity = getModifiedItemRarity({
         common: 62.04,
@@ -3354,11 +3599,11 @@ function getItemDropByRarity() {
         rare: 10,
         epic: 1.83,
         legendary: 0.67,
-        unique: 0.45,
-        uber_unique: 0.01
+        unique: 0.0225,
+        uber_unique: 0.0005
     }) || 'common';
 
-    if (targetRarity === 'unique' && Math.random() < 0.10) {
+    if (targetRarity === 'unique' && Math.random() < 0.005) {
         targetRarity = 'uber_unique';
     }
 
@@ -3368,19 +3613,32 @@ function getItemDropByRarity() {
 // Get item drop with level cap based on ENEMY TIER, not player level
 // Enemy tier 0-10 maps directly to maximum item level requirement
 // Tier 0 = max level 5, Tier 1 = max level 10, Tier 5 = max level 30, Tier 10 = max level 60
+function getPlayerItemDropLevelCap(enemyTier = Infinity) {
+    const enemyTierCap = Number.isFinite(enemyTier) ? Math.max(0, enemyTier) * 6 : Infinity;
+    const playerLevelCap = (gameState?.player?.level || 1) + 5;
+    return Math.min(enemyTierCap, playerLevelCap);
+}
+
+function isEligibleEquipmentDrop(item, maxItemLevel) {
+    return !!(
+        item &&
+        item.equipSlot &&
+        item.type !== 'material' &&
+        item.type !== 'currency' &&
+        item.type !== 'consumable' &&
+        (!item.levelReq || item.levelReq <= maxItemLevel)
+    );
+}
+
 function getLeveledItemDrop(targetRarity, enemyTier) {
-    // Calculate maximum allowed item level based on enemy tier
-    const maxItemLevel = enemyTier * 6;
+    // Items must satisfy both the encounter cap and the player level + 5 cap.
+    const maxItemLevel = getPlayerItemDropLevelCap(enemyTier);
     
     // Filter items by rarity and level requirement matching enemy strength
     const allItems = Object.values(itemPool);
     const matchingItems = allItems.filter(item => 
-        item.rarity === targetRarity && 
-        item.equipSlot &&
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable' &&
-        (!item.levelReq || item.levelReq <= maxItemLevel)
+        item.rarity === targetRarity &&
+        isEligibleEquipmentDrop(item, maxItemLevel)
     );
     
     if (matchingItems.length > 0) {
@@ -3393,12 +3651,8 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     
     for (let i = currentIdx + 1; i < rarityOrder.length; i++) {
         const fallbackItems = allItems.filter(item => 
-            item.rarity === rarityOrder[i] && 
-            item.equipSlot && 
-            item.type !== 'material' && 
-            item.type !== 'currency' &&
-            item.type !== 'consumable' &&
-            (!item.levelReq || item.levelReq <= maxItemLevel)
+            item.rarity === rarityOrder[i] &&
+            isEligibleEquipmentDrop(item, maxItemLevel)
         );
         
         if (fallbackItems.length > 0) {
@@ -3407,13 +3661,7 @@ function getLeveledItemDrop(targetRarity, enemyTier) {
     }
     
     // Final fallback: any item that fits level cap
-    const anyLevelItems = allItems.filter(item => 
-        item.equipSlot && 
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable' &&
-        (!item.levelReq || item.levelReq <= maxItemLevel)
-    );
+    const anyLevelItems = allItems.filter(item => isEligibleEquipmentDrop(item, maxItemLevel));
     
     if (anyLevelItems.length > 0) {
         return pick(anyLevelItems);
@@ -3733,6 +3981,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             let attackCount = playerStatus.attackTwice ? 2 : 1;
             let trueDamage = false;
             let guaranteedCrit = false;
+            let shadowCritTriggered = false;
             
             // Initialize attack counters if not exists
             if (typeof gameState.attackCounter === 'undefined') {
@@ -3779,12 +4028,18 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
                 crit = true;
                 dmg = Math.floor(dmg * (1.5 + totalCritDmg / 100));
             }
-            
+
             // Apply true damage (ignore defense)
             if (trueDamage) {
                 dmg = totalAtk + bonusDmg;
             } else {
                 dmg += bonusDmg;
+            }
+
+            const shadowCritMultiplier = getShadowCritMultiplier();
+            if (shadowCritMultiplier > 1) {
+                dmg = Math.floor(dmg * shadowCritMultiplier);
+                shadowCritTriggered = true;
             }
             
             // Handle multiple attacks
@@ -3801,7 +4056,7 @@ function runUniversalCombatTurn(action, playerObj, enemyObj, logCallback, healCa
             }
             
             const multiHitMsg = totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : '';
-            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, crit ? 'reward' : 'info');
+            logCallback(`You hit ${enemyObj.name} for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${specialMsg}${multiHitMsg}!`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
             if (landedHits > 0) {
                 tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
@@ -3941,6 +4196,11 @@ function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, opt
 
                 dmg = Math.floor(dmg * spellMultiplier * damageMult);
                 dmg = Math.max(1, Math.floor(dmg * playerStatus.damageDealtMultiplier));
+                const shadowCritMultiplier = getShadowCritMultiplier();
+                const shadowCritTriggered = shadowCritMultiplier > 1;
+                if (shadowCritTriggered) {
+                    dmg = Math.floor(dmg * shadowCritMultiplier);
+                }
 
                 let totalDamageDealt = 0;
                 let landedHits = 0;
@@ -3953,7 +4213,7 @@ function runSpellCombatTurn(playerObj, enemyObj, logCallback = addBattleMsg, opt
                     if (enemyObj.hp <= 0) break;
                 }
 
-                logCallback(`You cast a spell for ${totalDamageDealt} damage${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x ${damageMult > 1 ? `+ Scroll x${damageMult.toFixed(1)}` : ''})`, crit ? 'reward' : 'info');
+                logCallback(`You cast a spell for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}! (${spellMultiplier.toFixed(1)}x${damageMult > 1 ? ` + Scroll x${damageMult.toFixed(1)}` : ''})`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
                 if (landedHits > 0) {
                     tryApplyPlayerOnHitEffects(enemyObj, logCallback, { hitCount: landedHits });
@@ -4266,24 +4526,20 @@ function enemyDefeated() {
 
 function checkLevelUp() {
     const p = gameState.player;
-    while (p.xp >= p.xpToNext) {
+    if (p.level >= MAX_PLAYER_LEVEL) {
+        p.level = MAX_PLAYER_LEVEL;
+        p.xpToNext = null;
+        return;
+    }
+
+    while (p.level < MAX_PLAYER_LEVEL && p.xp >= p.xpToNext) {
         p.xp -= p.xpToNext;
         p.level++;
-        
-        // ✅ HARD CORRECT LEVEL STAT CALCULATION - INFINITE LEVELS SUPPORT
-        // Base stats are ALWAYS recalculated from level 1 formula
-        const BASE_HP = 100;
-        const BASE_MP = 50;
-        const BASE_ATK = 10;
-        const BASE_DEF = 5;
-        
-        // Exact 10% per level compound growth FOR ALL LEVELS - NO CAP
-        p.maxHp = Math.floor(BASE_HP * Math.pow(1.10, p.level - 1));
-        p.maxMp = Math.floor(BASE_MP * Math.pow(1.10, p.level - 1));
-        
-        // Exact flat +3 per level FOR ALL LEVELS - NO CAP
-        p.atk = BASE_ATK + ((p.level - 1) * 3);
-        p.def = BASE_DEF + ((p.level - 1) * 3);
+        const computedStats = computePlayerLevelBaseStats(p.level);
+        p.maxHp = computedStats.maxHp;
+        p.maxMp = computedStats.maxMp;
+        p.atk = computedStats.atk;
+        p.def = computedStats.def;
         
         // Update base stat references for equipment calculation
         p.baseMaxHp = p.maxHp;
@@ -4295,12 +4551,21 @@ function checkLevelUp() {
         p.hp = p.maxHp;
         p.mp = p.maxMp;
 
-        // XP Requirement scaling HARD CAP at 50,000,000 XP maximum
-        p.xpToNext = Math.min(50000000, Math.floor(p.xpToNext * 1.5));
+        if (p.level >= MAX_PLAYER_LEVEL) {
+            p.level = MAX_PLAYER_LEVEL;
+            p.xpToNext = null;
+        } else {
+            p.xpToNext = getXpRequirementForLevel(p.level);
+        }
         
         addBattleMsg(`LEVEL UP! You are now level ${p.level}!`, 'reward');
         addBattleMsg(`Max HP: ${p.maxHp}, Max MP: ${p.maxMp}, ATK: ${p.atk}, DEF: ${p.def}`, 'reward');
         addChatMessage('SYSTEM', `${p.name} reached level ${p.level}! Max HP: ${p.maxHp} ATK: ${p.atk} DEF: ${p.def}`, true);
+    }
+
+    if (p.level >= MAX_PLAYER_LEVEL) {
+        p.level = MAX_PLAYER_LEVEL;
+        p.xpToNext = null;
     }
 }
 
@@ -4315,6 +4580,7 @@ function addToInventory(item, options = {}) {
     delete copy.marketId;
     delete copy.merchantPrice;
     if (copy.type && typeof copy.type === 'string') copy.type = copy.type.trim().toLowerCase();
+    copy.name = getCanonicalItemName(copy.name);
     if (copy.luck && !allowedLuckTypes.includes(copy.type)) {
         delete copy.luck;
     }
@@ -4736,6 +5002,7 @@ function generateGuildQuest(rarity) {
     
     const template = pick(templates);
     const playerLevel = gameState.player.level;
+    const location = getEnemyQuestLocationKey(template.target);
     
     // Scale count and rewards based on player level
     const levelScale = 1 + Math.floor(playerLevel / 10) * 0.2;
@@ -4747,6 +5014,7 @@ function generateGuildQuest(rarity) {
         name: template.name,
         desc: template.desc.replace('{count}', count),
         target: template.target,
+        location,
         count: count,
         reward,
         rarity: rarity,
@@ -4903,6 +5171,7 @@ function renderGuildQuests() {
         const progress = gameState.guildQuestProgress[quest.id || idx] || 0;
         const complete = quest.accepted && progress >= quest.count;
         const color = rarityColors[quest.rarity] || '#aaa';
+        const locationName = locations[quest.location]?.name || humanizeQuestTarget(quest.location || getEnemyQuestLocationKey(quest.target));
         
         html += `<div class="quest-item" style="border-color: ${color}">
             <div style="display:flex;justify-content:space-between;align-items:center">
@@ -4910,6 +5179,7 @@ function renderGuildQuests() {
                 <span style="color:${color};font-size:0.8em;font-weight:bold">[${quest.rarity.toUpperCase()}]</span>
             </div>
             <div class="description">${quest.desc}</div>
+            <div style="color:#888;font-size:0.85em">Target Zone: ${locationName}</div>
             <div style="color:#aaa;font-size:0.85em">
                 Reward: ${quest.reward.xp} XP, ${quest.reward.gold} Gold
                 ${quest.reward.soulGem ? '<span style="color:#ff00ff;font-weight:bold"> + 1 Soul Gem</span>' : ''}
@@ -5260,7 +5530,7 @@ function startWanderingExpedition() {
     };
     
     addWanderingLog('You begin your wandering expedition...', 'info');
-    addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${rankData.multiplier}x scaling)`, 'reward');
+    addWanderingLog(`Wander Rank: <span style="${getWanderRankTextStyle(rankData)}">${rankData.key}</span> (${formatWanderScalingText(rankData.key)})`, 'reward');
     addWanderingLog(`This journey will have ${totalEvents} events.`, 'info');
     if (WANDER_HIGH_RANK_KEYS.has(rankData.key)) {
         addWanderingLog(`⚠️ High-rank rules active: ${minStages}-${maxStages} stages, no expedition escape after stage 2, enemies may inflict extra debuffs.`, 'damage');
@@ -5278,9 +5548,9 @@ function addWanderingLog(msg, type = 'info') {
 function wanderingContinue() {
     const w = gameState.wandering;
     if (!w.active) return;
-    
-    // If in battle, don't continue
-    if (w.inBattle) return;
+
+    // If in battle or at slot machine (including bonus), don't continue
+    if (w.inBattle || w.slotMachineActive) return;
     
     // Check if we've completed all events
     if (w.currentEvent >= w.totalEvents) {
@@ -5303,7 +5573,9 @@ function generateWanderingEvent() {
     const p = gameState.player;
     const level = p.level;
     const luck = getTotalLuck();
-    const rankMultiplier = Math.max(0.25, w.rankMultiplier || 1);
+    const rewardRankMultiplier = getWanderRewardRankMultiplier(w.rankKey);
+    const enemyRankMultiplier = getWanderEnemyRankMultiplier(w.rankKey);
+    const itemRankMultiplier = Math.max(0.25, w.rankMultiplier || 1);
     
     const eventType = Math.random() * 100;
     
@@ -5311,7 +5583,7 @@ function generateWanderingEvent() {
         // 30% chance: Battle encounter
         const loc = locations[p.location];
         if (loc && loc.enemies && loc.enemies.length > 0) {
-            const enemy = generateEnemy(p.location, false, { statMultiplier: rankMultiplier, rewardMultiplier: rankMultiplier });
+            const enemy = generateEnemy(p.location, false, { statMultiplier: enemyRankMultiplier, rewardMultiplier: rewardRankMultiplier });
             if (enemy) {
                 w.inBattle = true;
                 w.currentEnemy = enemy;
@@ -5340,19 +5612,19 @@ function generateWanderingEvent() {
         // 10% chance: Find gold
         const goldFound = rand(Math.floor(level * 2) + 5, Math.floor(level * 5) + 20);
         const luckBonus = Math.floor(luck * 0.5);
-        const totalGold = applyWanderingRewardBoost(goldFound + luckBonus, w, rankMultiplier);
+        const totalGold = applyWanderingRewardBoost(goldFound + luckBonus, w, 1);
         w.rewards.gold += totalGold;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Found ${totalGold} gold!`, 'reward');
     } else if (eventType < 65) {
         // 10% chance: Gain XP
         const xpGained = rand(Math.floor(level * 2) + 10, Math.floor(level * 5) + 30);
         const luckBonus = Math.floor(luck * 0.2);
-        const totalXp = applyWanderingRewardBoost(xpGained + luckBonus, w, rankMultiplier);
+        const totalXp = applyWanderingRewardBoost(xpGained + luckBonus, w, 1);
         w.rewards.xp += totalXp;
         addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Gained ${totalXp} XP from exploration!`, 'reward');
     } else if (eventType < 80) {
         // 15% chance: Find item
-        const droppedItem = getWanderItemDrop(rankMultiplier);
+        const droppedItem = getWanderItemDrop(itemRankMultiplier);
         if (droppedItem) {
             w.rewards.items.push({ ...droppedItem, qty: 1 });
             const rarityColor = getRarityColor(droppedItem.rarity);
@@ -5371,8 +5643,8 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
-    } else if (eventType < 99.8) {
-        // 4.8% chance: Nothing or minor heal (remainder before merchant)
+     } else if (eventType < 99.6) {
+        // 4.6% chance: Nothing or minor heal (remainder before slot machine)
         if (Math.random() < 0.5) {
             const healAmt = Math.floor(p.maxHp * 0.1);
             p.hp = Math.min(p.maxHp, p.hp + healAmt);
@@ -5380,6 +5652,11 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
+    } else if (eventType < 99.8) {
+        // 0.2% chance: Slot Machine encounter
+        w.slotMachineActive = true;
+        w.slotMachineRarity = pickSlotMachineRarity();
+        addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: The Apostles of Fate has hauled you in your way, and would like you to stay a while, and listen.`, 'reward');
     } else {
         // 0.2% chance: Wandering Merchant (extremely rare!)
         w.merchantActive = true;
@@ -5561,7 +5838,7 @@ function wanderingEscape() {
     
     checkLevelUp();
     updateStats();
-    showScreen('travel');
+    showScreen('wandering');
 }
 
 function completeWanderingExpedition() {
@@ -5633,7 +5910,7 @@ function renderWandering() {
     html += `<div style="margin-bottom:10px; padding:10px; background-color:#1a1a1a; border:1px solid #333; border-radius:6px;">
         <span style="color:#888;">Expedition Rank: </span>
         <span style="${getWanderRankTextStyle(getWanderRankData(w.rankKey))}">${w.rankKey || 'C'}</span>
-        <span style="color:#888; margin-left:10px;">Scaling: ${w.rankMultiplier || 1}x</span>
+        <span style="color:#888; margin-left:10px;">Scaling: ${formatWanderScalingText(w.rankKey)}</span>
     </div>`;
     html += `<div class="description">Progress: ${w.currentEvent}/${w.totalEvents} events completed</div>`;
     
@@ -5651,11 +5928,17 @@ function renderWandering() {
         <div style="color:#00ff00;">Items: ${w.rewards.items.length}</div>
     </div>`;
     
-    // Merchant section if merchant is active
-    if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
+    // Slot Machine section if slot machine is active
+    if (w.slotMachineActive) {
+        if (w.slotMachineBonusActive) {
+            html += renderSlotMachineBonus();
+        } else {
+            html += renderSlotMachineUI();
+        }
+    } else if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
         html += `<div class="section-title" style="color:#ffd700;">🧙 Wandering Merchant</div>`;
         html += `<div class="description">A mysterious merchant with rare and powerful wares. These items won't last long!</div>`;
-        
+
         w.merchantItems.forEach((item, idx) => {
             const rarityColor = getRarityColor(item.rarity);
             const isUber = isUberUnique(item);
@@ -5677,7 +5960,7 @@ function renderWandering() {
                 </div>
             </div>`;
         });
-        
+
         html += `<div style="margin-top:15px;">
             <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
@@ -5744,6 +6027,490 @@ function renderWandering() {
     container.innerHTML = html;
 }
 
+function renderSlotMachineUI() {
+    const w = gameState.wandering;
+    const rarity = w.slotMachineRarity;
+    const bet = w.slotMachineBet || 0;
+    const freeSpins = w.slotMachineFreeSpins || 0;
+    const playerGold = gameState.player.gold;
+
+    let html = `<div class="section-title" style="color:#ffd700;">🎰 Slot Machine - ${rarity.charAt(0).toUpperCase() + rarity.slice(1)} Tier</div>`;
+    html += `<div class="description">The Apostles of Fate have presented you with a slot machine. Test your luck!</div>`;
+
+    // Rarity info
+    const rarityInfo = {
+        silver: { minBet: 25, maxBet: 1000, color: '#c0c0c0' },
+        gold: { minBet: 500, maxBet: 9999, color: '#ffd700' },
+        diamond: { minBet: 5000, maxBet: null, color: '#b9f2ff' }
+    };
+    const info = rarityInfo[rarity];
+    html += `<div style="background:#1a1a1a;border:2px solid ${info.color};padding:10px;margin:10px 0;border-radius:5px;">
+        <div style="color:${info.color};font-weight:bold;">${rarity.toUpperCase()} SLOT MACHINE</div>
+        <div style="color:#aaa;">Min Bet: ${info.minBet} Gold | Max Bet: ${info.maxBet ? info.maxBet + ' Gold' : 'No Limit'}</div>
+    </div>`;
+
+    // Bet input
+    if (freeSpins === 0) {
+        html += `<div class="section-title">Place Your Bet</div>`;
+        html += `<div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
+            <input type="number" id="slot-bet-input" value="${bet || info.minBet}" min="${info.minBet}" max="${info.maxBet || ''}" style="width:120px;background:#111;border:1px solid #444;color:#00ff00;padding:5px;">
+            <span style="color:#ffd700;">Gold</span>
+            <button class="action-btn gold-btn" onclick="setSlotBet()">Set Bet</button>
+        </div>`;
+        html += `<div style="color:#888;font-size:0.8em;">Current Gold: ${playerGold}</div>`;
+    } else {
+        html += `<div style="background:#2a2a00;border:1px solid #ffff00;padding:8px;margin:10px 0;border-radius:4px;color:#ffff00;">
+            FREE SPINS ACTIVE: ${freeSpins} remaining
+        </div>`;
+    }
+
+    // Slot reels (3x5 grid)
+    html += `<div class="section-title">🎰 The Reels (243 Ways)</div>`;
+    html += `<div id="slot-reels" style="background:#000;border:2px solid #00ff00;padding:20px;margin:10px 0;text-align:center;font-size:1.8em;font-family:monospace;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+    </div>`;
+
+    // Spin button
+    const canSpin = (freeSpins > 0 || (bet > 0 && bet >= info.minBet && (!info.maxBet || bet <= info.maxBet) && playerGold >= bet));
+    html += `<div style="text-align:center;margin:15px 0;">
+        <button class="action-btn" onclick="spinSlotMachine()" ${canSpin ? '' : 'disabled'} style="font-size:1.2em;padding:15px 30px;">
+            ${freeSpins > 0 ? '🎰 FREE SPIN!' : '🎰 SPIN!'}
+        </button>
+    </div>`;
+
+    // Jackpot display
+    html += `<div style="display:flex;justify-content:space-around;margin:10px 0;">
+        <div style="text-align:center;">
+            <div style="color:#ffaa00;font-weight:bold;">MINOR</div>
+            <div style="color:#888;">10x bet</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="color:#ff6600;font-weight:bold;">MAJOR</div>
+            <div style="color:#888;">40x bet</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="background: linear-gradient(to right, #ff0000, #ff7700, #ffff00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;font-weight:bold;">GRAND</div>
+            <div style="color:#888;">400x bet + Soul Gem</div>
+        </div>
+    </div>`;
+
+    // Leave button
+    html += `<div style="text-align:center;margin-top:20px;">
+        <button class="action-btn danger" onclick="leaveSlotMachine()">Leave Slot Machine</button>
+    </div>`;
+
+    return html;
+}
+
+function setSlotBet() {
+    const input = document.getElementById('slot-bet-input');
+    const bet = parseInt(input.value) || 0;
+    const w = gameState.wandering;
+    const rarityInfo = {
+        silver: { minBet: 25, maxBet: 1000 },
+        gold: { minBet: 500, maxBet: 9999 },
+        diamond: { minBet: 5000, maxBet: null }
+    };
+    const info = rarityInfo[w.slotMachineRarity];
+
+    if (bet < info.minBet) {
+        addWanderingLog(`Minimum bet is ${info.minBet} gold.`, 'info');
+        input.value = info.minBet;
+        return;
+    }
+    if (info.maxBet && bet > info.maxBet) {
+        addWanderingLog(`Maximum bet is ${info.maxBet} gold.`, 'info');
+        input.value = info.maxBet;
+        return;
+    }
+    if (bet > gameState.player.gold) {
+        addWanderingLog(`You don't have enough gold!`, 'damage');
+        return;
+    }
+
+    w.slotMachineBet = bet;
+    addWanderingLog(`Bet set to ${bet} gold.`, 'reward');
+    renderWandering();
+}
+
+function spinSlotMachine() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet || 0;
+    const freeSpins = w.slotMachineFreeSpins || 0;
+    const player = gameState.player;
+
+    if (freeSpins === 0) {
+        if (bet <= 0 || player.gold < bet) {
+            addWanderingLog('Invalid bet or insufficient gold!', 'damage');
+            return;
+        }
+        player.gold -= bet;
+        updateStats();
+    } else {
+        w.slotMachineFreeSpins--;
+    }
+
+    // Generate slot results
+    const results = generateSlotResults();
+    animateSlotSpin(results);
+}
+
+function generateSlotResults() {
+    // 243 way slot machine with poker cards: A, K, Q, J, 10
+    // Plus wilds (2-5x), scatters (10-100x)
+    // 3 rows x 5 reels
+    const symbols = ['A', 'K', 'Q', 'J', '10'];
+    const wildMultipliers = [2, 3, 4, 5];
+    const scatterBonuses = [10, 25, 50, 100];
+
+    // Generate 3x5 grid
+    const grid = [];
+    for (let row = 0; row < 3; row++) {
+        grid[row] = [];
+        for (let col = 0; col < 5; col++) {
+            const rand = Math.random();
+            if (rand < 0.015) { // 1.5% wild
+                const mult = pick(wildMultipliers);
+                grid[row][col] = { type: 'wild', symbol: `W${mult}x`, multiplier: mult };
+            } else if (rand < 0.03) { // 1.5% scatter
+                const bonus = pick(scatterBonuses);
+                grid[row][col] = { type: 'scatter', symbol: `S${bonus}x`, bonus: bonus };
+            } else if (rand < 0.045) { // 1.5% bonus
+                grid[row][col] = { type: 'bonus', symbol: 'BONUS', bonus: true };
+            } else {
+                grid[row][col] = { type: 'card', symbol: pick(symbols) };
+            }
+        }
+    }
+
+    return grid;
+}
+
+function animateSlotSpin(results) {
+    const reelsDiv = document.getElementById('slot-reels');
+    let spinCount = 0;
+    const maxSpins = 20;
+
+    const spinInterval = setInterval(() => {
+        spinCount++;
+        // Show random spinning symbols in grid
+        const spinning = [];
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 5; col++) {
+                const rand = Math.random();
+                let symbol = pick(['A','K','Q','J','10']);
+                let color = '#00ff00';
+                if (rand < 0.075) {
+                    symbol = 'W';
+                    color = '#ffff00';
+                } else if (rand < 0.15) {
+                    symbol = 'S';
+                    color = '#ff00ff';
+                } else if (rand < 0.225) {
+                    symbol = 'BONUS';
+                    color = '#ff6600';
+                }
+                spinning.push(`<div><span style="color:${color}">[ ${symbol} ]</span></div>`);
+            }
+        }
+        reelsDiv.innerHTML = spinning.join('');
+
+        if (spinCount >= maxSpins) {
+            clearInterval(spinInterval);
+            // Show final results
+            const finalSymbols = [];
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 5; col++) {
+                    const r = results[row][col];
+                    let color = '#00ff00'; // default green for cards
+                    if (r.type === 'wild') color = '#ffff00';
+                    else if (r.type === 'scatter') color = '#ff00ff';
+                    else if (r.type === 'bonus') color = '#ff6600';
+                    finalSymbols.push(`<div><span style="color:${color}">[ ${r.symbol} ]</span></div>`);
+                }
+            }
+            reelsDiv.innerHTML = finalSymbols.join('');
+            // Calculate win
+            setTimeout(() => processSlotWin(results), 500);
+        }
+    }, 100);
+}
+
+function processSlotWin(results) {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    // Calculate wins based on 243 ways
+    let totalWin = 0;
+    let scatters = 0;
+    let bonuses = 0;
+    let jackpotType = null;
+
+    // Count scatters and bonuses
+    for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 5; col++) {
+            if (results[row][col].type === 'scatter') {
+                scatters++;
+            } else if (results[row][col].type === 'bonus') {
+                bonuses++;
+            }
+        }
+    }
+
+    if (scatters >= 3) {
+        w.slotMachineFreeSpins = 5;
+        addWanderingLog(`3+ Scatters! ${w.slotMachineFreeSpins} Free Spins awarded!`, 'reward');
+    }
+
+    if (bonuses >= 3) {
+        w.slotMachineBonusActive = true;
+        addWanderingLog(`3+ Bonus symbols! Bonus round activated!`, 'reward');
+    }
+
+    const waysWins = calculate243Ways(results);
+
+    // Separate jackpots and regular wins
+    waysWins.forEach(way => {
+        if (way.win >= 400 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'grand';
+                totalWin += bet * 400;
+                gameState.soulGems += 1;
+                addWanderingLog(`GRAND JACKPOT! ${bet * 400} gold + 1 Soul Gem!`, 'reward');
+                triggerRainbowAnimation();
+            }
+        } else if (way.win >= 40 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'major';
+                totalWin += bet * 40;
+                addWanderingLog(`MAJOR JACKPOT! ${bet * 40} gold!`, 'reward');
+            }
+        } else if (way.win >= 10 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'minor';
+                totalWin += bet * 10;
+                addWanderingLog(`MINOR JACKPOT! ${bet * 10} gold!`, 'reward');
+            }
+        } else if (way.win > 0) {
+            totalWin += way.win * bet;
+            addWanderingLog(`Way Win: ${way.count} ${way.symbol} - ${way.win}x bet`, 'reward');
+        }
+    });
+
+    if (totalWin > 0) {
+        gameState.player.gold += totalWin;
+        updateStats();
+        addWanderingLog(`Total Win: ${totalWin} gold!`, 'reward');
+    } else {
+        addWanderingLog('No win this spin.', 'info');
+    }
+
+    // Reset free spins if jackpot during free spin
+    if (jackpotType && w.slotMachineFreeSpins > 0) {
+        w.slotMachineFreeSpins = 5;
+        addWanderingLog('Jackpot during free spins! Free spins reset to 5!', 'reward');
+    }
+
+    renderWandering();
+}
+
+function calculate243Ways(results) {
+    // 243 ways: all possible combinations of one symbol per column
+    const ways = [];
+    const multipliers = {
+        'A': 4,
+        'K': 2.5,
+        'Q': 1.5,
+        'J': 1,
+        '10': 0.5
+    };
+
+    // Generate all 3^5 = 243 combinations
+    for (let r0 = 0; r0 < 3; r0++) {
+        for (let r1 = 0; r1 < 3; r1++) {
+            for (let r2 = 0; r2 < 3; r2++) {
+                for (let r3 = 0; r3 < 3; r3++) {
+                    for (let r4 = 0; r4 < 3; r4++) {
+                        const way = [results[r0][0], results[r1][1], results[r2][2], results[r3][3], results[r4][4]];
+                        const win = evaluateWay(way, multipliers);
+                        if (win.win > 0) {
+                            ways.push(win);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return ways;
+}
+
+function evaluateWay(way, multipliers) {
+    // Check for 3+ consecutive matches in the way
+    let bestWin = { win: 0, count: 0, symbol: '', multiplier: 1 };
+    const symbols = ['A', 'K', 'Q', 'J', '10'];
+
+    for (let symbol of symbols) {
+        let count = 0;
+        let mult = 1;
+        let hasScatter = false;
+
+        for (let i = 0; i < 5; i++) {
+            const cell = way[i];
+            if (cell.symbol === symbol || cell.type === 'wild' || cell.type === 'scatter') {
+                count++;
+                if (cell.type === 'wild') mult *= cell.multiplier;
+                if (cell.type === 'scatter') hasScatter = true;
+            } else {
+                break;
+            }
+        }
+
+        if (count >= 3) {
+            let baseMult = multipliers[symbol];
+            if (count === 5) {
+                // Jackpot payouts
+                if (symbol === 'A') baseMult = 400;
+                else if (symbol === 'K') baseMult = 40;
+                else if (symbol === 'Q') baseMult = 10;
+                else baseMult = 5; // For J or 10, smaller jackpot
+            }
+            const totalMult = baseMult * mult;
+            if (totalMult > bestWin.win) {
+                bestWin = { win: totalMult, count, symbol, multiplier: mult };
+            }
+        }
+    }
+
+    return bestWin;
+}
+
+function triggerRainbowAnimation() {
+    const container = document.getElementById('wandering-content');
+    container.style.animation = 'rainbowPulse 2s infinite';
+    setTimeout(() => {
+        container.style.animation = '';
+    }, 4000);
+}
+
+function renderSlotMachineBonus() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    let html = `<div class="section-title" style="color:#ff6600;">🎰 BONUS ROUND!</div>`;
+    html += `<div class="description">Congratulations! Spin the bonus wheel for amazing prizes!</div>`;
+
+    html += `<div style="background:#000;border:2px solid #ff6600;padding:20px;margin:10px 0;text-align:center;">
+        <div id="bonus-wheel" style="font-size:3em;margin:20px 0;">🎡</div>
+        <div style="color:#ff6600;font-weight:bold;margin:10px 0;">Click to Spin!</div>
+    </div>`;
+
+    html += `<div style="text-align:center;margin:15px 0;">
+        <button class="action-btn" onclick="spinBonusWheel()" style="font-size:1.2em;padding:15px 30px;background:#ff6600;border-color:#ff6600;">
+            🎰 SPIN BONUS WHEEL!
+        </button>
+    </div>`;
+
+    return html;
+}
+
+function spinBonusWheel() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    // Possible prizes
+    const prizes = [
+        { name: '2x Multiplier', multiplier: 2, chance: 20 },
+        { name: '5x Multiplier', multiplier: 5, chance: 15 },
+        { name: '10x Multiplier', multiplier: 10, chance: 10 },
+        { name: '25x Multiplier', multiplier: 25, chance: 5 },
+        { name: '5 Free Spins', freeSpins: 5, chance: 15 },
+        { name: '10 Free Spins', freeSpins: 10, chance: 10 },
+        { name: 'Soul Gem', soulGem: 1, chance: 5 },
+        { name: 'Jackpot Reset', jackpotReset: true, chance: 5 },
+        { name: 'No Prize', multiplier: 0, chance: 15 }
+    ];
+
+    // Weighted random selection
+    let totalWeight = prizes.reduce((sum, p) => sum + p.chance, 0);
+    let rand = Math.random() * totalWeight;
+    let selectedPrize = null;
+    for (let prize of prizes) {
+        rand -= prize.chance;
+        if (rand <= 0) {
+            selectedPrize = prize;
+            break;
+        }
+    }
+
+    // Animate wheel
+    const wheelDiv = document.getElementById('bonus-wheel');
+    let spins = 0;
+    const maxSpins = 20;
+    const spinInterval = setInterval(() => {
+        spins++;
+        const randomPrize = prizes[Math.floor(Math.random() * prizes.length)];
+        wheelDiv.textContent = randomPrize.name;
+        if (spins >= maxSpins) {
+            clearInterval(spinInterval);
+            wheelDiv.textContent = selectedPrize.name;
+            wheelDiv.style.color = '#ff6600';
+            wheelDiv.style.fontWeight = 'bold';
+
+            // Award prize
+            setTimeout(() => awardBonusPrize(selectedPrize), 500);
+        }
+    }, 100);
+}
+
+function awardBonusPrize(prize) {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    let message = `Bonus Prize: ${prize.name}! `;
+
+    if (prize.multiplier) {
+        const win = bet * prize.multiplier;
+        gameState.player.gold += win;
+        updateStats();
+        message += `Won ${win} gold!`;
+    } else if (prize.freeSpins) {
+        w.slotMachineFreeSpins += prize.freeSpins;
+        message += `+${prize.freeSpins} Free Spins!`;
+    } else if (prize.soulGem) {
+        gameState.soulGems += prize.soulGem;
+        message += `+${prize.soulGem} Soul Gem!`;
+    } else if (prize.jackpotReset) {
+        // Reset jackpots or something, maybe award a mini jackpot
+        const win = bet * 50;
+        gameState.player.gold += win;
+        updateStats();
+        message += `Mini Jackpot! ${win} gold!`;
+    } else {
+        message += `Better luck next time!`;
+    }
+
+    addWanderingLog(message, 'reward');
+
+    // End bonus round
+    w.slotMachineBonusActive = false;
+    renderWandering();
+}
+
+function leaveSlotMachine() {
+    const w = gameState.wandering;
+    w.slotMachineActive = false;
+    w.slotMachineRarity = null;
+    w.slotMachineBet = 0;
+    w.slotMachineFreeSpins = 0;
+    w.slotMachineJackpots = { minor: false, major: false, grand: false };
+    w.slotMachineBonusActive = false;
+    addWanderingLog('You leave the slot machine.', 'info');
+    renderWandering();
+}
+
 function wanderingUseItem(idx) {
     const w = gameState.wandering;
     if (!w.active || !w.inBattle) return;
@@ -5775,6 +6542,64 @@ function wanderingUseItem(idx) {
 }
 
 // Generate merchant items (Rare and above only - very rare and valuable!)
+function pickSlotMachineRarity() {
+    // Rarities: Silver, Gold, Diamond
+    // Weights: Silver 70%, Gold 25%, Diamond 5%
+    const rand = Math.random();
+    if (rand < 0.05) return 'diamond';
+    if (rand < 0.30) return 'gold';
+    return 'silver';
+}
+
+// Simulation function to calculate RTP
+function simulateSlotRTP(numSpins = 10000) {
+    let totalBet = 0;
+    let totalWin = 0;
+
+    for (let i = 0; i < numSpins; i++) {
+        const bet = 100; // Assume 100 gold bet for simplicity
+        totalBet += bet;
+
+        const results = generateSlotResults();
+        const waysWins = calculate243Ways(results);
+
+        let spinWin = 0;
+        let scatters = 0;
+        let bonuses = 0;
+
+        // Count scatters and bonuses
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 5; col++) {
+                if (results[row][col].type === 'scatter') scatters++;
+                if (results[row][col].type === 'bonus') bonuses++;
+            }
+        }
+
+        // Calculate wins
+        waysWins.forEach(way => {
+            if (way.win >= 400 && way.count === 5) spinWin += bet * 400;
+            else if (way.win >= 40 && way.count === 5) spinWin += bet * 40;
+            else if (way.win >= 10 && way.count === 5) spinWin += bet * 10;
+            else spinWin += way.win * bet;
+        });
+
+        // Bonus prizes (simplified average)
+        if (bonuses >= 3) {
+            // Average bonus value: estimate based on prizes
+            const avgBonus = (2*20 + 5*15 + 10*10 + 25*5 + 0*15 + 5*15 + 10*10 + 1*5 + 50*5) / 100; // Weighted average
+            spinWin += bet * avgBonus;
+        }
+
+        // Free spins not included in this simple RTP calc, as they continue play
+
+        totalWin += spinWin;
+    }
+
+    const rtp = (totalWin / totalBet) * 100;
+    console.log(`Simulated RTP: ${rtp.toFixed(2)}%`);
+    return rtp;
+}
+
 function generateMerchantItems() {
     const items = [];
     const allItems = Object.values(itemPool);
@@ -5818,8 +6643,8 @@ function generateMerchantItems() {
         let item;
         let price;
         
-        if (rarityRoll < 0.01 && uniqueItems.length > 0) {
-            // 1% chance for unique
+        if (rarityRoll < 0.0005 && uniqueItems.length > 0) {
+            // 0.05% chance for unique
             item = pick(uniqueItems);
             price = getVendorPriceForRarity('unique');
         } else if (rarityRoll < 0.06 && legendaryItems.length > 0) {
@@ -5906,14 +6731,13 @@ function getWanderItemDrop(rankMultiplier = 1) {
         legendary: 2 * safeMultiplier
     }) || 'common';
     
+    const maxItemLevel = getPlayerItemDropLevelCap(Infinity);
+
     // Filter items of this rarity (equipment only, not materials/consumables/currency)
     const allItems = Object.values(itemPool);
     const matchingItems = allItems.filter(item => 
-        item.rarity === targetRarity && 
-        item.equipSlot && 
-        item.type !== 'material' && 
-        item.type !== 'currency' &&
-        item.type !== 'consumable'
+        item.rarity === targetRarity &&
+        isEligibleEquipmentDrop(item, maxItemLevel)
     );
     
     if (matchingItems.length > 0) {
@@ -5921,7 +6745,9 @@ function getWanderItemDrop(rankMultiplier = 1) {
     }
     
     // Fallback to any item of that rarity
-    const fallbackItems = allItems.filter(item => item.rarity === targetRarity);
+    const fallbackItems = allItems.filter(item => 
+        item.rarity === targetRarity && isEligibleEquipmentDrop(item, maxItemLevel)
+    );
     if (fallbackItems.length > 0) {
         return { ...pick(fallbackItems) };
     }
@@ -5944,6 +6770,9 @@ function handleLocationAction(locKey) {
             return true;
         case 'guild':
             renderGuildQuests();
+            return true;
+        case 'potion_shop':
+            renderPotionShop();
             return true;
         default:
             return false;
@@ -5994,7 +6823,12 @@ function renderBattle() {
         renderEnchantmentAltar();
         return;
     }
-    
+
+    if (gameState.player.location === 'potion_shop' && !gameState.inBattle) {
+        renderPotionShop();
+        return;
+    }
+
     // Check if dungeon is active
     if (dungeonState.active) {
         renderDungeon();
@@ -6073,8 +6907,8 @@ function getRankScaledItemRarity(rankMultiplier = 1) {
         rare: 10 * Math.sqrt(safeMultiplier),
         epic: 1.83 * safeMultiplier,
         legendary: 0.67 * safeMultiplier,
-        unique: 0.45 * safeMultiplier,
-        uber_unique: 0.01 * safeMultiplier
+        unique: 0.0225 * safeMultiplier,
+        uber_unique: 0.0005 * safeMultiplier
     }) || 'common';
 }
 
@@ -6344,6 +7178,19 @@ function renderInventoryItemComparison(item, equippedItem) {
     return html;
 }
 
+function renderItemStatSummary(item) {
+    const statKeys = getComparableItemStatKeys(item, null);
+    if (statKeys.length === 0) return '';
+
+    let html = `<div class="item-compare-header">Item Stats</div>`;
+    statKeys.forEach(statKey => {
+        const itemValue = typeof item[statKey] === 'number' ? item[statKey] : 0;
+        html += `<div class="item-stat-comparison item-stat-better">${formatItemStatLabel(statKey)}: ${formatItemStatValue(statKey, itemValue)}</div>`;
+    });
+
+    return `<div style="margin-top:8px;">${html}</div>`;
+}
+
 function renderPurchasableItemComparison(item) {
     const slot = resolveEquipSlot(item);
     if (!slot) return '';
@@ -6354,11 +7201,51 @@ function renderPurchasableItemComparison(item) {
 // INVENTORY RENDER
 function renderInventory() {
     const container = document.getElementById('inventory-screen-content');
+    const inventoryFilters = normalizeInventoryViewFilters();
     const quicksellRarities = getInventoryQuicksellRarities();
     const quicksellAvailability = getInventoryQuicksellAvailability();
     const quicksellSummary = getInventoryQuicksellSummary();
+    const filteredInventory = getFilteredInventoryEntries();
+    const rarityOptions = getInventoryFilterRarityOptions();
+    const typeOptions = getInventoryFilterTypeOptions();
     
-    let html = `<div class="section-title">Inventory (${gameState.inventory.length} items)</div>`;
+    let html = `<div class="section-title">Inventory (${filteredInventory.length}/${gameState.inventory.length} items shown)</div>`;
+
+    html += `<div class="inventory-filter-panel">
+        <div class="inventory-filter-title">Inventory Filters</div>
+        <div class="inventory-filter-grid">
+            <label class="inventory-filter-field">
+                <span>Search</span>
+                <input type="text" value="${escapeHtml(inventoryFilters.search)}" oninput="setInventoryViewFilter('search', this.value)" placeholder="Search name, desc, rarity...">
+            </label>
+            <label class="inventory-filter-field">
+                <span>Rarity</span>
+                <select onchange="setInventoryViewFilter('rarity', this.value)">
+                    <option value="all" ${inventoryFilters.rarity === 'all' ? 'selected' : ''}>All Rarities</option>
+                    ${rarityOptions.map(rarity => `<option value="${rarity}" ${inventoryFilters.rarity === rarity ? 'selected' : ''}>${formatRarityLabel(rarity)}</option>`).join('')}
+                </select>
+            </label>
+            <label class="inventory-filter-field">
+                <span>Item Type</span>
+                <select onchange="setInventoryViewFilter('type', this.value)">
+                    <option value="all" ${inventoryFilters.type === 'all' ? 'selected' : ''}>All Types</option>
+                    ${typeOptions.map(type => `<option value="${type}" ${inventoryFilters.type === type ? 'selected' : ''}>${formatItemTypeLabel({ type })}</option>`).join('')}
+                </select>
+            </label>
+            <label class="inventory-filter-field">
+                <span>Min Level</span>
+                <input type="number" min="0" step="1" value="${inventoryFilters.minLevel}" oninput="setInventoryViewFilter('minLevel', this.value)" placeholder="Any">
+            </label>
+            <label class="inventory-filter-field">
+                <span>Max Level</span>
+                <input type="number" min="0" step="1" value="${inventoryFilters.maxLevel}" oninput="setInventoryViewFilter('maxLevel', this.value)" placeholder="Any">
+            </label>
+        </div>
+        <div class="inventory-filter-actions">
+            <button class="action-btn" onclick="resetInventoryViewFilters()">Clear Filters</button>
+        </div>
+        <div class="inventory-filter-summary">Showing ${filteredInventory.length} of ${gameState.inventory.length} inventory entr${gameState.inventory.length === 1 ? 'y' : 'ies'}.</div>
+    </div>`;
 
     if (quicksellRarities.length > 0) {
         normalizeInventoryQuicksellFilters();
@@ -6403,9 +7290,11 @@ function renderInventory() {
     
     if (gameState.inventory.length === 0) {
         html += `<div class="msg">Inventory is empty</div>`;
+    } else if (filteredInventory.length === 0) {
+        html += `<div class="msg">No inventory items match the current filters</div>`;
     }
     
-    gameState.inventory.forEach((item, idx) => {
+    filteredInventory.forEach(({ item, idx }) => {
         const slot = resolveEquipSlot(item);
         const equippedItem = slot ? gameState.equipment[slot] : null;
         const canEquip = slot && (!item.levelReq || gameState.player.level >= item.levelReq);
@@ -6726,11 +7615,13 @@ function renderCrafting() {
         const levelRequirementHtml = resultItem.levelReq
             ? `<div class="craft-materials" style="color:${meetsLevel ? '#888' : '#ff6666'}">Requires Level ${resultItem.levelReq}${meetsLevel ? '' : ` (You are Level ${gameState.player.level})`}</div>`
             : '';
+        const resultStatsHtml = renderItemStatSummary(resultItem);
 
         html += `<div class="craft-recipe" style="border-color: ${recipeBorderColor}">
             <div style="${resultStyle};font-weight:bold">${recipe.name} (${Math.floor(recipe.chance * 100)}% success)</div>
             <div class="craft-materials">Requires: ${materialsHtml}</div>
             <div class="craft-result">Result: <span style="${resultStyle}">${recipe.result.name}</span><span style="color:#888"> (${formatRarityLabel(resultItem.rarity)})</span></div>
+            ${resultStatsHtml}
             ${levelRequirementHtml}
             ${uniqueBonusHtml}
             <button class="action-btn craft-btn" onclick="craftItem(${idx})" ${can ? '' : 'disabled'}>Craft</button>
@@ -7714,89 +8605,94 @@ function refreshMarketManually() {
     renderMarket();
 }
 
-// DUNGEON INFINITE CRAWLER
+function renderPotionShop() {
+    const container = document.getElementById('battle-content');
+
+    let html = `<div class="location-header" style="color:#00ff00">&#127851; Potion Shop &#127851;</div>`;
+    html += `<div class="description">Welcome to the Potion Shop! We sell healing potions of various strengths.</div>`;
+    html += `<div class="section-title">Available Potions</div>`;
+
+    potionShopItems.forEach((potion, idx) => {
+        const canAfford = gameState.player.gold >= potion.price;
+        html += `<div style="background:#1a1a1a;border:1px solid #00ff00;padding:10px;margin:5px 0;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <span style="color:#00ff00;font-weight:bold">${potion.name}</span>
+                <div style="color:#888;font-size:0.8em">${potion.desc}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="color:#ffd700">${potion.price} Gold</div>
+                <button class="action-btn" onclick="buyPotion(${idx})" ${canAfford ? '' : 'disabled'}>Buy</button>
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+function buyPotion(idx) {
+    const potion = potionShopItems[idx];
+    if (!potion) return;
+
+    if (gameState.player.gold < potion.price) {
+        addBattleMsg(`Not enough gold! This potion costs ${potion.price} gold.`, 'damage');
+        renderPotionShop();
+        return;
+    }
+
+    gameState.player.gold -= potion.price;
+    addToInventory({ name: potion.name, type: 'consumable', effect: 'heal', value: potion.heal, qty: 1, desc: potion.desc, rarity: 'common' });
+    addBattleMsg(`Purchased ${potion.name} for ${potion.price} gold!`, 'reward');
+    updateStats();
+    renderPotionShop();
+}
+
 function startDungeon() {
     if (dungeonState.active) return;
-    if (guardCombatCooldown(addBattleMsg, renderBattle)) return;
 
     dungeonState.active = true;
-    // Start from highest stage reached, but track highest stage across runs
-    dungeonState.stage = gameState.highestDungeonStage > 0 ? gameState.highestDungeonStage : 1;
+    dungeonState.stage = Math.max(1, Number(gameState.highestDungeonRebalanceStage) || 1);
     dungeonState.hp = gameState.player.hp;
     dungeonState.maxHp = gameState.player.maxHp;
     dungeonState.rewards = [];
     dungeonState.log = [];
     dungeonState.inBattle = false;
 
-    // Show highest stage reached if previously recorded
-    if (gameState.highestDungeonStage > 0) {
-        addDungeonLog(`Your highest stage reached: ${gameState.highestDungeonStage}. Continuing from this stage...`, 'info');
+    if ((gameState.highestDungeonRebalanceStage || 1) > 1) {
+        addDungeonLog(`Your rebalance dungeon stage is ${gameState.highestDungeonRebalanceStage}. Continuing from this stage...`, 'info');
     } else {
-        addDungeonLog('You enter the Dungeon of Shadows. How deep can you go?');
+        addDungeonLog('You enter the rebalanced Dungeon of Shadows. A single endless horror awaits.');
     }
+
     generateDungeonEncounter();
     showScreen('battle');
 }
 
 function generateDungeonEncounter() {
     const p = gameState.player;
-    const stage = dungeonState.stage;
-    const isMiniboss = stage % 5 === 0 && stage > 0;
-    
-    // Progressive difficulty scaling: starts very easy, gets harder
-    // Stage 1: 0.3x (really easy), scales up quadratically
-    let stageMultiplier;
-    if (stage === 1) {
-        stageMultiplier = 0.3; // First stage is really easy
-    } else {
-        // Linear 10% stat boost per stage
-        stageMultiplier = 1 + (stage - 1) * 0.1;
-    }
-    
-    // Miniboss bonus: additional 50% stats for minibosses
-    const minibossMultiplier = isMiniboss ? 1.5 : 1;
-    const totalMultiplier = stageMultiplier * minibossMultiplier;
-    
-    // Select enemy based on stage tier
-    let tier;
-    if (stage >= 501) {
-        // Original dynamic scaling ONLY for stages 501 and above
-        tier = Math.min(Math.floor((stage - 1) / 5), 10);
-    } else {
-        // Fixed tier progression for first 500 stages: 50 stages per tier
-        // OLD DYNAMIC SYSTEM IS FULLY DISABLED HERE
-        tier = Math.min(Math.ceil(stage / 50), 10);
-    }
-    const tierKey = Object.keys(ENEMY_TIERS)[tier];
-    const baseTier = ENEMY_TIERS[tierKey];
-    
-    // DUNGEON ONLY: COMPLETELY RANDOM ENEMIES FROM FULL LIST - NO RESTRICTIONS
-    const key = pick(Object.keys(enemies));
-    const template = enemies[key];
-    
-    // Generate enemy with scaled stats
+    const stage = Math.max(1, Number(dungeonState.stage) || 1);
+    const stageMultiplier = Math.pow(1.07, stage);
     const enemy = {
-        name: isMiniboss ? `⚔️ ${template.name} [MINIBOSS Stage ${stage}]` : `${template.name} [Stage ${stage}]`,
-        hp: Math.floor(template.hp * totalMultiplier),
-        maxHp: Math.floor(template.hp * totalMultiplier),
-        atk: Math.floor(template.atk * totalMultiplier),
-        def: Math.floor(template.def * totalMultiplier),
-        xp: Math.floor(template.xp * totalMultiplier * (isMiniboss ? 3 : 2)),
-        gold: Math.floor(template.gold * totalMultiplier * (isMiniboss ? 3 : 2)),
-        drops: template.drops,
-        rarity: template.rarity,
-        isMiniboss: isMiniboss // Track if this is a miniboss for drop multiplier
+        name: `${DUNGEON_REBALANCE_ENEMY_NAME} [Stage ${stage}]`,
+        hp: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.hp * stageMultiplier)),
+        maxHp: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.hp * stageMultiplier)),
+        atk: Math.max(1, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.atk * stageMultiplier)),
+        def: Math.max(0, Math.floor(DUNGEON_REBALANCE_BASE_ENEMY.def * stageMultiplier)),
+        crit: DUNGEON_REBALANCE_BASE_ENEMY.crit,
+        block: DUNGEON_REBALANCE_BASE_ENEMY.block,
+        dodge: DUNGEON_REBALANCE_BASE_ENEMY.dodge,
+        xp: Math.max(25, Math.floor(30 * stageMultiplier)),
+        gold: Math.max(15, Math.floor(20 * stageMultiplier)),
+        rarity: 'dungeon',
+        randomDebuffChance: DUNGEON_REBALANCE_BASE_ENEMY.randomDebuffChance,
+        randomDebuffCountRange: [...DUNGEON_REBALANCE_BASE_ENEMY.randomDebuffCountRange],
+        debuffPool: [...DUNGEON_REBALANCE_BASE_ENEMY.debuffPool]
     };
-    
+
     dungeonState.currentEnemy = enemy;
     dungeonState.inBattle = true;
-    
-    if (isMiniboss) {
-        addDungeonLog(`⚔️ A powerful ${template.name} appears as a MINIBOSS! (Stage ${stage})`, 'damage');
-        addChatMessage('SYSTEM', `${p.name} encountered a Miniboss at Dungeon Stage ${stage}!`, true);
-    } else {
-        addDungeonLog(`A ${template.name} appears! (Stage ${stage})`);
-    }
+
+    addDungeonLog(`${enemy.name} materializes with power scaled by 1.07^${stage}.`, 'damage');
+    addChatMessage('SYSTEM', `${p.name} encountered ${DUNGEON_REBALANCE_ENEMY_NAME} at Dungeon Stage ${stage}.`, true);
     renderDungeon();
 }
 
@@ -7880,58 +8776,32 @@ function dungeonAction(action) {
 function dungeonEnemyDefeated() {
     const p = gameState.player;
     const e = dungeonState.currentEnemy;
-    const isMiniboss = e.isMiniboss;
-
-    // Scale XP and Gold to enemy level/tier, not player level
-    // Minibosses give triple XP and Gold
-    const dropMultiplier = isMiniboss ? 3 : 1;
-    const scaledXp = e.xp * dropMultiplier;
-    const scaledGold = e.gold * dropMultiplier;
+    const scaledXp = e.xp;
+    const scaledGold = e.gold;
 
     p.xp += scaledXp;
     p.gold += scaledGold;
     dungeonState.rewards.push(`${scaledXp} XP, ${scaledGold} Gold`);
 
-    if (isMiniboss) {
-        addDungeonLog(`You defeated the MINIBOSS ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold! (3x rewards!)`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} defeated a MINIBOSS at Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
-    } else {
-        addDungeonLog(`You defeated ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} defeated ${e.name} in Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
-    }
+    addDungeonLog(`You defeated ${e.name}! Gained ${scaledXp} XP and ${scaledGold} gold!`, 'reward');
+    addChatMessage('SYSTEM', `${p.name} defeated ${e.name} in Dungeon Stage ${dungeonState.stage} and gained ${scaledXp} XP, ${scaledGold} Gold!`, true);
 
-    // Drop system with new rarity rates
-    // 35% base chance to drop something (tripled for miniboss = 3 rolls)
     const dropChance = Math.min(1, (0.35 + getTotalLuck() * 0.01) * (1 + getScrollDropBoost()));
-    const numDropRolls = isMiniboss ? 3 : 1;
+    const numDropRolls = 1;
 
     for (let roll = 0; roll < numDropRolls; roll++) {
         if (Math.random() < dropChance) {
-            // 60% chance for material/consumable drop (from enemy's loot table)
-            // 40% chance for equipment drop (using new rarity system)
-            if (Math.random() < 0.6 && e.drops && e.drops.length > 0) {
-                // Material/consumable drop from enemy's loot table
-                const dropItem = getMaterialDrop(e.drops);
-                if (dropItem) {
-                    addToInventory({ ...dropItem, qty: dropItem.qty || 1 });
-                    addDungeonLog(`Dropped: ${dropItem.name}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                    addItemLog('dungeon', dropItem.name);
-                    addChatMessage('SYSTEM', `${p.name} found in dungeon: ${formatChatItemMention(dropItem)}${(dropItem.qty || 1) > 1 ? ` x${dropItem.qty}` : ''}!`, true);
-                }
-            } else {
-                // Equipment drop using new rarity system
-                const targetRarity = getItemDropByRarity();
-                const droppedItem = getLeveledItemDrop(targetRarity, e.tier);
+            const targetRarity = getItemDropByRarity();
+            const droppedItem = getLeveledItemDrop(targetRarity, Math.max(1, Math.floor(dungeonState.stage / 5)));
 
-                if (droppedItem) {
-                    addToInventory({ ...droppedItem, qty: 1 });
-                    const rarityColor = getRarityColor(droppedItem.rarity);
-                    const isUber = isUberUnique(droppedItem);
-                    const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
-                    addDungeonLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
-                    addItemLog('dungeon', droppedItem.name);
-                    addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${formatChatItemMention(droppedItem)}!`, true);
-                }
+            if (droppedItem) {
+                addToInventory({ ...droppedItem, qty: 1 });
+                const rarityColor = getRarityColor(droppedItem.rarity);
+                const isUber = isUberUnique(droppedItem);
+                const itemColorStyle = isUber ? 'background: linear-gradient(to right, #ff0000, #ff7700, #ffff00, #00ff00, #00ffff, #0077ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;' : 'color:' + rarityColor;
+                addDungeonLog(`Dropped: <span style="${itemColorStyle}">${droppedItem.name}</span> (${droppedItem.rarity})!`, 'reward');
+                addItemLog('dungeon', droppedItem.name);
+                addChatMessage('SYSTEM', `${p.name} found a ${droppedItem.rarity} item in dungeon: ${droppedItem.name}!`, true);
             }
         }
     }
@@ -7942,7 +8812,7 @@ function dungeonEnemyDefeated() {
             const scrollName = getRandomScrollDropName();
             if (scrollName && scrollPool[scrollName]) {
                 addToInventory({ name: scrollName, type: 'scroll', qty: 1, ...scrollPool[scrollName] });
-                addDungeonLog(`Dropped scroll: ${scrollName}${isMiniboss ? ' (Miniboss bonus!)' : ''}!`, 'reward');
+                addDungeonLog(`Dropped scroll: ${scrollName}!`, 'reward');
                 addChatMessage('SYSTEM', `${p.name} found a scroll in dungeon: ${formatChatItemMention(scrollName)}!`, true);
             }
         }
@@ -7952,25 +8822,11 @@ function dungeonEnemyDefeated() {
     checkLevelUp();
 
     resetCombatScrollSession();
-
-    // Every 5 stages: permanent +1 ATK and +1 DEF reward (check BEFORE incrementing)
-    if (dungeonState.stage > 0 && dungeonState.stage % 5 === 0) {
-        p.atk += 1;
-        p.def += 1;
-        addDungeonLog(`🏆 STAGE ${dungeonState.stage} MILESTONE! Permanent +1 ATK and +1 DEF!`, 'reward');
-        addChatMessage('SYSTEM', `${p.name} reached Stage ${dungeonState.stage} in the Dungeon and gained permanent +1 ATK and +1 DEF!`, true);
+    if (dungeonState.stage > gameState.highestDungeonRebalanceStage) {
+        gameState.highestDungeonRebalanceStage = dungeonState.stage;
+        addDungeonLog(`🏆 New rebalance dungeon record: Stage ${dungeonState.stage}!`, 'reward');
     }
-
-    // Advance to next stage
-    dungeonState.stage++;
-    
-    // Track highest dungeon stage reached
-    if (dungeonState.stage > gameState.highestDungeonStage) {
-        gameState.highestDungeonStage = dungeonState.stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${dungeonState.stage}!`, 'reward');
-        // Auto-save when new highest stage is achieved so it persists across refresh
-        saveGame();
-    }
+    gameState.highestDungeonStage = 0;
     
     addDungeonLog(`--- Stage ${dungeonState.stage} ---`, 'info');
 
@@ -7988,9 +8844,8 @@ function endDungeon() {
     const stage = dungeonState.stage;
     
     // Track highest dungeon stage reached
-    if (stage > gameState.highestDungeonStage) {
-        gameState.highestDungeonStage = stage;
-        addDungeonLog(`🏆 New record! Highest dungeon stage: ${stage}!`, 'reward');
+    if (dungeonState.stage > gameState.highestDungeonRebalanceStage) {
+        gameState.highestDungeonRebalanceStage = dungeonState.stage;
     }
     
     addDungeonLog(`Dungeon complete! You reached Stage ${stage}.`, 'info');
@@ -8038,7 +8893,7 @@ function renderDungeon() {
     let html = `<div class="dungeon-info">
         <div class="dungeon-stage">Dungeon - Stage ${dungeonState.stage}</div>
         <div class="dungeon-rewards">Rewards so far: ${dungeonState.rewards.length} victories</div>
-        ${gameState.highestDungeonStage > 0 ? `<div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Highest Stage Reached: ${gameState.highestDungeonStage}</div>` : ''}
+        <div style="color:#ffd700;font-size:0.9em;margin-top:5px;">🏆 Rebalance Highest Stage: ${Math.max(1, gameState.highestDungeonRebalanceStage || 1)}</div>
     </div>`;
     
     html += `<div class="section-title">Battle - ${e.name}</div>`;
@@ -8228,7 +9083,7 @@ function decryptData(encryptedBase64) {
 }
 
 // COMPACT SAVE UTILITIES
-const SAVE_SCHEMA_VERSION = 3;
+const SAVE_SCHEMA_VERSION = 5;
 const SAVE_STORAGE_KEY = 'realmOfShadows';
 const SAVE_DB_NAME = 'realmOfShadowsStorage';
 const SAVE_DB_VERSION = 1;
@@ -8333,14 +9188,22 @@ SAVE_ITEM_CATALOG.forEach((name, index) => {
     SAVE_ITEM_ID_TO_NAME[id] = name;
 });
 
+function getCanonicalItemName(name) {
+    if (!name) return name;
+    const { baseName, mergeLevel } = parseMergeLevelFromItemName(String(name));
+    const canonicalBaseName = LEGACY_ITEM_NAME_ALIASES[baseName] || baseName;
+    return mergeLevel > 0 ? `${canonicalBaseName} +${mergeLevel}` : canonicalBaseName;
+}
+
 function getCanonicalItemByName(name) {
     if (!name) return null;
-    return itemPool[name] || scrollPool[name] || SAVE_ITEM_BASE_EXTRAS[name] || null;
+    const canonicalName = getCanonicalItemName(name);
+    return itemPool[canonicalName] || scrollPool[canonicalName] || SAVE_ITEM_BASE_EXTRAS[canonicalName] || null;
 }
 
 function getCatalogBaseForItem(item) {
     if (!item || !item.name) return null;
-    const baseName = item.name.replace(/ \+\d+$/, '');
+    const baseName = getCanonicalItemName(item.name.replace(/ \+\d+$/, ''));
     const base = getCanonicalItemByName(baseName);
     if (!base) return null;
     return { id: baseName, baseName, base };
@@ -8443,6 +9306,8 @@ function rebuildMergedItemFromBase(baseName, mergeLevel, preservedItem = null) {
 function recoverMergeLevelFromItemName(item) {
     if (!item || typeof item.name !== 'string') return item;
 
+    item.name = getCanonicalItemName(item.name);
+
     const { baseName, mergeLevel } = parseMergeLevelFromItemName(item.name);
     if (mergeLevel <= 0) return item;
 
@@ -8458,7 +9323,8 @@ function humanizeSpecialAbility(ability) {
     const labels = {
         half_current_hp: 'Deals 50% of enemy current HP as bonus damage',
         status_immunity: 'Immune to negative status effects',
-        encounter_multiplier_escape: 'Wander counts as extra encounters and escape keeps rewards'
+        encounter_multiplier_escape: 'Wander counts as extra encounters and escape keeps rewards',
+        shadow_crit: '50% chance for attacks to deal an additional 300% damage'
     };
     return labels[ability] || String(ability || '').replace(/_/g, ' ');
 }
@@ -8706,6 +9572,7 @@ function normalizeScrollItemData(item) {
     if (!item) return null;
 
     item = recoverMergeLevelFromItemName(item);
+    item.name = getCanonicalItemName(item.name);
     item.enchantBonusStats = normalizeEnchantBonuses(item.enchantBonusStats);
     if (!item.enchantBonusStats.length) delete item.enchantBonusStats;
 
@@ -8905,9 +9772,36 @@ function addSanitizedInventoryItem(targetInventory, item, stackIndexByKey = null
 
     targetInventory.push(item);
 }
-
 function sanitizeLoadedStateData(state) {
     const allowedLuckTypes = ['weapon', 'charm'];
+    const player = state.player;
+    const flags = state.saveMigrationFlags && typeof state.saveMigrationFlags === 'object'
+        ? state.saveMigrationFlags
+        : {};
+    const saveVersion = Math.floor(Number(state.__saveVersion) || 1);
+    const legacyDungeonStage = Math.max(0, Number(state.highestDungeonStage) || 0);
+
+    if (!flags.legacyDungeonStageBonusRemoved && legacyDungeonStage > 0 && saveVersion < 4) {
+        const legacyBonus = legacyDungeonStage * 0.2;
+        player.baseAtk = Math.max(10, Number((player.baseAtk ?? computePlayerLevelBaseStats(player.level).atk) - legacyBonus) || 10);
+        player.baseDef = Math.max(5, Number((player.baseDef ?? computePlayerLevelBaseStats(player.level).def) - legacyBonus) || 5);
+        delete player.maxAtk;
+        delete player.maxDef;
+        flags.legacyDungeonStageBonusRemoved = true;
+    }
+
+    if (!flags.dungeonRebalanceInitialized) {
+        state.highestDungeonRebalanceStage = 1;
+        flags.dungeonRebalanceInitialized = true;
+    }
+
+    state.highestDungeonRebalanceStage = Math.max(1, Number(state.highestDungeonRebalanceStage) || 1);
+    state.highestDungeonStage = 0;
+    state.saveMigrationFlags = {
+        dungeonRebalanceInitialized: !!flags.dungeonRebalanceInitialized,
+        legacyDungeonStageBonusRemoved: !!flags.legacyDungeonStageBonusRemoved,
+        legacyLevel35RollbackApplied: !!flags.legacyLevel35RollbackApplied
+    };
     if (!state.player || typeof state.player !== 'object') state.player = cloneData(INITIAL_GAME_STATE_SNAPSHOT.player);
     state.enchanting = {
         selectedSlot: SAVE_EQUIPMENT_SLOT_KEYS.includes(state.enchanting?.selectedSlot) ? state.enchanting.selectedSlot : null,
@@ -8919,6 +9813,11 @@ function sanitizeLoadedStateData(state) {
     };
     state.player.name = sanitizeProfileText(state.player.name, 'Hero', 24);
     state.saveName = sanitizeProfileText(state.saveName, 'Hero Save', 40);
+    state.player.level = normalizeFiniteNumber(state.player.level, INITIAL_GAME_STATE_SNAPSHOT.player.level, { min: 1, max: MAX_PLAYER_LEVEL });
+    state.player.xp = normalizeFiniteNumber(state.player.xp, INITIAL_GAME_STATE_SNAPSHOT.player.xp, { min: 0 });
+    state.player.xpToNext = state.player.level >= MAX_PLAYER_LEVEL
+        ? null
+        : normalizeFiniteNumber(state.player.xpToNext, INITIAL_GAME_STATE_SNAPSHOT.player.xpToNext, { min: 1 });
     ensurePlayerBaseStats(state.player);
     state.player.gold = normalizeFiniteNumber(state.player.gold, INITIAL_GAME_STATE_SNAPSHOT.player.gold, { min: 0 });
     state.soulGems = normalizeFiniteNumber(state.soulGems, INITIAL_GAME_STATE_SNAPSHOT.soulGems, { min: 0 });
@@ -8927,6 +9826,14 @@ function sanitizeLoadedStateData(state) {
     state.forceRefreshCost = normalizeFiniteNumber(state.forceRefreshCost, INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCost, { min: 0 });
     state.forceRefreshCount = normalizeFiniteNumber(state.forceRefreshCount, INITIAL_GAME_STATE_SNAPSHOT.forceRefreshCount, { min: 0 });
     state.marketForceRefreshCost = normalizeFiniteNumber(state.marketForceRefreshCost, INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCost, { min: 0 });
+    state.inventory = (Array.isArray(state.inventory) ? state.inventory : [])
+        .map(item => item ? normalizeScrollItemData(item) : null)
+        .filter(Boolean);
+    SAVE_EQUIPMENT_SLOT_KEYS.forEach(slot => {
+        if (state.equipment?.[slot]) state.equipment[slot] = normalizeScrollItemData(state.equipment[slot]);
+    });
+    state.equippedScrolls = (Array.isArray(state.equippedScrolls) ? state.equippedScrolls : [])
+        .map(scroll => scroll ? normalizeScrollItemData(scroll) : null);
     state.marketForceRefreshCount = normalizeFiniteNumber(state.marketForceRefreshCount, INITIAL_GAME_STATE_SNAPSHOT.marketForceRefreshCount, { min: 0 });
     state.scrollSlots = normalizeFiniteNumber(state.scrollSlots, INITIAL_GAME_STATE_SNAPSHOT.scrollSlots, { min: 1, max: INITIAL_GAME_STATE_SNAPSHOT.scrollSlots });
     state.unlockedScrollSlots = normalizeFiniteNumber(state.unlockedScrollSlots, INITIAL_GAME_STATE_SNAPSHOT.unlockedScrollSlots, { min: 1, max: state.scrollSlots });
@@ -9290,6 +10197,8 @@ async function restorePersistedGameState() {
 
 function buildCompactSaveData() {
     ensureCollectionItemInstanceIds(gameState);
+    gameState.highestDungeonStage = 0;
+    gameState.highestDungeonRebalanceStage = Math.max(1, Number(gameState.highestDungeonRebalanceStage) || 1);
     const save = {
         v: SAVE_SCHEMA_VERSION,
         t: Date.now(),
@@ -9338,7 +10247,7 @@ function buildCompactSaveData() {
     const equippedScrolls = (gameState.equippedScrolls || []).map(scroll => scroll ? encodeItemForSave(scroll) : 0);
     if (equippedScrolls.some(Boolean)) save.es = equippedScrolls;
     if (gameState.lastRegen !== INITIAL_GAME_STATE_SNAPSHOT.lastRegen) save.lr = gameState.lastRegen || Date.now();
-    if (gameState.highestDungeonStage) save.hd = gameState.highestDungeonStage;
+    save.hrd = gameState.highestDungeonRebalanceStage || 1;
     const worldBossState = encodeWorldBossStateForSave();
     if (worldBossState) save.wb = worldBossState;
     if (gameState.worldBossNextSpawn) save.wbn = gameState.worldBossNextSpawn;
@@ -9372,6 +10281,7 @@ function buildCompactSaveData() {
 
 function decodeCompactSaveData(data) {
     const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+    hydrated.__saveVersion = data.v;
     hydrated.player = {
         ...hydrated.player,
         ...decodeAliasedObject(data.p || {}, SAVE_PLAYER_KEY_FROM_ALIAS)
@@ -9413,6 +10323,7 @@ function decodeCompactSaveData(data) {
     }
     if (data.lr !== undefined) hydrated.lastRegen = data.lr;
     if (data.hd !== undefined) hydrated.highestDungeonStage = data.hd;
+    if (data.hrd !== undefined) hydrated.highestDungeonRebalanceStage = data.hrd;
     const restoredWorldBoss = decodeWorldBossStateFromSave(data.wb);
     if (restoredWorldBoss) {
         hydrated.worldBossActive = true;
@@ -9448,6 +10359,7 @@ function decodeCompactSaveData(data) {
 
 function decodeLegacySaveData(data) {
     const hydrated = cloneData(INITIAL_GAME_STATE_SNAPSHOT);
+    hydrated.__saveVersion = Math.floor(Number(data?.v) || 1);
 
     Object.keys(hydrated).forEach(key => {
         if (data[key] !== undefined) {
@@ -10045,6 +10957,7 @@ function attackWorldBoss() {
             let specialMsg = '';
             let attackCount = playerStatus.attackTwice ? 2 : 1;
             let trueDamage = false;
+            let shadowCritTriggered = false;
             let guaranteedCrit = false;
             const eqSlots = ['weapon', 'armor', 'helmet', 'shield', 'ring', 'amulet', 'boots', 'gloves', 'cape'];
 
@@ -10098,6 +11011,12 @@ function attackWorldBoss() {
                 dmg += bonusDmg;
             }
 
+            const shadowCritMultiplier = getShadowCritMultiplier();
+            if (shadowCritMultiplier > 1) {
+                dmg = Math.floor(dmg * shadowCritMultiplier);
+                shadowCritTriggered = true;
+            }
+
             const totalAttackInstances = getTotalAttackInstances(attackCount);
             let totalDamageDealt = 0;
             let landedHits = 0;
@@ -10112,7 +11031,7 @@ function attackWorldBoss() {
 
             recordWorldBossPlayerDamage(totalDamageDealt);
             scheduleSilentPersist();
-            addBattleMsg(`You hit the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, crit ? 'reward' : 'info');
+            addBattleMsg(`You strike the World Boss for ${totalDamageDealt} damage${crit ? ' (CRIT!)' : ''}${shadowCritTriggered ? ' (SHADOW CRIT!)' : ''}${specialMsg}${totalAttackInstances > 1 ? ` (${totalAttackInstances} hits)` : ''}!`, (crit || shadowCritTriggered) ? 'reward' : 'info');
 
             if (landedHits > 0) {
                 tryApplyPlayerOnHitEffects(boss, addBattleMsg, { hitCount: landedHits });
@@ -10274,9 +11193,9 @@ function distributeWorldBossRewards() {
             rare: 25,
             epic: 20,
             legendary: 5,
-            unique: 1
+            unique: 0.05
         }) || 'uncommon';
-        if (targetRarity === 'unique' && Math.random() < 0.10) {
+        if (targetRarity === 'unique' && Math.random() < 0.005) {
             targetRarity = 'uber_unique';
         }
         const droppedItem = getLeveledItemDrop(targetRarity, boss.tier);
