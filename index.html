@@ -3827,9 +3827,13 @@ function updateStats() {
     if (xpEl) xpEl.textContent = p.level >= MAX_PLAYER_LEVEL
         ? formatScientificXp(p.xp)
         : `${p.xp}/${p.xpToNext}`;
-    if (goldEl) goldEl.textContent = p.gold;
+    if (goldEl) goldEl.textContent = formatRoundedGold(p.gold);
     if (soulEl) soulEl.textContent = gameState.soulGems;
     refreshCooldownUi();
+}
+
+function formatRoundedGold(value) {
+    return Math.round(Math.max(0, Number(value) || 0));
 }
 
 function formatScientificXp(value) {
@@ -6394,7 +6398,7 @@ function renderSlotMachineUI() {
     const rarity = w.slotMachineRarity;
     const bet = w.slotMachineBet || 0;
     const freeSpins = w.slotMachineFreeSpins || 0;
-    const playerGold = gameState.player.gold;
+    const playerGold = formatRoundedGold(gameState.player.gold);
 
     let html = `<div class="section-title" style="color:#ffd700;">🎰 Slot Machine - ${rarity.charAt(0).toUpperCase() + rarity.slice(1)} Tier</div>`;
     html += `<div class="description">The Apostles of Fate have presented you with a slot machine. Test your luck!</div>`;
@@ -6663,7 +6667,8 @@ function processSlotWin(results) {
     }
 
     if (totalWin > 0) {
-        gameState.player.gold += totalWin;
+        totalWin = formatRoundedGold(totalWin);
+        gameState.player.gold = formatRoundedGold(gameState.player.gold + totalWin);
         updateStats();
         addWanderingLog(`Total Win: ${totalWin} gold!`, 'reward');
     } else {
@@ -6836,8 +6841,8 @@ function awardBonusPrize(prize) {
     let message = `Bonus Prize: ${prize.name}! `;
 
     if (prize.multiplier) {
-        const win = bet * prize.multiplier;
-        gameState.player.gold += win;
+        const win = formatRoundedGold(bet * prize.multiplier);
+        gameState.player.gold = formatRoundedGold(gameState.player.gold + win);
         updateStats();
         message += `Won ${win} gold!`;
     } else if (prize.freeSpins) {
@@ -6848,8 +6853,8 @@ function awardBonusPrize(prize) {
         message += `+${prize.soulGem} Soul Gem!`;
     } else if (prize.jackpotReset) {
         // Reset jackpots or something, maybe award a mini jackpot
-        const win = bet * 50;
-        gameState.player.gold += win;
+        const win = formatRoundedGold(bet * 50);
+        gameState.player.gold = formatRoundedGold(gameState.player.gold + win);
         updateStats();
         message += `Mini Jackpot! ${win} gold!`;
     } else {
