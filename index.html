@@ -6467,14 +6467,17 @@ function renderSlotMachineUI() {
         <div style="text-align:center;">
             <div style="color:#ffaa00;font-weight:bold;">MINOR</div>
             <div style="color:#888;">10x bet</div>
+            <div style="color:#666;font-size:0.78em;">Center row, natural 5 Qs</div>
         </div>
         <div style="text-align:center;">
             <div style="color:#ff6600;font-weight:bold;">MAJOR</div>
-            <div style="color:#888;">40x bet</div>
+            <div style="color:#888;">100x bet</div>
+            <div style="color:#666;font-size:0.78em;">Center row, natural 5 Ks</div>
         </div>
         <div style="text-align:center;">
             <div style="background: linear-gradient(to right, #ff0000, #ff7700, #ffff00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;font-weight:bold;">GRAND</div>
-            <div style="color:#888;">400x bet + Soul Gem</div>
+            <div style="color:#888;">1000x bet + Soul Gem</div>
+            <div style="color:#666;font-size:0.78em;">Center row, natural 5 As</div>
         </div>
     </div>`;
 
@@ -6540,12 +6543,28 @@ function spinSlotMachine() {
 }
 
 function generateSlotResults() {
-    // 243 way slot machine with poker cards: A, K, Q, J, 10
+    // 243 way slot machine with weighted poker cards: A, K, Q, J, 10
     // Plus wilds (2-5x), scatters (10-100x)
     // 3 rows x 5 reels
-    const symbols = ['A', 'K', 'Q', 'J', '10'];
+    const weightedSymbols = [
+        ['A', 16],
+        ['K', 14],
+        ['Q', 13],
+        ['J', 27],
+        ['10', 30]
+    ];
     const wildMultipliers = [2, 3, 4, 5];
     const scatterBonuses = [10, 25, 50, 100];
+
+    const pickWeightedSymbol = () => {
+        const totalWeight = weightedSymbols.reduce((sum, [, weight]) => sum + weight, 0);
+        let roll = Math.random() * totalWeight;
+        for (const [symbol, weight] of weightedSymbols) {
+            roll -= weight;
+            if (roll <= 0) return symbol;
+        }
+        return weightedSymbols[weightedSymbols.length - 1][0];
+    };
 
     // Generate 3x5 grid
     const grid = [];
@@ -6562,7 +6581,7 @@ function generateSlotResults() {
             } else if (rand < 0.045) { // 1.5% bonus
                 grid[row][col] = { type: 'bonus', symbol: 'BONUS', bonus: true };
             } else {
-                grid[row][col] = { type: 'card', symbol: pick(symbols) };
+                grid[row][col] = { type: 'card', symbol: pickWeightedSymbol() };
             }
         }
     }
@@ -6659,22 +6678,30 @@ function processSlotWin(results) {
     const waysWins = calculate243Ways(results);
     const bestWay = waysWins.reduce((best, way) => (way.win > (best?.win || 0) ? way : best), null);
 
+    const isCenterLineJackpot = (symbol) => {
+        for (let col = 0; col < 5; col++) {
+            const cell = results[1][col];
+            if (cell.type !== 'card' || cell.symbol !== symbol) return false;
+        }
+        return true;
+    };
+
     // Rebalanced payout model: only the single best 243-way result pays.
     if (bestWay && bestWay.win > 0) {
-        if (bestWay.count === 5 && bestWay.symbol === 'A') {
+        if (bestWay.count === 5 && bestWay.symbol === 'A' && bestWay.multiplier === 1 && isCenterLineJackpot('A')) {
             jackpotType = 'grand';
-            totalWin += bet * bestWay.win;
+            totalWin += bet * 1000;
             gameState.soulGems += 1;
-            addWanderingLog(`GRAND JACKPOT! ${bet * bestWay.win} gold + 1 Soul Gem!`, 'reward');
+            addWanderingLog(`GRAND JACKPOT! ${bet * 1000} gold + 1 Soul Gem!`, 'reward');
             triggerRainbowAnimation();
-        } else if (bestWay.count === 5 && bestWay.symbol === 'K') {
+        } else if (bestWay.count === 5 && bestWay.symbol === 'K' && bestWay.multiplier === 1 && isCenterLineJackpot('K')) {
             jackpotType = 'major';
-            totalWin += bet * bestWay.win;
-            addWanderingLog(`MAJOR JACKPOT! ${bet * bestWay.win} gold!`, 'reward');
-        } else if (bestWay.count === 5 && bestWay.symbol === 'Q') {
+            totalWin += bet * 100;
+            addWanderingLog(`MAJOR JACKPOT! ${bet * 100} gold!`, 'reward');
+        } else if (bestWay.count === 5 && bestWay.symbol === 'Q' && bestWay.multiplier === 1 && isCenterLineJackpot('Q')) {
             jackpotType = 'minor';
-            totalWin += bet * bestWay.win;
-            addWanderingLog(`MINOR JACKPOT! ${bet * bestWay.win} gold!`, 'reward');
+            totalWin += bet * 10;
+            addWanderingLog(`MINOR JACKPOT! ${bet * 10} gold!`, 'reward');
         } else {
             totalWin += bestWay.win * bet;
             addWanderingLog(`Best Way Win: ${bestWay.count} ${bestWay.symbol} - ${bestWay.win}x bet`, 'reward');
@@ -6703,11 +6730,11 @@ function calculate243Ways(results) {
     // 243 ways: all possible combinations of one symbol per column
     const ways = [];
     const multipliers = {
-        'A': 0.14256,
-        'K': 0.09504,
-        'Q': 0.057024,
-        'J': 0.038016,
-        '10': 0.019008
+        'A': { 3: 0.23, 4: 0.72, 5: 2.45 },
+        'K': { 3: 0.18, 4: 0.58, 5: 1.9 },
+        'Q': { 3: 0.145, 4: 0.45, 5: 1.45 },
+        'J': { 3: 0.115, 4: 0.35, 5: 1.1 },
+        '10': { 3: 0.085, 4: 0.26, 5: 0.82 }
     };
 
     // Generate all 3^5 = 243 combinations
@@ -6752,15 +6779,7 @@ function evaluateWay(way, multipliers) {
         }
 
         if (count >= 3) {
-            let baseMult = multipliers[symbol];
-            if (count === 5) {
-                // Rebalanced jackpot payouts tuned toward ~95% RTP.
-                if (symbol === 'A') baseMult = 5.7024;
-                else if (symbol === 'K') baseMult = 2.8512;
-                else if (symbol === 'Q') baseMult = 1.4256;
-                else if (symbol === 'J') baseMult = 0.76032;
-                else baseMult = 0.4752;
-            }
+            const baseMult = (multipliers[symbol] && multipliers[symbol][count]) || 0;
             const totalMult = baseMult * mult;
             if (totalMult > bestWin.win) {
                 bestWin = { win: totalMult, count, symbol, multiplier: mult };
