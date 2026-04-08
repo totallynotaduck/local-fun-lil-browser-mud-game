@@ -232,6 +232,13 @@
         .enchant-summary { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; margin: 12px 0; }
         .enchant-cost { color: #ffd700; font-weight: bold; }
         .enchant-note { color: #999; font-size: 0.82em; margin-top: 6px; }
+
+        @keyframes rainbowPulse {
+            0%, 100% { background-color: #0d0d0d; border-color: #333; }
+            25% { background-color: #1a0d0d; border-color: #ff0000; }
+            50% { background-color: #1a1a0d; border-color: #00ff00; }
+            75% { background-color: #0d1a1a; border-color: #0000ff; }
+        }
         
         @media (max-width: 900px) {
             #left-panel, #right-panel { width: 150px; }
@@ -371,7 +378,13 @@ const gameState = {
         rewards: { xp: 0, gold: 0, items: [] },
         log: [],
         inBattle: false,
-        currentEnemy: null
+        currentEnemy: null,
+        slotMachineActive: false,
+        slotMachineRarity: null,
+        slotMachineBet: 0,
+        slotMachineFreeSpins: 0,
+        slotMachineJackpots: { minor: false, major: false, grand: false },
+        slotMachineBonusActive: false
     },
     // Force refresh cost tracking
     forceRefreshCost: 100,
@@ -5796,9 +5809,9 @@ function addWanderingLog(msg, type = 'info') {
 function wanderingContinue() {
     const w = gameState.wandering;
     if (!w.active) return;
-    
-    // If in battle, don't continue
-    if (w.inBattle) return;
+
+    // If in battle or at slot machine (including bonus), don't continue
+    if (w.inBattle || w.slotMachineActive) return;
     
     // Check if we've completed all events
     if (w.currentEvent >= w.totalEvents) {
@@ -5891,8 +5904,8 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
-    } else if (eventType < 99.8) {
-        // 4.8% chance: Nothing or minor heal (remainder before merchant)
+     } else if (eventType < 99.6) {
+        // 4.6% chance: Nothing or minor heal (remainder before slot machine)
         if (Math.random() < 0.5) {
             const healAmt = Math.floor(p.maxHp * 0.1);
             p.hp = Math.min(p.maxHp, p.hp + healAmt);
@@ -5900,6 +5913,11 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
+    } else if (eventType < 99.8) {
+        // 0.2% chance: Slot Machine encounter
+        w.slotMachineActive = true;
+        w.slotMachineRarity = pickSlotMachineRarity();
+        addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: The Apostles of Fate has hauled you in your way, and would like you to stay a while, and listen.`, 'reward');
     } else {
         // 0.2% chance: Wandering Merchant (extremely rare!)
         w.merchantActive = true;
@@ -6171,11 +6189,17 @@ function renderWandering() {
         <div style="color:#00ff00;">Items: ${w.rewards.items.length}</div>
     </div>`;
     
-    // Merchant section if merchant is active
-    if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
+    // Slot Machine section if slot machine is active
+    if (w.slotMachineActive) {
+        if (w.slotMachineBonusActive) {
+            html += renderSlotMachineBonus();
+        } else {
+            html += renderSlotMachineUI();
+        }
+    } else if (w.merchantActive && w.merchantItems && w.merchantItems.length > 0) {
         html += `<div class="section-title" style="color:#ffd700;">🧙 Wandering Merchant</div>`;
         html += `<div class="description">A mysterious merchant with rare and powerful wares. These items won't last long!</div>`;
-        
+
         w.merchantItems.forEach((item, idx) => {
             const rarityColor = getRarityColor(item.rarity);
             const isUber = isUberUnique(item);
@@ -6197,7 +6221,7 @@ function renderWandering() {
                 </div>
             </div>`;
         });
-        
+
         html += `<div style="margin-top:15px;">
             <button class="action-btn" onclick="dismissMerchant()" style="font-size:0.9em;">👋 Wave goodbye to the merchant</button>
         </div>`;
@@ -6264,6 +6288,490 @@ function renderWandering() {
     container.innerHTML = html;
 }
 
+function renderSlotMachineUI() {
+    const w = gameState.wandering;
+    const rarity = w.slotMachineRarity;
+    const bet = w.slotMachineBet || 0;
+    const freeSpins = w.slotMachineFreeSpins || 0;
+    const playerGold = gameState.player.gold;
+
+    let html = `<div class="section-title" style="color:#ffd700;">🎰 Slot Machine - ${rarity.charAt(0).toUpperCase() + rarity.slice(1)} Tier</div>`;
+    html += `<div class="description">The Apostles of Fate have presented you with a slot machine. Test your luck!</div>`;
+
+    // Rarity info
+    const rarityInfo = {
+        silver: { minBet: 25, maxBet: 1000, color: '#c0c0c0' },
+        gold: { minBet: 500, maxBet: 9999, color: '#ffd700' },
+        diamond: { minBet: 5000, maxBet: null, color: '#b9f2ff' }
+    };
+    const info = rarityInfo[rarity];
+    html += `<div style="background:#1a1a1a;border:2px solid ${info.color};padding:10px;margin:10px 0;border-radius:5px;">
+        <div style="color:${info.color};font-weight:bold;">${rarity.toUpperCase()} SLOT MACHINE</div>
+        <div style="color:#aaa;">Min Bet: ${info.minBet} Gold | Max Bet: ${info.maxBet ? info.maxBet + ' Gold' : 'No Limit'}</div>
+    </div>`;
+
+    // Bet input
+    if (freeSpins === 0) {
+        html += `<div class="section-title">Place Your Bet</div>`;
+        html += `<div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
+            <input type="number" id="slot-bet-input" value="${bet || info.minBet}" min="${info.minBet}" max="${info.maxBet || ''}" style="width:120px;background:#111;border:1px solid #444;color:#00ff00;padding:5px;">
+            <span style="color:#ffd700;">Gold</span>
+            <button class="action-btn gold-btn" onclick="setSlotBet()">Set Bet</button>
+        </div>`;
+        html += `<div style="color:#888;font-size:0.8em;">Current Gold: ${playerGold}</div>`;
+    } else {
+        html += `<div style="background:#2a2a00;border:1px solid #ffff00;padding:8px;margin:10px 0;border-radius:4px;color:#ffff00;">
+            FREE SPINS ACTIVE: ${freeSpins} remaining
+        </div>`;
+    }
+
+    // Slot reels (3x5 grid)
+    html += `<div class="section-title">🎰 The Reels (243 Ways)</div>`;
+    html += `<div id="slot-reels" style="background:#000;border:2px solid #00ff00;padding:20px;margin:10px 0;text-align:center;font-size:1.8em;font-family:monospace;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+        <div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div><div>[ ? ]</div>
+    </div>`;
+
+    // Spin button
+    const canSpin = (freeSpins > 0 || (bet > 0 && bet >= info.minBet && (!info.maxBet || bet <= info.maxBet) && playerGold >= bet));
+    html += `<div style="text-align:center;margin:15px 0;">
+        <button class="action-btn" onclick="spinSlotMachine()" ${canSpin ? '' : 'disabled'} style="font-size:1.2em;padding:15px 30px;">
+            ${freeSpins > 0 ? '🎰 FREE SPIN!' : '🎰 SPIN!'}
+        </button>
+    </div>`;
+
+    // Jackpot display
+    html += `<div style="display:flex;justify-content:space-around;margin:10px 0;">
+        <div style="text-align:center;">
+            <div style="color:#ffaa00;font-weight:bold;">MINOR</div>
+            <div style="color:#888;">10x bet</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="color:#ff6600;font-weight:bold;">MAJOR</div>
+            <div style="color:#888;">40x bet</div>
+        </div>
+        <div style="text-align:center;">
+            <div style="background: linear-gradient(to right, #ff0000, #ff7700, #ffff00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;font-weight:bold;">GRAND</div>
+            <div style="color:#888;">400x bet + Soul Gem</div>
+        </div>
+    </div>`;
+
+    // Leave button
+    html += `<div style="text-align:center;margin-top:20px;">
+        <button class="action-btn danger" onclick="leaveSlotMachine()">Leave Slot Machine</button>
+    </div>`;
+
+    return html;
+}
+
+function setSlotBet() {
+    const input = document.getElementById('slot-bet-input');
+    const bet = parseInt(input.value) || 0;
+    const w = gameState.wandering;
+    const rarityInfo = {
+        silver: { minBet: 25, maxBet: 1000 },
+        gold: { minBet: 500, maxBet: 9999 },
+        diamond: { minBet: 5000, maxBet: null }
+    };
+    const info = rarityInfo[w.slotMachineRarity];
+
+    if (bet < info.minBet) {
+        addWanderingLog(`Minimum bet is ${info.minBet} gold.`, 'info');
+        input.value = info.minBet;
+        return;
+    }
+    if (info.maxBet && bet > info.maxBet) {
+        addWanderingLog(`Maximum bet is ${info.maxBet} gold.`, 'info');
+        input.value = info.maxBet;
+        return;
+    }
+    if (bet > gameState.player.gold) {
+        addWanderingLog(`You don't have enough gold!`, 'damage');
+        return;
+    }
+
+    w.slotMachineBet = bet;
+    addWanderingLog(`Bet set to ${bet} gold.`, 'reward');
+    renderWandering();
+}
+
+function spinSlotMachine() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet || 0;
+    const freeSpins = w.slotMachineFreeSpins || 0;
+    const player = gameState.player;
+
+    if (freeSpins === 0) {
+        if (bet <= 0 || player.gold < bet) {
+            addWanderingLog('Invalid bet or insufficient gold!', 'damage');
+            return;
+        }
+        player.gold -= bet;
+        updateStats();
+    } else {
+        w.slotMachineFreeSpins--;
+    }
+
+    // Generate slot results
+    const results = generateSlotResults();
+    animateSlotSpin(results);
+}
+
+function generateSlotResults() {
+    // 243 way slot machine with poker cards: A, K, Q, J, 10
+    // Plus wilds (2-5x), scatters (10-100x)
+    // 3 rows x 5 reels
+    const symbols = ['A', 'K', 'Q', 'J', '10'];
+    const wildMultipliers = [2, 3, 4, 5];
+    const scatterBonuses = [10, 25, 50, 100];
+
+    // Generate 3x5 grid
+    const grid = [];
+    for (let row = 0; row < 3; row++) {
+        grid[row] = [];
+        for (let col = 0; col < 5; col++) {
+            const rand = Math.random();
+            if (rand < 0.015) { // 1.5% wild
+                const mult = pick(wildMultipliers);
+                grid[row][col] = { type: 'wild', symbol: `W${mult}x`, multiplier: mult };
+            } else if (rand < 0.03) { // 1.5% scatter
+                const bonus = pick(scatterBonuses);
+                grid[row][col] = { type: 'scatter', symbol: `S${bonus}x`, bonus: bonus };
+            } else if (rand < 0.045) { // 1.5% bonus
+                grid[row][col] = { type: 'bonus', symbol: 'BONUS', bonus: true };
+            } else {
+                grid[row][col] = { type: 'card', symbol: pick(symbols) };
+            }
+        }
+    }
+
+    return grid;
+}
+
+function animateSlotSpin(results) {
+    const reelsDiv = document.getElementById('slot-reels');
+    let spinCount = 0;
+    const maxSpins = 20;
+
+    const spinInterval = setInterval(() => {
+        spinCount++;
+        // Show random spinning symbols in grid
+        const spinning = [];
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 5; col++) {
+                const rand = Math.random();
+                let symbol = pick(['A','K','Q','J','10']);
+                let color = '#00ff00';
+                if (rand < 0.075) {
+                    symbol = 'W';
+                    color = '#ffff00';
+                } else if (rand < 0.15) {
+                    symbol = 'S';
+                    color = '#ff00ff';
+                } else if (rand < 0.225) {
+                    symbol = 'BONUS';
+                    color = '#ff6600';
+                }
+                spinning.push(`<div><span style="color:${color}">[ ${symbol} ]</span></div>`);
+            }
+        }
+        reelsDiv.innerHTML = spinning.join('');
+
+        if (spinCount >= maxSpins) {
+            clearInterval(spinInterval);
+            // Show final results
+            const finalSymbols = [];
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 5; col++) {
+                    const r = results[row][col];
+                    let color = '#00ff00'; // default green for cards
+                    if (r.type === 'wild') color = '#ffff00';
+                    else if (r.type === 'scatter') color = '#ff00ff';
+                    else if (r.type === 'bonus') color = '#ff6600';
+                    finalSymbols.push(`<div><span style="color:${color}">[ ${r.symbol} ]</span></div>`);
+                }
+            }
+            reelsDiv.innerHTML = finalSymbols.join('');
+            // Calculate win
+            setTimeout(() => processSlotWin(results), 500);
+        }
+    }, 100);
+}
+
+function processSlotWin(results) {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    // Calculate wins based on 243 ways
+    let totalWin = 0;
+    let scatters = 0;
+    let bonuses = 0;
+    let jackpotType = null;
+
+    // Count scatters and bonuses
+    for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 5; col++) {
+            if (results[row][col].type === 'scatter') {
+                scatters++;
+            } else if (results[row][col].type === 'bonus') {
+                bonuses++;
+            }
+        }
+    }
+
+    if (scatters >= 3) {
+        w.slotMachineFreeSpins = 5;
+        addWanderingLog(`3+ Scatters! ${w.slotMachineFreeSpins} Free Spins awarded!`, 'reward');
+    }
+
+    if (bonuses >= 3) {
+        w.slotMachineBonusActive = true;
+        addWanderingLog(`3+ Bonus symbols! Bonus round activated!`, 'reward');
+    }
+
+    const waysWins = calculate243Ways(results);
+
+    // Separate jackpots and regular wins
+    waysWins.forEach(way => {
+        if (way.win >= 400 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'grand';
+                totalWin += bet * 400;
+                gameState.soulGems += 1;
+                addWanderingLog(`GRAND JACKPOT! ${bet * 400} gold + 1 Soul Gem!`, 'reward');
+                triggerRainbowAnimation();
+            }
+        } else if (way.win >= 40 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'major';
+                totalWin += bet * 40;
+                addWanderingLog(`MAJOR JACKPOT! ${bet * 40} gold!`, 'reward');
+            }
+        } else if (way.win >= 10 && way.count === 5) {
+            if (!jackpotType) {
+                jackpotType = 'minor';
+                totalWin += bet * 10;
+                addWanderingLog(`MINOR JACKPOT! ${bet * 10} gold!`, 'reward');
+            }
+        } else if (way.win > 0) {
+            totalWin += way.win * bet;
+            addWanderingLog(`Way Win: ${way.count} ${way.symbol} - ${way.win}x bet`, 'reward');
+        }
+    });
+
+    if (totalWin > 0) {
+        gameState.player.gold += totalWin;
+        updateStats();
+        addWanderingLog(`Total Win: ${totalWin} gold!`, 'reward');
+    } else {
+        addWanderingLog('No win this spin.', 'info');
+    }
+
+    // Reset free spins if jackpot during free spin
+    if (jackpotType && w.slotMachineFreeSpins > 0) {
+        w.slotMachineFreeSpins = 5;
+        addWanderingLog('Jackpot during free spins! Free spins reset to 5!', 'reward');
+    }
+
+    renderWandering();
+}
+
+function calculate243Ways(results) {
+    // 243 ways: all possible combinations of one symbol per column
+    const ways = [];
+    const multipliers = {
+        'A': 4,
+        'K': 2.5,
+        'Q': 1.5,
+        'J': 1,
+        '10': 0.5
+    };
+
+    // Generate all 3^5 = 243 combinations
+    for (let r0 = 0; r0 < 3; r0++) {
+        for (let r1 = 0; r1 < 3; r1++) {
+            for (let r2 = 0; r2 < 3; r2++) {
+                for (let r3 = 0; r3 < 3; r3++) {
+                    for (let r4 = 0; r4 < 3; r4++) {
+                        const way = [results[r0][0], results[r1][1], results[r2][2], results[r3][3], results[r4][4]];
+                        const win = evaluateWay(way, multipliers);
+                        if (win.win > 0) {
+                            ways.push(win);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return ways;
+}
+
+function evaluateWay(way, multipliers) {
+    // Check for 3+ consecutive matches in the way
+    let bestWin = { win: 0, count: 0, symbol: '', multiplier: 1 };
+    const symbols = ['A', 'K', 'Q', 'J', '10'];
+
+    for (let symbol of symbols) {
+        let count = 0;
+        let mult = 1;
+        let hasScatter = false;
+
+        for (let i = 0; i < 5; i++) {
+            const cell = way[i];
+            if (cell.symbol === symbol || cell.type === 'wild' || cell.type === 'scatter') {
+                count++;
+                if (cell.type === 'wild') mult *= cell.multiplier;
+                if (cell.type === 'scatter') hasScatter = true;
+            } else {
+                break;
+            }
+        }
+
+        if (count >= 3) {
+            let baseMult = multipliers[symbol];
+            if (count === 5) {
+                // Jackpot payouts
+                if (symbol === 'A') baseMult = 400;
+                else if (symbol === 'K') baseMult = 40;
+                else if (symbol === 'Q') baseMult = 10;
+                else baseMult = 5; // For J or 10, smaller jackpot
+            }
+            const totalMult = baseMult * mult;
+            if (totalMult > bestWin.win) {
+                bestWin = { win: totalMult, count, symbol, multiplier: mult };
+            }
+        }
+    }
+
+    return bestWin;
+}
+
+function triggerRainbowAnimation() {
+    const container = document.getElementById('wandering-content');
+    container.style.animation = 'rainbowPulse 2s infinite';
+    setTimeout(() => {
+        container.style.animation = '';
+    }, 4000);
+}
+
+function renderSlotMachineBonus() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    let html = `<div class="section-title" style="color:#ff6600;">🎰 BONUS ROUND!</div>`;
+    html += `<div class="description">Congratulations! Spin the bonus wheel for amazing prizes!</div>`;
+
+    html += `<div style="background:#000;border:2px solid #ff6600;padding:20px;margin:10px 0;text-align:center;">
+        <div id="bonus-wheel" style="font-size:3em;margin:20px 0;">🎡</div>
+        <div style="color:#ff6600;font-weight:bold;margin:10px 0;">Click to Spin!</div>
+    </div>`;
+
+    html += `<div style="text-align:center;margin:15px 0;">
+        <button class="action-btn" onclick="spinBonusWheel()" style="font-size:1.2em;padding:15px 30px;background:#ff6600;border-color:#ff6600;">
+            🎰 SPIN BONUS WHEEL!
+        </button>
+    </div>`;
+
+    return html;
+}
+
+function spinBonusWheel() {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    // Possible prizes
+    const prizes = [
+        { name: '2x Multiplier', multiplier: 2, chance: 20 },
+        { name: '5x Multiplier', multiplier: 5, chance: 15 },
+        { name: '10x Multiplier', multiplier: 10, chance: 10 },
+        { name: '25x Multiplier', multiplier: 25, chance: 5 },
+        { name: '5 Free Spins', freeSpins: 5, chance: 15 },
+        { name: '10 Free Spins', freeSpins: 10, chance: 10 },
+        { name: 'Soul Gem', soulGem: 1, chance: 5 },
+        { name: 'Jackpot Reset', jackpotReset: true, chance: 5 },
+        { name: 'No Prize', multiplier: 0, chance: 15 }
+    ];
+
+    // Weighted random selection
+    let totalWeight = prizes.reduce((sum, p) => sum + p.chance, 0);
+    let rand = Math.random() * totalWeight;
+    let selectedPrize = null;
+    for (let prize of prizes) {
+        rand -= prize.chance;
+        if (rand <= 0) {
+            selectedPrize = prize;
+            break;
+        }
+    }
+
+    // Animate wheel
+    const wheelDiv = document.getElementById('bonus-wheel');
+    let spins = 0;
+    const maxSpins = 20;
+    const spinInterval = setInterval(() => {
+        spins++;
+        const randomPrize = prizes[Math.floor(Math.random() * prizes.length)];
+        wheelDiv.textContent = randomPrize.name;
+        if (spins >= maxSpins) {
+            clearInterval(spinInterval);
+            wheelDiv.textContent = selectedPrize.name;
+            wheelDiv.style.color = '#ff6600';
+            wheelDiv.style.fontWeight = 'bold';
+
+            // Award prize
+            setTimeout(() => awardBonusPrize(selectedPrize), 500);
+        }
+    }, 100);
+}
+
+function awardBonusPrize(prize) {
+    const w = gameState.wandering;
+    const bet = w.slotMachineBet;
+
+    let message = `Bonus Prize: ${prize.name}! `;
+
+    if (prize.multiplier) {
+        const win = bet * prize.multiplier;
+        gameState.player.gold += win;
+        updateStats();
+        message += `Won ${win} gold!`;
+    } else if (prize.freeSpins) {
+        w.slotMachineFreeSpins += prize.freeSpins;
+        message += `+${prize.freeSpins} Free Spins!`;
+    } else if (prize.soulGem) {
+        gameState.soulGems += prize.soulGem;
+        message += `+${prize.soulGem} Soul Gem!`;
+    } else if (prize.jackpotReset) {
+        // Reset jackpots or something, maybe award a mini jackpot
+        const win = bet * 50;
+        gameState.player.gold += win;
+        updateStats();
+        message += `Mini Jackpot! ${win} gold!`;
+    } else {
+        message += `Better luck next time!`;
+    }
+
+    addWanderingLog(message, 'reward');
+
+    // End bonus round
+    w.slotMachineBonusActive = false;
+    renderWandering();
+}
+
+function leaveSlotMachine() {
+    const w = gameState.wandering;
+    w.slotMachineActive = false;
+    w.slotMachineRarity = null;
+    w.slotMachineBet = 0;
+    w.slotMachineFreeSpins = 0;
+    w.slotMachineJackpots = { minor: false, major: false, grand: false };
+    w.slotMachineBonusActive = false;
+    addWanderingLog('You leave the slot machine.', 'info');
+    renderWandering();
+}
+
 function wanderingUseItem(idx) {
     const w = gameState.wandering;
     if (!w.active || !w.inBattle) return;
@@ -6295,6 +6803,64 @@ function wanderingUseItem(idx) {
 }
 
 // Generate merchant items (Rare and above only - very rare and valuable!)
+function pickSlotMachineRarity() {
+    // Rarities: Silver, Gold, Diamond
+    // Weights: Silver 70%, Gold 25%, Diamond 5%
+    const rand = Math.random();
+    if (rand < 0.05) return 'diamond';
+    if (rand < 0.30) return 'gold';
+    return 'silver';
+}
+
+// Simulation function to calculate RTP
+function simulateSlotRTP(numSpins = 10000) {
+    let totalBet = 0;
+    let totalWin = 0;
+
+    for (let i = 0; i < numSpins; i++) {
+        const bet = 100; // Assume 100 gold bet for simplicity
+        totalBet += bet;
+
+        const results = generateSlotResults();
+        const waysWins = calculate243Ways(results);
+
+        let spinWin = 0;
+        let scatters = 0;
+        let bonuses = 0;
+
+        // Count scatters and bonuses
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 5; col++) {
+                if (results[row][col].type === 'scatter') scatters++;
+                if (results[row][col].type === 'bonus') bonuses++;
+            }
+        }
+
+        // Calculate wins
+        waysWins.forEach(way => {
+            if (way.win >= 400 && way.count === 5) spinWin += bet * 400;
+            else if (way.win >= 40 && way.count === 5) spinWin += bet * 40;
+            else if (way.win >= 10 && way.count === 5) spinWin += bet * 10;
+            else spinWin += way.win * bet;
+        });
+
+        // Bonus prizes (simplified average)
+        if (bonuses >= 3) {
+            // Average bonus value: estimate based on prizes
+            const avgBonus = (2*20 + 5*15 + 10*10 + 25*5 + 0*15 + 5*15 + 10*10 + 1*5 + 50*5) / 100; // Weighted average
+            spinWin += bet * avgBonus;
+        }
+
+        // Free spins not included in this simple RTP calc, as they continue play
+
+        totalWin += spinWin;
+    }
+
+    const rtp = (totalWin / totalBet) * 100;
+    console.log(`Simulated RTP: ${rtp.toFixed(2)}%`);
+    return rtp;
+}
+
 function generateMerchantItems() {
     const items = [];
     const allItems = Object.values(itemPool);
