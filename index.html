@@ -6656,16 +6656,16 @@ function renderPlinko() {
 function getPlinkoLayoutMetrics(rows) {
     const boardSize = 400;
     const binCount = rows + 1;
-    const sidePadding = 30;
+    const sidePadding = 28;
     const topY = 34;
     const bottomY = 334;
     const startY = 18;
     const centerX = boardSize / 2;
     const spacingX = (boardSize - (sidePadding * 2)) / rows;
     const rowSpacing = (bottomY - topY) / rows;
-    const pegDiameter = 12;
-    const ballDiameter = 8;
-    const wallPadding = 10;
+    const pegDiameter = 8;
+    const ballDiameter = 6;
+    const wallPadding = 18;
     const binWidth = (boardSize - (sidePadding * 2)) / binCount;
     const binCenters = Array.from({ length: binCount }, (_, idx) => sidePadding + (binWidth * idx) + (binWidth / 2));
     const pegs = [];
@@ -6714,14 +6714,16 @@ function drawPlinkoBoard(rows, risk, lastResult = null) {
     board.style.minHeight = `${layout.boardHeight}px`;
 
     let html = '';
-    layout.pegs.forEach(peg => {
-        html += `<div class="plinko-peg" style="left:${peg.x}px; top:${peg.y}px; width:${layout.pegDiameter}px; height:${layout.pegDiameter}px;"></div>`;
+    layout.pegs.forEach((peg, idx) => {
+        html += `<div id="plinko-peg-${idx}" class="plinko-peg" style="left:${peg.x}px; top:${peg.y}px; width:${layout.pegDiameter}px; height:${layout.pegDiameter}px;"></div>`;
     });
     html += `<div id="plinko-ball-layer"><div id="plinko-ball" class="plinko-ball${lastResult && lastResult.profit > 0 ? ' drop-win' : ' drop-loss'}" style="left:${layout.centerX}px; top:${layout.startY}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div></div>`;
     board.innerHTML = html;
 }
 
 function createPlinkoRigidBody(drop, idx, layout) {
+    const targetBucket = rollPlinkoBucket(drop.rows);
+    const path = buildPlinkoPathForBucket(drop.rows, targetBucket);
     return {
         ...drop,
         x: layout.centerX,
@@ -6730,47 +6732,149 @@ function createPlinkoRigidBody(drop, idx, layout) {
         vy: 0,
         radius: layout.ballDiameter / 2,
         bucket: null,
+        targetBucket,
         settled: false,
-        rowStep: 0,
+        landing: false,
         elapsed: 0,
-        path: Array.from({ length: drop.rows }, () => (Math.random() >= 0.5 ? 1 : 0)),
+        settleElapsed: 0,
+        path,
+        bounceSeed: Math.random() * Math.PI * 2,
+        wobbleSeed: Math.random() * Math.PI * 2,
+        lastPegIndex: -1,
+        currentRow: 0,
+        rowEntryY: layout.startY - (idx * 3),
+        targetPegIndex: 0,
+        targetExitX: layout.centerX,
+        targetExitY: layout.topY,
+        floorY: layout.bottomY,
         el: null
     };
+}
+
+function rollPlinkoBucket(rows) {
+    let rights = 0;
+    for (let i = 0; i < rows; i++) {
+        if (Math.random() >= 0.5) rights++;
+    }
+    return rights;
+}
+
+function buildPlinkoPathForBucket(rows, bucket) {
+    const clampedBucket = Math.max(0, Math.min(rows, Math.floor(Number(bucket) || 0)));
+    const rightsAt = new Set();
+    while (rightsAt.size < clampedBucket) {
+        rightsAt.add(Math.floor(Math.random() * rows));
+    }
+    return Array.from({ length: rows }, (_, idx) => (rightsAt.has(idx) ? 1 : 0));
+}
+
+function getPlinkoPegIndexForRow(row) {
+    if (row <= 0) return 0;
+    return (row * (row + 1) / 2) - 1;
+}
+
+function updatePlinkoRowTarget(body, layout) {
+    if (body.currentRow >= body.path.length) {
+        body.targetPegIndex = -1;
+        body.targetExitX = layout.binCenters[body.targetBucket] ?? layout.centerX;
+        body.targetExitY = layout.bottomY;
+        return;
+    }
+
+    const pegIndexBase = body.currentRow * (body.currentRow + 1) / 2;
+    const rowRightsBefore = body.path.slice(0, body.currentRow).reduce((sum, step) => sum + (step ? 1 : 0), 0);
+    const pegColumn = Math.max(0, Math.min(body.currentRow, rowRightsBefore));
+    const pegIndex = pegIndexBase + pegColumn;
+    const peg = layout.pegs[pegIndex];
+    const direction = body.path[body.currentRow] ? 1 : -1;
+
+    body.targetPegIndex = pegIndex;
+    body.targetExitX = (peg?.x ?? layout.centerX) + (direction * (layout.spacingX * 0.14));
+    body.targetExitY = (peg?.y ?? layout.topY) + (layout.rowSpacing * 0.72);
+    body.floorY = layout.bottomY;
 }
 
 function getPlinkoBucketFromPath(path) {
     return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
 }
 
-function getPlinkoBallPositionForStep(layout, path, progress) {
-    const safeProgress = Math.max(0, progress);
-    const clampedStep = Math.min(path.length, Math.floor(safeProgress));
-    const stepProgress = Math.min(1, Math.max(0, safeProgress - clampedStep));
-    const previousRights = path.slice(0, clampedStep).reduce((sum, step) => sum + (step ? 1 : 0), 0);
-    const nextStep = path[clampedStep] || 0;
-    const nextRights = previousRights + nextStep;
-    const currentX = layout.centerX + ((previousRights * 2 - clampedStep) * layout.spacingX / 2);
-    const nextX = layout.centerX + ((nextRights * 2 - (clampedStep + 1)) * layout.spacingX / 2);
-    const currentY = layout.topY + (clampedStep * layout.rowSpacing);
-    const nextY = layout.topY + ((clampedStep + 1) * layout.rowSpacing);
-
-    if (clampedStep >= path.length) {
-        const bucket = getPlinkoBucketFromPath(path);
+function getPlinkoGuideTarget(body, layout) {
+    if (body.currentRow >= body.path.length) {
         return {
-            x: layout.binCenters[bucket] ?? currentX,
+            x: layout.binCenters[body.targetBucket] ?? layout.centerX,
             y: layout.bottomY,
-            vx: 0,
-            vy: 0
+            pegIndex: -1,
+            done: body.y >= layout.bottomY - 6
         };
     }
 
-    const eased = easeInOutCubic(stepProgress);
+    const wobble = Math.sin((body.elapsed * 9) + body.wobbleSeed) * 0.45;
     return {
-        x: currentX + ((nextX - currentX) * eased),
-        y: currentY + ((nextY - currentY) * eased),
-        vx: (nextX - currentX) * (nextStep ? 1 : -1),
-        vy: layout.rowSpacing
+        x: body.targetExitX + wobble,
+        y: body.targetExitY,
+        pegIndex: body.targetPegIndex,
+        done: false
     };
+}
+
+function getPlinkoTargetDistanceScale(layout, targetBucket) {
+    const maxDistance = Math.max(1, (layout.binCenters.length - 1) / 2);
+    const centerBucket = (layout.binCenters.length - 1) / 2;
+    const distance = Math.abs((Number(targetBucket) || 0) - centerBucket);
+    return distance / maxDistance;
+}
+
+function clampMagnitude(value, maxMagnitude) {
+    const limit = Math.max(0, Number(maxMagnitude) || 0);
+    if (limit === 0) return 0;
+    return Math.max(-limit, Math.min(limit, value));
+}
+
+function normalizeVector(x, y) {
+    const magnitude = Math.hypot(x, y);
+    if (magnitude <= 0.0001) return { x: 0, y: -1 };
+    return { x: x / magnitude, y: y / magnitude };
+}
+
+function dotProduct(ax, ay, bx, by) {
+    return (ax * bx) + (ay * by);
+}
+
+function reflectVelocity(vx, vy, nx, ny, restitution) {
+    const alongNormal = dotProduct(vx, vy, nx, ny);
+    return {
+        x: vx - ((1 + restitution) * alongNormal * nx),
+        y: vy - ((1 + restitution) * alongNormal * ny)
+    };
+}
+
+function resolveGuidedPlinkoPegCollision(body, peg, target, deltaSeconds) {
+    const targetDistanceScale = getPlinkoTargetDistanceScale(body.layout, body.targetBucket);
+    const dx = body.x - peg.x;
+    const dy = body.y - peg.y;
+    const minDistance = body.radius + peg.radius;
+    const distSq = (dx * dx) + (dy * dy);
+    if (distSq >= (minDistance * minDistance)) return false;
+
+    const normal = normalizeVector(dx, dy || -1);
+    const distance = Math.sqrt(Math.max(0.0001, distSq));
+    const penetration = minDistance - distance;
+    body.x += normal.x * penetration;
+    body.y += normal.y * penetration;
+
+    const reflected = reflectVelocity(body.vx, body.vy, normal.x, normal.y, 0.45 + (targetDistanceScale * 0.12));
+    body.vx = reflected.x * (0.58 + (targetDistanceScale * 0.16));
+    body.vy = Math.min(reflected.y * 0.82, -9);
+
+    const pegKickDirection = Math.sign((body.path[peg.row] ? 1 : -1) || normal.x || 1);
+    body.vx += pegKickDirection * (0.8 + (targetDistanceScale * 0.7));
+
+    const targetPullX = clampMagnitude((target.x - body.x) * (0.022 + (targetDistanceScale * 0.03)), 0.9 + (targetDistanceScale * 1.4));
+    const targetPullY = clampMagnitude((target.y - body.y) * 0.095, 5.2);
+    body.vx += targetPullX * deltaSeconds * 60;
+    body.vy += targetPullY * deltaSeconds * 60;
+
+    return true;
 }
 
 function animatePlinkoDrop(rows, dropResults, callback) {
@@ -6784,7 +6888,22 @@ function animatePlinkoDrop(rows, dropResults, callback) {
     const layout = getPlinkoLayoutMetrics(rows);
     const totalDrops = Array.isArray(dropResults) ? dropResults.length : 0;
     const drops = (Array.isArray(dropResults) ? dropResults : []).map((drop, idx) => createPlinkoRigidBody(drop, idx, layout));
-    const rowDuration = 0.085;
+    const physics = {
+        gravity: 540,
+        airDrag: 0.989,
+        guideStrength: 15,
+        guideSpeed: 132,
+        wallRestitution: 0.34,
+        maxSpeedX: 48,
+        maxSpeedY: 138,
+        rowAdvanceThreshold: 7
+    };
+
+    drops.forEach(drop => updatePlinkoRowTarget(drop, layout));
+    drops.forEach(drop => {
+        drop.layout = layout;
+        drop.targetDistanceScale = getPlinkoTargetDistanceScale(layout, drop.targetBucket);
+    });
 
     ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball" style="left:${drop.x}px; top:${drop.y}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div>`).join('');
     drops.forEach((drop, idx) => {
@@ -6805,33 +6924,94 @@ function animatePlinkoDrop(rows, dropResults, callback) {
             drop.elapsed += deltaSeconds;
             if (drop.elapsed < dropDelay) return;
 
-            const localElapsed = drop.elapsed - dropDelay;
-            const progress = Math.min(rows + 1, localElapsed / rowDuration);
-            const point = getPlinkoBallPositionForStep(layout, drop.path, progress);
-            drop.x = point.x;
-            drop.y = point.y;
-            drop.vx = point.vx;
-            drop.vy = point.vy;
+            if (drop.landing) {
+                drop.settleElapsed += deltaSeconds;
+                const settleProgress = Math.min(1, drop.settleElapsed / 0.28);
+                const settleEase = easeOutBounce(settleProgress);
+                const settledX = layout.binCenters[drop.targetBucket] ?? drop.x;
+                const settledY = layout.bottomY;
+                const settleLift = (1 - settleEase) * 10;
+                drop.x += (settledX - drop.x) * Math.min(1, deltaSeconds * 18);
+                drop.y = settledY - settleLift;
+                drop.el.style.left = `${drop.x}px`;
+                drop.el.style.top = `${drop.y}px`;
+                drop.el.style.transform = 'translate(-50%, -50%) scale(1)';
+
+                if (settleProgress >= 1) {
+                    drop.bucket = drop.targetBucket;
+                    drop.x = settledX;
+                    drop.y = settledY;
+                    drop.vx = 0;
+                    drop.vy = 0;
+                    drop.settled = true;
+                    drop.el.style.left = `${drop.x}px`;
+                    drop.el.style.top = `${drop.y}px`;
+                    const bin = document.getElementById(`plinko-bin-${drop.bucket}`);
+                    if (bin) bin.classList.add('active');
+                }
+                return;
+            }
+
+            const target = getPlinkoGuideTarget(drop, layout);
+            const guideDx = target.x - drop.x;
+            const guideDy = target.y - drop.y;
+            const horizontalGuideFactor = 0.024 + (drop.targetDistanceScale * 0.04);
+            const horizontalGuideCap = 6 + (drop.targetDistanceScale * (physics.guideStrength - 6));
+            drop.vx += clampMagnitude(guideDx * horizontalGuideFactor, horizontalGuideCap) * deltaSeconds;
+            drop.vy += clampMagnitude(guideDy * 0.11, physics.guideSpeed) * deltaSeconds;
+            drop.vy += physics.gravity * deltaSeconds;
+            drop.vx *= Math.pow(physics.airDrag, deltaSeconds * 60);
+            drop.vy *= Math.pow(physics.airDrag, deltaSeconds * 40);
+            drop.vx = clampMagnitude(drop.vx, physics.maxSpeedX);
+            drop.vy = clampMagnitude(drop.vy, physics.maxSpeedY);
+            const substeps = 3;
+            for (let substep = 0; substep < substeps; substep++) {
+                drop.x += drop.vx * (deltaSeconds / substeps);
+                drop.y += drop.vy * (deltaSeconds / substeps);
+
+                const leftWall = layout.wallPadding + drop.radius;
+                const rightWall = layout.boardWidth - layout.wallPadding - drop.radius;
+                if (drop.x < leftWall) {
+                    drop.x = leftWall;
+                    drop.vx = Math.abs(drop.vx) * physics.wallRestitution;
+                } else if (drop.x > rightWall) {
+                    drop.x = rightWall;
+                    drop.vx = -Math.abs(drop.vx) * physics.wallRestitution;
+                }
+
+                const visibleRowStart = Math.max(0, drop.currentRow - 1);
+                const visibleRowEnd = Math.min(rows - 1, drop.currentRow + 1);
+                const pegStart = visibleRowStart === 0 ? 0 : (visibleRowStart * (visibleRowStart + 1) / 2);
+                const pegEnd = Math.min(layout.pegs.length - 1, ((visibleRowEnd + 1) * (visibleRowEnd + 2) / 2) - 1);
+                for (let pegIndex = pegStart; pegIndex <= pegEnd; pegIndex++) {
+                    const peg = layout.pegs[pegIndex];
+                    if (!peg) continue;
+                    if (resolveGuidedPlinkoPegCollision(drop, peg, target, deltaSeconds / substeps)) {
+                        drop.lastPegIndex = pegIndex;
+                    }
+                }
+            }
+
+            if (drop.currentRow < rows && drop.y >= (drop.targetExitY - physics.rowAdvanceThreshold)) {
+                drop.currentRow++;
+                updatePlinkoRowTarget(drop, layout);
+            }
 
             drop.el.style.left = `${drop.x}px`;
             drop.el.style.top = `${drop.y}px`;
 
-            const squash = Math.min(0.18, Math.abs(drop.vy) / 140);
+            const speed = Math.hypot(drop.vx, drop.vy);
+            const squash = Math.min(0.14, speed / 160);
             const stretchX = 1 + squash;
             const stretchY = 1 - (squash * 0.7);
-            const tilt = Math.max(-8, Math.min(8, drop.vx / 5));
+            const tilt = Math.max(-7, Math.min(7, drop.vx * 0.35));
             drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
 
-            if (progress >= rows + 1) {
-                drop.bucket = getPlinkoBucketFromPath(drop.path);
-                drop.x = layout.binCenters[drop.bucket] ?? drop.x;
-                drop.y = layout.bottomY;
-                drop.el.style.left = `${drop.x}px`;
-                drop.el.style.top = `${drop.y}px`;
-                drop.el.style.transform = 'translate(-50%, -50%) scale(1)';
-                drop.settled = true;
-                const bin = document.getElementById(`plinko-bin-${drop.bucket}`);
-                if (bin) bin.classList.add('active');
+            if (target.done && drop.currentRow >= rows) {
+                drop.landing = true;
+                drop.settleElapsed = 0;
+                drop.vx *= 0.2;
+                drop.vy = 0;
             }
         });
 
