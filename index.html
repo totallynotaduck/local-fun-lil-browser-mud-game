@@ -6769,64 +6769,79 @@ function getPlinkoBucketFromPath(path) {
     return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
 }
 
+function getPlinkoRowContactPoint(layout, row, rightsBeforeRow, direction, fallbackPoint) {
+    const pegColumn = Math.max(0, Math.min(row, rightsBeforeRow));
+    const pegIndexBase = row * (row + 1) / 2;
+    const pegIndex = pegIndexBase + pegColumn;
+    const peg = layout.pegs[pegIndex];
+    const contactRadius = (layout.ballDiameter / 2) + (layout.pegDiameter / 2);
+    return {
+        pegIndex,
+        point: {
+            x: (peg?.x ?? fallbackPoint.x) + (direction * contactRadius * 0.16),
+            y: (peg?.y ?? fallbackPoint.y) - (contactRadius * 0.98)
+        }
+    };
+}
+
 function buildPlinkoTrajectory(layout, path, idx) {
     const start = { x: layout.centerX, y: layout.startY - (idx * 3) };
     const segments = [];
     let rights = 0;
     let currentPoint = { ...start };
 
-    for (let row = 0; row < path.length; row++) {
+    for (let row = 0; row < path.length; ) {
         const rowRightsBefore = rights;
-        const pegColumn = Math.max(0, Math.min(row, rowRightsBefore));
-        const pegIndexBase = row * (row + 1) / 2;
-        const pegIndex = pegIndexBase + pegColumn;
-        const peg = layout.pegs[pegIndex];
         const direction = path[row] ? 1 : -1;
-        const contactRadius = (layout.ballDiameter / 2) + (layout.pegDiameter / 2);
+        const contact = getPlinkoRowContactPoint(layout, row, rowRightsBefore, direction, currentPoint);
         const bouncePower = 0.9 + (((row + idx) % 4) * 0.08);
-        const contactPoint = {
-            x: (peg?.x ?? currentPoint.x) - (direction * contactRadius * 0.92),
-            y: (peg?.y ?? currentPoint.y) - (contactRadius * 0.16)
-        };
-        if (path[row]) rights++;
+        let nextRow = row + 1;
+        let rightsAfterSegment = rowRightsBefore + (path[row] ? 1 : 0);
+        let skippedRow = false;
 
-        let nextPoint;
-        if (row + 1 < path.length) {
-            const nextRowRightsBefore = rights;
-            const nextPegColumn = Math.max(0, Math.min(row + 1, nextRowRightsBefore));
-            const nextPegIndexBase = (row + 1) * (row + 2) / 2;
-            const nextPegIndex = nextPegIndexBase + nextPegColumn;
-            const nextPeg = layout.pegs[nextPegIndex];
-            const nextDirection = path[row + 1] ? 1 : -1;
-            nextPoint = {
-                x: (nextPeg?.x ?? contactPoint.x) - (nextDirection * contactRadius * 0.9),
-                y: (nextPeg?.y ?? (contactPoint.y + layout.rowSpacing)) - (contactRadius * 0.14)
-            };
-        } else {
-            nextPoint = { x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? contactPoint.x, y: layout.bottomY };
+        if (nextRow < path.length - 1 && Math.random() < 0.25) {
+            skippedRow = true;
+            rightsAfterSegment += path[nextRow] ? 1 : 0;
+            nextRow += 1;
         }
 
-        const arcHeight = Math.max(12, layout.rowSpacing * (0.74 + (((row + idx) % 3) * 0.05)));
-        const duration = 0.18 + (row * 0.005) + (((row + idx) % 2) * 0.012);
-        const lingerOffset = {
-            x: contactPoint.x + (direction * (1.2 + (0.6 * bouncePower))),
-            y: contactPoint.y + (0.8 + (0.9 * bouncePower))
-        };
+        let nextPoint;
+        if (nextRow < path.length) {
+            const nextDirection = path[nextRow] ? 1 : -1;
+            const nextContact = getPlinkoRowContactPoint(layout, nextRow, rightsAfterSegment, nextDirection, contact.point);
+            nextPoint = nextContact.point;
+        } else {
+            nextPoint = { x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? contact.point.x, y: layout.bottomY };
+        }
+
+        const arcHeight = Math.max(12, layout.rowSpacing * (skippedRow ? 1.14 : 0.8) * (1 + (((row + idx) % 3) * 0.07)));
+        const duration = (skippedRow ? 0.23 : 0.15) + (row * 0.004) + (((row + idx) % 2) * 0.01);
+        const reboundDuration = duration * 0.62;
+        const reboundPeakY = contact.point.y - (arcHeight * bouncePower);
+        const reboundVelocityX = (nextPoint.x - contact.point.x) / Math.max(0.001, reboundDuration);
+        const reboundVelocityY = ((reboundPeakY - contact.point.y) * 2.4) / Math.max(0.001, reboundDuration);
+        const reboundGravity = (2 * (nextPoint.y - contact.point.y - (reboundVelocityY * reboundDuration))) / Math.max(0.001, reboundDuration * reboundDuration);
 
         segments.push({
             from: { x: currentPoint.x, y: currentPoint.y },
-            contact: contactPoint,
-            linger: lingerOffset,
+            contact: contact.point,
             to: nextPoint,
             direction,
-            pegIndex,
+            pegIndex: contact.pegIndex,
             duration,
             arcHeight,
             bouncePower,
-            row
+            reboundDuration,
+            reboundVelocityX,
+            reboundVelocityY,
+            reboundGravity,
+            row,
+            skippedRow
         });
 
         currentPoint = { ...nextPoint };
+        rights = rightsAfterSegment;
+        row = nextRow;
     }
 
     return { start, segments };
@@ -6885,36 +6900,25 @@ function animatePlinkoPegImpact(pegIndex) {
 
 function getPlinkoSegmentState(segment, progress) {
     const t = Math.max(0, Math.min(1, progress));
-    const approachPhase = 0.34;
-    const lingerPhase = 0.52;
+    const contactPhase = 0.38;
     let x;
     let y;
     let xVelocity;
     let yVelocity;
 
-    if (t <= approachPhase) {
-        const localT = t / approachPhase;
+    if (t <= contactPhase) {
+        const localT = t / contactPhase;
         const eased = easeInQuad(localT);
         x = segment.from.x + ((segment.contact.x - segment.from.x) * eased);
         y = segment.from.y + ((segment.contact.y - segment.from.y) * eased);
-        xVelocity = (segment.contact.x - segment.from.x) / Math.max(0.001, segment.duration * approachPhase);
-        yVelocity = (segment.contact.y - segment.from.y) / Math.max(0.001, segment.duration * approachPhase);
-    } else if (t <= lingerPhase) {
-        const localT = (t - approachPhase) / Math.max(0.001, lingerPhase - approachPhase);
-        const eased = easeOutCubic(localT);
-        x = segment.contact.x + ((segment.linger.x - segment.contact.x) * eased);
-        y = segment.contact.y + ((segment.linger.y - segment.contact.y) * eased);
-        xVelocity = (segment.linger.x - segment.contact.x) / Math.max(0.001, segment.duration * (lingerPhase - approachPhase));
-        yVelocity = (segment.linger.y - segment.contact.y) / Math.max(0.001, segment.duration * (lingerPhase - approachPhase));
+        xVelocity = (segment.contact.x - segment.from.x) / Math.max(0.001, segment.duration * contactPhase);
+        yVelocity = (segment.contact.y - segment.from.y) / Math.max(0.001, segment.duration * contactPhase);
     } else {
-        const localT = (t - lingerPhase) / Math.max(0.001, 1 - lingerPhase);
-        const eased = easeOutQuad(localT);
-        x = segment.linger.x + ((segment.to.x - segment.linger.x) * eased);
-        const yLinear = segment.linger.y + ((segment.to.y - segment.linger.y) * eased);
-        const arc = Math.sin(Math.PI * eased) * segment.arcHeight * segment.bouncePower;
-        y = yLinear - arc;
-        xVelocity = (segment.to.x - segment.linger.x) / Math.max(0.001, segment.duration * (1 - lingerPhase));
-        yVelocity = ((segment.to.y - segment.linger.y) / Math.max(0.001, segment.duration * (1 - lingerPhase))) - (Math.cos(Math.PI * eased) * Math.PI * segment.arcHeight * segment.bouncePower / Math.max(0.001, segment.duration * (1 - lingerPhase)));
+        const elapsed = Math.min(segment.reboundDuration, ((t - contactPhase) / Math.max(0.001, 1 - contactPhase)) * segment.reboundDuration);
+        x = segment.contact.x + (segment.reboundVelocityX * elapsed);
+        y = segment.contact.y + (segment.reboundVelocityY * elapsed) + (0.5 * segment.reboundGravity * elapsed * elapsed);
+        xVelocity = segment.reboundVelocityX;
+        yVelocity = segment.reboundVelocityY + (segment.reboundGravity * elapsed);
     }
 
     return {
@@ -6922,12 +6926,8 @@ function getPlinkoSegmentState(segment, progress) {
         y,
         vx: xVelocity,
         vy: yVelocity,
-        contactProgress: t >= 0.3 && t <= 0.46
+        contactProgress: t >= 0.3 && t <= 0.4
     };
-}
-
-function easeOutQuad(progress) {
-    return 1 - (1 - progress) * (1 - progress);
 }
 
 function animatePlinkoDrop(rows, dropResults, callback) {
@@ -7013,7 +7013,7 @@ function animatePlinkoDrop(rows, dropResults, callback) {
             if (segmentProgress >= 1) {
                 drop.segmentIndex++;
                 drop.segmentElapsed = 0;
-                drop.currentRow = Math.min(rows, drop.segmentIndex);
+                drop.currentRow = Math.min(rows, (segment.row + 1 + (segment.skippedRow ? 1 : 0)));
                 if (drop.segmentIndex >= drop.trajectory.segments.length) {
                     drop.landing = true;
                     drop.settleElapsed = 0;
@@ -7024,10 +7024,10 @@ function animatePlinkoDrop(rows, dropResults, callback) {
             drop.el.style.top = `${drop.y}px`;
 
             const speed = Math.hypot(drop.vx, drop.vy);
-            const squash = Math.min(0.16, speed / 220);
+            const squash = Math.min(0.18, speed / 180);
             const stretchX = 1 + squash;
             const stretchY = 1 - (squash * 0.7);
-            const tilt = Math.max(-10, Math.min(10, drop.vx * 0.18));
+            const tilt = Math.max(-12, Math.min(12, drop.vx * 0.24));
             drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
         });
 
