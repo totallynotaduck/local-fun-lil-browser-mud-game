@@ -6742,6 +6742,7 @@ function createPlinkoRigidBody(drop, idx, layout) {
         path,
         trajectory,
         currentRow: 0,
+        lastPegIndex: -1,
         el: null
     };
 }
@@ -6767,66 +6768,31 @@ function getPlinkoBucketFromPath(path) {
     return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
 }
 
-function getPlinkoRowContactPoint(layout, row, rightsBeforeRow, direction, fallbackPoint) {
-    const pegColumn = Math.max(0, Math.min(row, rightsBeforeRow));
-    const pegIndexBase = row * (row + 1) / 2;
-    const pegIndex = pegIndexBase + pegColumn;
-    const peg = layout.pegs[pegIndex];
-    const contactRadius = (layout.ballDiameter / 2) + (layout.pegDiameter / 2);
-    const grazeVariance = ((Math.random() - 0.5) * 2.4) + (direction * 0.55);
-    const verticalVariance = Math.random() * 0.8;
-    return {
-        pegIndex,
-        point: {
-            x: (peg?.x ?? fallbackPoint.x) + grazeVariance,
-            y: (peg?.y ?? fallbackPoint.y) - (contactRadius * (0.94 + verticalVariance * 0.12))
-        }
-    };
-}
-
 function buildPlinkoTrajectory(layout, path, idx) {
     const start = { x: layout.centerX, y: layout.startY - (idx * 3) };
-    const guidePoints = [{ x: start.x, y: start.y, pegIndex: -1 }];
     let rights = 0;
 
-    for (let row = 0; row < path.length; ) {
-        const rowRightsBefore = rights;
-        const direction = path[row] ? 1 : -1;
-        const contact = getPlinkoRowContactPoint(layout, row, rowRightsBefore, direction, start);
-        let nextRow = row + 1;
-        let rightsAfterSegment = rowRightsBefore + (path[row] ? 1 : 0);
-        let skippedRow = false;
-
-        if (nextRow < path.length - 1 && Math.random() < 0.25) {
-            skippedRow = true;
-            rightsAfterSegment += path[nextRow] ? 1 : 0;
-            nextRow += 1;
-        }
-
-        let nextPoint;
-        if (nextRow < path.length) {
-            const nextDirection = path[nextRow] ? 1 : -1;
-            const nextContact = getPlinkoRowContactPoint(layout, nextRow, rightsAfterSegment, nextDirection, contact.point);
-            nextPoint = nextContact.point;
-        } else {
-            nextPoint = { x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? contact.point.x, y: layout.bottomY };
-        }
-
-        const targetDistance = Math.abs((getPlinkoBucketFromPath(path) - (path.length / 2)) / Math.max(1, path.length / 2));
-        const grazePoint = {
-            x: contact.point.x + (direction * ((skippedRow ? 2.2 : 0.95) + (targetDistance * 1.1))),
-            y: contact.point.y + (skippedRow ? 5.6 : 3.8)
+    const rowTargets = path.map((step, row) => {
+        rights += step ? 1 : 0;
+        const direction = step ? 1 : -1;
+        const laneCenterX = layout.centerX + (((2 * rights) - (row + 1)) * layout.spacingX / 2);
+        const lateralBias = direction * ((layout.spacingX * 0.12) + (Math.random() * 2.4));
+        const verticalBias = layout.rowSpacing * (0.5 + (Math.random() * 0.08));
+        return {
+            x: laneCenterX + lateralBias,
+            y: layout.topY + (row * layout.rowSpacing) + verticalBias,
+            direction
         };
+    });
 
-        guidePoints.push({ x: contact.point.x, y: contact.point.y, pegIndex: contact.pegIndex });
-        guidePoints.push({ x: grazePoint.x, y: grazePoint.y, pegIndex: contact.pegIndex });
-        guidePoints.push({ x: nextPoint.x, y: nextPoint.y, pegIndex: -1 });
-
-        rights = rightsAfterSegment;
-        row = nextRow;
-    }
-
-    return { start, guidePoints };
+    return {
+        start,
+        rowTargets,
+        finalTarget: {
+            x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? layout.centerX,
+            y: layout.bottomY
+        }
+    };
 }
 
 let plinkoAudioContext = null;
@@ -6880,23 +6846,62 @@ function animatePlinkoPegImpact(pegIndex) {
     pegEl.dataset.impactTimer = String(timer);
 }
 
-function getPlinkoGuidePointSample(trajectory, progress) {
-    const points = Array.isArray(trajectory?.guidePoints) ? trajectory.guidePoints : [];
-    if (points.length === 0) return null;
-    if (points.length === 1) return { ...points[0], pegIndex: points[0].pegIndex ?? -1 };
+function getPlinkoSteeringTarget(drop) {
+    const rowTargets = Array.isArray(drop.trajectory?.rowTargets) ? drop.trajectory.rowTargets : [];
+    while (drop.currentRow < rowTargets.length && drop.y >= rowTargets[drop.currentRow].y) {
+        drop.currentRow++;
+    }
+    if (drop.currentRow < rowTargets.length) {
+        return rowTargets[drop.currentRow];
+    }
+    return drop.trajectory?.finalTarget || null;
+}
 
-    const clampedProgress = Math.max(0, Math.min(points.length - 1, progress));
-    const baseIndex = Math.min(points.length - 2, Math.floor(clampedProgress));
-    const localT = clampedProgress - baseIndex;
-    const p0 = points[Math.max(0, baseIndex - 1)];
-    const p1 = points[baseIndex];
-    const p2 = points[Math.min(points.length - 1, baseIndex + 1)];
-    const p3 = points[Math.min(points.length - 1, baseIndex + 2)];
-    const t2 = localT * localT;
-    const t3 = t2 * localT;
-    const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * localT + ((2 * p0.x) - (5 * p1.x) + (4 * p2.x) - p3.x) * t2 + (-p0.x + (3 * p1.x) - (3 * p2.x) + p3.x) * t3);
-    const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * localT + ((2 * p0.y) - (5 * p1.y) + (4 * p2.y) - p3.y) * t2 + (-p0.y + (3 * p1.y) - (3 * p2.y) + p3.y) * t3);
-    return { x, y, pegIndex: p1.pegIndex ?? -1 };
+function applyPlinkoPegDeflection(drop, layout, physics, frameScale) {
+    const influenceRadius = drop.radius + (layout.pegDiameter / 2) + physics.pegBuffer;
+    const influenceRadiusSq = influenceRadius * influenceRadius;
+    let impactedPegIndex = -1;
+    let strongestImpact = 0;
+    const pathIndex = Math.min(drop.currentRow, Math.max(0, drop.path.length - 1));
+    const steeringDirection = drop.path[pathIndex] ? 1 : -1;
+
+    layout.pegs.forEach((peg, pegIndex) => {
+        if (Math.abs(peg.y - drop.y) > layout.rowSpacing * 0.82) return;
+        const dx = drop.x - peg.x;
+        const dy = drop.y - peg.y;
+        const distSq = (dx * dx) + (dy * dy);
+        if (distSq >= influenceRadiusSq) return;
+
+        const dist = Math.max(0.001, Math.sqrt(distSq));
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const overlap = influenceRadius - dist;
+        const approachSpeed = (drop.vx * nx) + (drop.vy * ny);
+
+        drop.x += nx * overlap * 0.52;
+        drop.y += ny * overlap * 0.3;
+
+        if (approachSpeed < 0) {
+            drop.vx -= approachSpeed * nx * (1 + physics.pegBounce);
+            drop.vy -= approachSpeed * ny * (1 + (physics.pegBounce * 0.35));
+        }
+
+        drop.vx += steeringDirection * overlap * physics.pegSlideBoost * frameScale;
+        drop.vy += Math.max(0, -ny) * overlap * physics.pegFallBoost * frameScale;
+
+        if (overlap > strongestImpact) {
+            strongestImpact = overlap;
+            impactedPegIndex = pegIndex;
+        }
+    });
+
+    if (impactedPegIndex >= 0 && drop.lastPegIndex !== impactedPegIndex) {
+        drop.lastPegIndex = impactedPegIndex;
+        animatePlinkoPegImpact(impactedPegIndex);
+        playPlinkoPegCollisionSound((Math.abs(drop.vx) + Math.abs(drop.vy)) / 90);
+    } else if (impactedPegIndex < 0) {
+        drop.lastPegIndex = -1;
+    }
 }
 
 function animatePlinkoDrop(rows, dropResults, callback) {
@@ -6911,18 +6916,22 @@ function animatePlinkoDrop(rows, dropResults, callback) {
     const totalDrops = Array.isArray(dropResults) ? dropResults.length : 0;
     const drops = (Array.isArray(dropResults) ? dropResults : []).map((drop, idx) => createPlinkoRigidBody(drop, idx, layout));
     const physics = {
-        guideSpeedBase: 7.2,
-        guideSpeedEdgeBoost: 1.4,
-        followStrength: 0.145,
-        damping: 0.9,
-        verticalBias: 0.38,
+        gravity: 0.22,
+        lanePull: 0.023,
+        lanePullFinal: 0.036,
+        laneDamping: 0.989,
+        descentAssist: 0.018,
+        pegBuffer: 3.1,
+        pegBounce: 0.82,
+        pegSlideBoost: 0.045,
+        pegFallBoost: 0.026,
+        wallBounce: 0.58,
         settleRange: 18
     };
 
     ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball" style="left:${drop.x}px; top:${drop.y}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div>`).join('');
     drops.forEach((drop, idx) => {
         drop.el = document.getElementById(`plinko-ball-${idx}`);
-        drop.pathProgress = 0;
         drop.edgeDistance = Math.abs((drop.targetBucket - (rows / 2)) / Math.max(1, rows / 2));
     });
 
@@ -6944,7 +6953,7 @@ function animatePlinkoDrop(rows, dropResults, callback) {
                 drop.settleElapsed += deltaSeconds;
                 const settleProgress = Math.min(1, drop.settleElapsed / 0.2);
                 const settleEase = easeOutBounce(settleProgress);
-                const settledX = layout.binCenters[drop.targetBucket] ?? drop.x;
+                const settledX = drop.trajectory?.finalTarget?.x ?? layout.binCenters[drop.targetBucket] ?? drop.x;
                 const settledY = layout.bottomY;
                 const settleLift = (1 - settleEase) * 5.5;
                 drop.x += (settledX - drop.x) * Math.min(1, deltaSeconds * 14);
@@ -6968,38 +6977,39 @@ function animatePlinkoDrop(rows, dropResults, callback) {
                 return;
             }
 
-            const guidePointCount = drop.trajectory.guidePoints.length;
-            if (!guidePointCount) {
-                drop.landing = true;
-                drop.settleElapsed = 0;
-                return;
-            }
-
-            const guideSpeed = physics.guideSpeedBase + (drop.edgeDistance * physics.guideSpeedEdgeBoost);
-            drop.pathProgress = Math.min(guidePointCount - 1, drop.pathProgress + (deltaSeconds * guideSpeed));
-            const target = getPlinkoGuidePointSample(drop.trajectory, drop.pathProgress);
+            const frameScale = deltaSeconds * 60;
+            const target = getPlinkoSteeringTarget(drop);
             if (!target) {
                 drop.landing = true;
                 drop.settleElapsed = 0;
                 return;
             }
 
-            const dx = target.x - drop.x;
-            const dy = target.y - drop.y;
-            drop.vx += dx * (physics.followStrength * (0.82 + (drop.edgeDistance * 0.28)));
-            drop.vy += (dy * physics.followStrength) + physics.verticalBias;
-            drop.vx *= physics.damping;
-            drop.vy *= physics.damping;
-            drop.x += drop.vx;
-            drop.y += drop.vy;
+            const targetDx = target.x - drop.x;
+            const targetDy = target.y - drop.y;
+            const lanePull = drop.currentRow >= drop.path.length ? physics.lanePullFinal : physics.lanePull;
 
-            if (target.pegIndex >= 0 && drop.lastPegIndex !== target.pegIndex && Math.abs(drop.x - target.x) < 2.6 && Math.abs(drop.y - target.y) < 2.6) {
-                drop.lastPegIndex = target.pegIndex;
-                animatePlinkoPegImpact(target.pegIndex);
-                playPlinkoPegCollisionSound((Math.abs(drop.vx) + Math.abs(drop.vy)) / 90);
+            drop.vx += targetDx * lanePull * (0.86 + (drop.edgeDistance * 0.22)) * frameScale;
+            drop.vy += (physics.gravity + (Math.max(-10, Math.min(10, targetDy)) * physics.descentAssist)) * frameScale;
+
+            applyPlinkoPegDeflection(drop, layout, physics, frameScale);
+
+            drop.vx *= Math.pow(physics.laneDamping, frameScale);
+            drop.vy *= Math.pow(physics.laneDamping, frameScale * 0.52);
+            drop.x += drop.vx * frameScale;
+            drop.y += drop.vy * frameScale;
+
+            const leftBound = layout.wallPadding;
+            const rightBound = layout.boardWidth - layout.wallPadding;
+            if (drop.x < leftBound) {
+                drop.x = leftBound;
+                drop.vx = Math.abs(drop.vx) * physics.wallBounce;
+            } else if (drop.x > rightBound) {
+                drop.x = rightBound;
+                drop.vx = -Math.abs(drop.vx) * physics.wallBounce;
             }
 
-            if (drop.pathProgress >= guidePointCount - 1 && Math.abs(drop.y - layout.bottomY) <= physics.settleRange) {
+            if (drop.currentRow >= drop.path.length && Math.abs(drop.y - layout.bottomY) <= physics.settleRange) {
                 drop.landing = true;
                 drop.settleElapsed = 0;
             }
