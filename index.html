@@ -6848,6 +6848,43 @@ function reflectVelocity(vx, vy, nx, ny, restitution) {
     };
 }
 
+let plinkoAudioContext = null;
+let plinkoLastPegSoundAt = 0;
+function playPlinkoPegCollisionSound(intensity = 1) {
+    if (typeof window === 'undefined') return;
+    const now = Date.now();
+    if (now - plinkoLastPegSoundAt < 28) return;
+    plinkoLastPegSoundAt = now;
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    try {
+        if (!plinkoAudioContext) plinkoAudioContext = new AudioCtx();
+        const ctx = plinkoAudioContext;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const gain = ctx.createGain();
+        const osc = ctx.createOscillator();
+        const hitStrength = Math.max(0.2, Math.min(1.2, Number(intensity) || 0.6));
+        const startTime = ctx.currentTime;
+        const duration = 0.045;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880 + (hitStrength * 180), startTime);
+        osc.frequency.exponentialRampToValueAtTime(540 + (hitStrength * 80), startTime + duration);
+        gain.gain.setValueAtTime(0.0001, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.018 * hitStrength, startTime + 0.004);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+    } catch (err) {
+        // Ignore audio errors to avoid interrupting gameplay.
+    }
+}
+
 function resolveGuidedPlinkoPegCollision(body, peg, target, deltaSeconds) {
     const targetDistanceScale = getPlinkoTargetDistanceScale(body.layout, body.targetBucket);
     const dx = body.x - peg.x;
@@ -6867,12 +6904,13 @@ function resolveGuidedPlinkoPegCollision(body, peg, target, deltaSeconds) {
     body.vy = Math.min(reflected.y * 0.82, -9);
 
     const pegKickDirection = Math.sign((body.path[peg.row] ? 1 : -1) || normal.x || 1);
-    body.vx += pegKickDirection * (0.8 + (targetDistanceScale * 0.7));
+    body.vx += pegKickDirection * (0.35 + (targetDistanceScale * 0.3));
 
     const targetPullX = clampMagnitude((target.x - body.x) * (0.022 + (targetDistanceScale * 0.03)), 0.9 + (targetDistanceScale * 1.4));
     const targetPullY = clampMagnitude((target.y - body.y) * 0.095, 5.2);
     body.vx += targetPullX * deltaSeconds * 60;
     body.vy += targetPullY * deltaSeconds * 60;
+    playPlinkoPegCollisionSound((Math.abs(body.vx) + Math.abs(body.vy)) / 90);
 
     return true;
 }
