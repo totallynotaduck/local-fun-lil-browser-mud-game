@@ -7982,8 +7982,8 @@ function generateMerchantItems() {
         let item;
         let price;
         
-        if (rarityRoll < 0.0005 && uniqueItems.length > 0) {
-            // 0.05% chance for unique
+        if (rarityRoll < 0.01 && uniqueItems.length > 0) {
+            // 1% chance for unique
             item = pick(uniqueItems);
             price = getVendorPriceForRarity('unique');
         } else if (rarityRoll < 0.06 && legendaryItems.length > 0) {
