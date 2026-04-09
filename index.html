@@ -225,11 +225,11 @@
         .plinko-board-wrap { position: relative; background: radial-gradient(circle at top, rgba(30, 50, 95, 0.75), rgba(7, 9, 18, 0.96)); border: 1px solid #2d3f71; border-radius: 12px; padding: 20px 14px 16px; overflow: hidden; box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.45); }
         .plinko-board { position: relative; width: 100%; min-height: 600px; }
         .plinko-peg { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(180deg, #f4f7ff, #8295d1); box-shadow: 0 0 8px rgba(180, 205, 255, 0.55); transform: translate(-50%, -50%); }
-        .plinko-ball { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #9ec8ff 35%, #4678e8 68%, #284bb1 100%); box-shadow: 0 0 12px rgba(114, 171, 255, 0.72); transform: translate(-50%, -50%) scale(1); z-index: 3; will-change: left, top, transform; }
+        .plinko-ball { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #9ec8ff 35%, #4678e8 68%, #284bb1 100%); box-shadow: 0 0 10px rgba(114, 171, 255, 0.68); transform: translate(-50%, -50%) scale(1); z-index: 3; will-change: left, top, transform; }
         .plinko-ball.drop-win { box-shadow: 0 0 22px rgba(255, 215, 0, 0.9); }
         .plinko-ball.drop-loss { box-shadow: 0 0 10px rgba(120, 160, 255, 0.45); }
         .plinko-bins { display: grid; gap: 6px; align-items: end; margin-top: 10px; }
-        .plinko-bin { min-height: 48px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.82em; color: #fff; box-shadow: inset 0 -8px 14px rgba(0,0,0,0.22); }
+        .plinko-bin { min-height: 48px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; padding: 0 2px; font-weight: bold; font-size: clamp(0.5rem, 1.35vw, 0.82rem); line-height: 1; text-align: center; white-space: nowrap; overflow: hidden; color: #fff; box-shadow: inset 0 -8px 14px rgba(0,0,0,0.22); }
         .plinko-bin.active { outline: 2px solid #fff; transform: translateY(-3px); }
         .plinko-history { display: flex; flex-wrap: wrap; gap: 8px; }
         .plinko-history-chip { padding: 6px 8px; border-radius: 999px; background: #111; border: 1px solid #333; font-size: 0.76em; }
@@ -6530,6 +6530,15 @@ function getPlinkoBinColor(multiplier, risk) {
     return 'linear-gradient(180deg, #62708a, #303746)';
 }
 
+function formatPlinkoBinLabel(multiplier, compact = false) {
+    const numericMultiplier = Number(multiplier) || 0;
+    if (!compact) return `${numericMultiplier}x`;
+    if (numericMultiplier >= 100) return `${Math.round(numericMultiplier)}x`;
+    if (numericMultiplier >= 10) return `${numericMultiplier.toFixed(1).replace(/\.0$/, '')}x`;
+    if (numericMultiplier >= 1) return `${numericMultiplier.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+    return `${numericMultiplier.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
+
 function formatPlinkoCurrencyLabel(currency) {
     return currency === 'soulGems' ? 'Soul Gems' : 'Gold';
 }
@@ -6558,6 +6567,7 @@ function renderPlinko() {
     const ballCount = Math.max(1, Math.min(25, Math.floor(Number(w.plinkoBallCount) || 1)));
     const balance = getPlinkoBalance(currency);
     const multipliers = getPlinkoRiskMultipliers(rows, risk);
+    const useCompactBinLabels = typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches;
     const boardHeight = 70 + (rows * 30);
     const history = Array.isArray(w.plinkoHistory) ? w.plinkoHistory.slice(-8).reverse() : [];
     const lastResult = w.plinkoResult;
@@ -6612,7 +6622,7 @@ function renderPlinko() {
         <div class="plinko-board-wrap">
             <div id="plinko-board" class="plinko-board" style="min-height:${boardHeight}px"></div>
             <div id="plinko-bins" class="plinko-bins" style="grid-template-columns: repeat(${rows + 1}, minmax(0, 1fr));">
-                ${multipliers.map((multiplier, idx) => `<div id="plinko-bin-${idx}" class="plinko-bin" style="background:${getPlinkoBinColor(multiplier, risk)};">${multiplier}x</div>`).join('')}
+                ${multipliers.map((multiplier, idx) => `<div id="plinko-bin-${idx}" class="plinko-bin" style="background:${getPlinkoBinColor(multiplier, risk)};" title="${multiplier}x">${formatPlinkoBinLabel(multiplier, useCompactBinLabels)}</div>`).join('')}
             </div>
         </div>
     </div>`;
@@ -6774,7 +6784,7 @@ function createPlinkoRigidBody(drop, idx, layout, rows, totalDrops = 1) {
         y: layout.startY - (idx * 8),
         vx: openingBias * multiDropSoftening,
         vy: 10 + (idx * 2),
-        radius: 6,
+        radius: 4,
         bucket: null,
         multiplier: 0,
         payout: 0,
@@ -6840,20 +6850,10 @@ function resolvePlinkoFloorCollision(body, layout, physics) {
     if (body.y + body.radius < floorY) return false;
 
     body.y = floorY - body.radius;
-    const bouncedVy = -Math.abs(body.vy) * physics.floorRestitution;
-    body.vy = Math.abs(bouncedVy) < physics.settleSpeed ? 0 : bouncedVy;
-    body.vx *= physics.floorFriction;
-
-    if (Math.abs(body.vy) <= physics.settleSpeed && Math.abs(body.vx) <= physics.settleSpeed) {
-        body.settleTimer += physics.dt;
-        if (body.settleTimer >= 0.12) {
-            body.vx = 0;
-            body.vy = 0;
-            body.settled = true;
-        }
-    } else {
-        body.settleTimer = 0;
-    }
+    body.bucket = getPlinkoBucketFromX(layout, body.x);
+    body.vx = 0;
+    body.vy = 0;
+    body.settled = true;
     return true;
 }
 
@@ -6888,13 +6888,10 @@ function animatePlinkoDrop(rows, dropResults, callback) {
         airDrag: 0.996,
         pegRestitution: 0.84,
         wallRestitution: 0.72,
-        floorRestitution: 0.38,
-        floorFriction: 0.84,
         tangentDamping: 0.992,
         horizontalJitter: 4.5 * multiDropSoftening,
         maxSpeedX: 230,
         maxSpeedY: 980,
-        settleSpeed: 26,
         dt: 1 / 60
     };
 
@@ -6969,7 +6966,6 @@ function animatePlinkoDrop(rows, dropResults, callback) {
             drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
 
             if (drop.settled) {
-                drop.bucket = getPlinkoBucketFromX(layout, drop.x);
                 const bin = document.getElementById(`plinko-bin-${drop.bucket}`);
                 if (bin) bin.classList.add('active');
             }
