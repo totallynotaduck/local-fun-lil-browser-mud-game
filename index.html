@@ -224,8 +224,8 @@
         .plinko-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.82em; color: #888; }
         .plinko-board-wrap { position: relative; background: radial-gradient(circle at top, rgba(30, 50, 95, 0.75), rgba(7, 9, 18, 0.96)); border: 1px solid #2d3f71; border-radius: 12px; padding: 20px 14px 16px; overflow: hidden; box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.45); }
         .plinko-board { position: relative; width: 100%; min-height: 600px; }
-        .plinko-peg { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(180deg, #f4f7ff, #8295d1); box-shadow: 0 0 8px rgba(180, 205, 255, 0.55); transform: translate(-50%, -50%); }
-        .plinko-ball { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #9ec8ff 35%, #4678e8 68%, #284bb1 100%); box-shadow: 0 0 10px rgba(114, 171, 255, 0.68); transform: translate(-50%, -50%) scale(1); z-index: 3; will-change: left, top, transform; }
+        .plinko-peg { position: absolute; border-radius: 50%; background: linear-gradient(180deg, #f4f7ff, #8295d1); box-shadow: 0 0 8px rgba(180, 205, 255, 0.55); transform: translate(-50%, -50%); }
+        .plinko-ball { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #9ec8ff 35%, #4678e8 68%, #284bb1 100%); box-shadow: 0 0 8px rgba(114, 171, 255, 0.68); transform: translate(-50%, -50%) scale(1); z-index: 3; will-change: left, top, transform; }
         .plinko-ball.drop-win { box-shadow: 0 0 22px rgba(255, 215, 0, 0.9); }
         .plinko-ball.drop-loss { box-shadow: 0 0 10px rgba(120, 160, 255, 0.45); }
         .plinko-bins { display: grid; gap: 6px; align-items: end; margin-top: 10px; }
@@ -6084,8 +6084,8 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
-     } else if (eventType < 99.6) {
-        // 4.6% chance: Nothing or minor heal (remainder before rare events)
+     } else if (eventType < 99.4) {
+        // 4.4% chance: Nothing or minor heal (remainder before rare events)
         if (Math.random() < 0.5) {
             const healAmt = Math.floor(p.maxHp * 0.1);
             p.hp = Math.min(p.maxHp, p.hp + healAmt);
@@ -6093,6 +6093,21 @@ function generateWanderingEvent() {
         } else {
             addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: Uneventful passage.`, 'info');
         }
+    } else if (eventType < 99.6) {
+        // 0.2% chance: Slot Machine encounter
+        w.slotMachineActive = true;
+        // Random rarity: silver (50%), gold (30%), diamond (20%)
+        const rarityRand = Math.random() * 100;
+        w.slotMachineRarity = rarityRand < 50 ? 'silver' : rarityRand < 80 ? 'gold' : 'diamond';
+        w.slotMachineLastResults = null;
+        w.slotMachineBet = 0;
+        w.slotMachineFreeSpins = 0;
+        w.slotMachineAutoBetActive = false;
+        w.slotMachineSpinning = false;
+        w.slotMachineJackpots = { minor: false, major: false, grand: false };
+        w.slotMachineBonusActive = false;
+        addWanderingLog(`Event ${w.currentEvent}/${w.totalEvents}: The Apostles of Fate have presented you with a slot machine. Test your luck!`, 'reward');
+        showScreen('wandering');
     } else if (eventType < 99.8) {
         // 0.2% chance: Plinko encounter
         w.plinkoActive = true;
@@ -6568,7 +6583,6 @@ function renderPlinko() {
     const balance = getPlinkoBalance(currency);
     const multipliers = getPlinkoRiskMultipliers(rows, risk);
     const useCompactBinLabels = typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches;
-    const boardHeight = 70 + (rows * 30);
     const history = Array.isArray(w.plinkoHistory) ? w.plinkoHistory.slice(-8).reverse() : [];
     const lastResult = w.plinkoResult;
     const autoBetActive = !!w.plinkoAutoBetActive;
@@ -6620,8 +6634,10 @@ function renderPlinko() {
     html += `<div class="plinko-panel">
         <div class="section-title" style="margin-top:0;color:#7ab5ff;">Fate Board</div>
         <div class="plinko-board-wrap">
-            <div id="plinko-board" class="plinko-board" style="min-height:${boardHeight}px"></div>
-            <div id="plinko-bins" class="plinko-bins" style="grid-template-columns: repeat(${rows + 1}, minmax(0, 1fr));">
+            <div id="plinko-board-scale" style="width:min(100%, 400px); margin:0 auto;">
+                <div id="plinko-board" class="plinko-board"></div>
+            </div>
+            <div id="plinko-bins" class="plinko-bins" style="grid-template-columns: repeat(${rows + 1}, minmax(0, 1fr)); max-width:min(100%, 400px); margin:10px auto 0;">
                 ${multipliers.map((multiplier, idx) => `<div id="plinko-bin-${idx}" class="plinko-bin" style="background:${getPlinkoBinColor(multiplier, risk)};" title="${multiplier}x">${formatPlinkoBinLabel(multiplier, useCompactBinLabels)}</div>`).join('')}
             </div>
         </div>
@@ -6637,63 +6653,200 @@ function renderPlinko() {
     drawPlinkoBoard(rows, risk, lastResult);
 }
 
-function drawPlinkoBoard(rows, risk, lastResult = null) {
-    const board = document.getElementById('plinko-board');
-    if (!board) return;
-    const layout = getPlinkoLayoutMetrics(rows);
-    const centerX = layout.centerX;
-    const spacingX = layout.spacingX;
-    const ballSize = spacingX * 0.25;
-    let html = '';
+function getPlinkoLayoutMetrics(rows) {
+    const boardSize = 400;
+    const binCount = rows + 1;
+    const sidePadding = 30;
+    const topY = 34;
+    const bottomY = 334;
+    const startY = 18;
+    const centerX = boardSize / 2;
+    const spacingX = (boardSize - (sidePadding * 2)) / rows;
+    const rowSpacing = (bottomY - topY) / rows;
+    const pegDiameter = 12;
+    const ballDiameter = 8;
+    const wallPadding = 10;
+    const binWidth = (boardSize - (sidePadding * 2)) / binCount;
+    const binCenters = Array.from({ length: binCount }, (_, idx) => sidePadding + (binWidth * idx) + (binWidth / 2));
+    const pegs = [];
 
     for (let row = 0; row < rows; row++) {
         const pegCount = row + 1;
         const startX = centerX - ((pegCount - 1) * spacingX / 2);
-        const y = layout.topY + ((row + 1) * layout.rowSpacing);
+        const y = topY + (row * rowSpacing);
         for (let peg = 0; peg < pegCount; peg++) {
-            html += `<div class="plinko-peg" style="left:${startX + (peg * spacingX)}px; top:${y}px"></div>`;
+            pegs.push({
+                x: startX + (peg * spacingX),
+                y,
+                row,
+                col: peg,
+                radius: pegDiameter / 2
+            });
         }
     }
 
-    html += `<div id="plinko-ball-layer"><div id="plinko-ball" class="plinko-ball${lastResult && lastResult.profit > 0 ? ' drop-win' : ' drop-loss'}" style="left:${centerX}px; top:${layout.startY}px; width:${ballSize}px; height:${ballSize}px;"></div></div>`;
-    board.innerHTML = html;
-}
-
-function getPlinkoLayoutMetrics(rows) {
-    const board = document.getElementById('plinko-board');
-    const bins = document.getElementById('plinko-bins');
-    const boardWidth = board?.clientWidth || 720;
-    const boardHeight = board?.clientHeight || (70 + (rows * 30));
-    const boardRect = board?.getBoundingClientRect();
-    const binCenters = bins && boardRect
-        ? Array.from(bins.children).map(bin => {
-            const rect = bin.getBoundingClientRect();
-            return (rect.left - boardRect.left) + (rect.width / 2);
-        })
-        : [];
-
-    const spacingX = binCenters.length === rows + 1
-        ? (binCenters[binCenters.length - 1] - binCenters[0]) / Math.max(1, rows)
-        : Math.min(40, Math.max(24, (boardWidth - 72) / Math.max(2, rows)));
-    const centerX = binCenters.length === rows + 1
-        ? (binCenters[0] + binCenters[binCenters.length - 1]) / 2
-        : boardWidth / 2;
-    const topY = 22;
-    const bottomY = Math.max(topY + (rows * 24), boardHeight - 22);
-    const rowSpacing = (bottomY - topY) / Math.max(1, rows + 1);
-    const startY = Math.max(10, topY - (rowSpacing * 0.9));
-
     return {
-        boardWidth,
-        boardHeight,
+        boardWidth: boardSize,
+        boardHeight: boardSize,
+        scale: 1,
         binCenters,
+        binWidth,
         spacingX,
         centerX,
+        pegDiameter,
+        ballDiameter,
+        wallPadding,
         topY,
         bottomY,
         rowSpacing,
-        startY
+        startY,
+        pegs
     };
+}
+
+function drawPlinkoBoard(rows, risk, lastResult = null) {
+    const board = document.getElementById('plinko-board');
+    if (!board) return;
+
+    const layout = getPlinkoLayoutMetrics(rows);
+    board.style.width = `${layout.boardWidth}px`;
+    board.style.height = `${layout.boardHeight}px`;
+    board.style.minHeight = `${layout.boardHeight}px`;
+
+    let html = '';
+    layout.pegs.forEach(peg => {
+        html += `<div class="plinko-peg" style="left:${peg.x}px; top:${peg.y}px; width:${layout.pegDiameter}px; height:${layout.pegDiameter}px;"></div>`;
+    });
+    html += `<div id="plinko-ball-layer"><div id="plinko-ball" class="plinko-ball${lastResult && lastResult.profit > 0 ? ' drop-win' : ' drop-loss'}" style="left:${layout.centerX}px; top:${layout.startY}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div></div>`;
+    board.innerHTML = html;
+}
+
+function createPlinkoRigidBody(drop, idx, layout) {
+    return {
+        ...drop,
+        x: layout.centerX,
+        y: layout.startY - (idx * 3),
+        vx: 0,
+        vy: 0,
+        radius: layout.ballDiameter / 2,
+        bucket: null,
+        settled: false,
+        rowStep: 0,
+        elapsed: 0,
+        path: Array.from({ length: drop.rows }, () => (Math.random() >= 0.5 ? 1 : 0)),
+        el: null
+    };
+}
+
+function getPlinkoBucketFromPath(path) {
+    return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
+}
+
+function getPlinkoBallPositionForStep(layout, path, progress) {
+    const safeProgress = Math.max(0, progress);
+    const clampedStep = Math.min(path.length, Math.floor(safeProgress));
+    const stepProgress = Math.min(1, Math.max(0, safeProgress - clampedStep));
+    const previousRights = path.slice(0, clampedStep).reduce((sum, step) => sum + (step ? 1 : 0), 0);
+    const nextStep = path[clampedStep] || 0;
+    const nextRights = previousRights + nextStep;
+    const currentX = layout.centerX + ((previousRights * 2 - clampedStep) * layout.spacingX / 2);
+    const nextX = layout.centerX + ((nextRights * 2 - (clampedStep + 1)) * layout.spacingX / 2);
+    const currentY = layout.topY + (clampedStep * layout.rowSpacing);
+    const nextY = layout.topY + ((clampedStep + 1) * layout.rowSpacing);
+
+    if (clampedStep >= path.length) {
+        const bucket = getPlinkoBucketFromPath(path);
+        return {
+            x: layout.binCenters[bucket] ?? currentX,
+            y: layout.bottomY,
+            vx: 0,
+            vy: 0
+        };
+    }
+
+    const eased = easeInOutCubic(stepProgress);
+    return {
+        x: currentX + ((nextX - currentX) * eased),
+        y: currentY + ((nextY - currentY) * eased),
+        vx: (nextX - currentX) * (nextStep ? 1 : -1),
+        vy: layout.rowSpacing
+    };
+}
+
+function animatePlinkoDrop(rows, dropResults, callback) {
+    const board = document.getElementById('plinko-board');
+    const ballLayer = document.getElementById('plinko-ball-layer');
+    if (!board || !ballLayer) {
+        callback?.([]);
+        return;
+    }
+
+    const layout = getPlinkoLayoutMetrics(rows);
+    const totalDrops = Array.isArray(dropResults) ? dropResults.length : 0;
+    const drops = (Array.isArray(dropResults) ? dropResults : []).map((drop, idx) => createPlinkoRigidBody(drop, idx, layout));
+    const rowDuration = 0.085;
+
+    ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball" style="left:${drop.x}px; top:${drop.y}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div>`).join('');
+    drops.forEach((drop, idx) => {
+        drop.el = document.getElementById(`plinko-ball-${idx}`);
+    });
+
+    let lastTimestamp = null;
+    function step(timestamp) {
+        if (lastTimestamp === null) lastTimestamp = timestamp;
+        const deltaSeconds = Math.min(0.033, Math.max(0.008, (timestamp - lastTimestamp) / 1000));
+        lastTimestamp = timestamp;
+        let unfinished = 0;
+
+        drops.forEach((drop, idx) => {
+            if (!drop.el || drop.settled) return;
+            unfinished++;
+            const dropDelay = idx * 0.045;
+            drop.elapsed += deltaSeconds;
+            if (drop.elapsed < dropDelay) return;
+
+            const localElapsed = drop.elapsed - dropDelay;
+            const progress = Math.min(rows + 1, localElapsed / rowDuration);
+            const point = getPlinkoBallPositionForStep(layout, drop.path, progress);
+            drop.x = point.x;
+            drop.y = point.y;
+            drop.vx = point.vx;
+            drop.vy = point.vy;
+
+            drop.el.style.left = `${drop.x}px`;
+            drop.el.style.top = `${drop.y}px`;
+
+            const squash = Math.min(0.18, Math.abs(drop.vy) / 140);
+            const stretchX = 1 + squash;
+            const stretchY = 1 - (squash * 0.7);
+            const tilt = Math.max(-8, Math.min(8, drop.vx / 5));
+            drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
+
+            if (progress >= rows + 1) {
+                drop.bucket = getPlinkoBucketFromPath(drop.path);
+                drop.x = layout.binCenters[drop.bucket] ?? drop.x;
+                drop.y = layout.bottomY;
+                drop.el.style.left = `${drop.x}px`;
+                drop.el.style.top = `${drop.y}px`;
+                drop.el.style.transform = 'translate(-50%, -50%) scale(1)';
+                drop.settled = true;
+                const bin = document.getElementById(`plinko-bin-${drop.bucket}`);
+                if (bin) bin.classList.add('active');
+            }
+        });
+
+        if (unfinished > 0) {
+            requestAnimationFrame(step);
+        } else {
+            callback?.(drops);
+        }
+    }
+
+    if (totalDrops === 0) {
+        callback?.([]);
+        return;
+    }
+    requestAnimationFrame(step);
 }
 
 function getElasticOut(progress) {
@@ -6731,258 +6884,6 @@ function easeOutBounce(progress) {
     }
     progress -= 2.625 / d1;
     return n1 * progress * progress + 0.984375;
-}
-
-function clampMagnitude(value, maxMagnitude) {
-    const limit = Math.max(0, Number(maxMagnitude) || 0);
-    if (limit === 0) return 0;
-    return Math.max(-limit, Math.min(limit, value));
-}
-
-function normalizeVector(x, y) {
-    const mag = Math.hypot(x, y);
-    if (mag <= 0.0001) return { x: 0, y: 1, magnitude: 0 };
-    return { x: x / mag, y: y / mag, magnitude: mag };
-}
-
-function dotProduct(ax, ay, bx, by) {
-    return (ax * bx) + (ay * by);
-}
-
-function reflectVector(vx, vy, nx, ny, restitution = 1) {
-    const dot = dotProduct(vx, vy, nx, ny);
-    return {
-        x: vx - ((1 + restitution) * dot * nx),
-        y: vy - ((1 + restitution) * dot * ny)
-    };
-}
-
-function buildPlinkoPegBodies(rows, layout) {
-    const pegs = [];
-    for (let row = 0; row < rows; row++) {
-        const pegCount = row + 1;
-        const startX = layout.centerX - ((pegCount - 1) * layout.spacingX / 2);
-        const y = layout.topY + ((row + 1) * layout.rowSpacing);
-        for (let peg = 0; peg < pegCount; peg++) {
-            pegs.push({
-                x: startX + (peg * layout.spacingX),
-                y,
-                row,
-                col: peg,
-                radius: 8
-            });
-        }
-    }
-    return pegs;
-}
-
-function createPlinkoRigidBody(drop, idx, layout, rows, totalDrops = 1) {
-    const multiDropSoftening = totalDrops > 1 ? Math.max(0.45, 1 - ((totalDrops - 1) * 0.045)) : 1;
-    const openingBias = (Math.random() - 0.5) * 8;
-    const startingOffset = (Math.random() - 0.5) * 4;
-    return {
-        ...drop,
-        x: layout.centerX + startingOffset,
-        y: layout.startY - (idx * 8),
-        vx: openingBias,
-        vy: 10 + (idx * 2),
-        radius: layout.spacingX * 0.125,
-        bucket: null,
-        multiplier: 0,
-        payout: 0,
-        profit: -drop.bet,
-        settled: false,
-        settleTimer: 0,
-        elapsed: 0,
-        lastPegRow: -1,
-        pegContacts: 0,
-        guideSoftening: multiDropSoftening,
-        trailPhase: Math.random() * Math.PI * 2,
-        el: null
-    };
-}
-
-function resolvePlinkoPegCollision(body, peg, physics) {
-    const dx = body.x - peg.x;
-    const dy = body.y - peg.y;
-    const minDist = body.radius + peg.radius;
-    const distSq = (dx * dx) + (dy * dy);
-    if (distSq >= (minDist * minDist)) return false;
-
-    const normal = normalizeVector(dx, dy || -1);
-    const penetration = minDist - Math.sqrt(Math.max(0.0001, distSq));
-    body.x += normal.x * penetration;
-    body.y += normal.y * penetration;
-
-    const velocityAlongNormal = dotProduct(body.vx, body.vy, normal.x, normal.y);
-    if (velocityAlongNormal < 0) {
-        const reflected = reflectVector(body.vx, body.vy, normal.x, normal.y, physics.pegRestitution);
-        body.vx = reflected.x * physics.tangentDamping;
-        body.vy = reflected.y;
-    }
-
-    const tangentX = -normal.y;
-    const tangentY = normal.x;
-    const tangentVel = dotProduct(body.vx, body.vy, tangentX, tangentY);
-    body.vx += tangentX * tangentVel * 0.02;
-    body.vy += tangentY * tangentVel * 0.01;
-
-    if (peg.row !== body.lastPegRow) {
-        body.lastPegRow = peg.row;
-        body.pegContacts++;
-    }
-
-    return true;
-}
-
-function resolvePlinkoWallCollision(body, layout, physics) {
-    const leftWall = 12 + body.radius;
-    const rightWall = layout.boardWidth - 12 - body.radius;
-    if (body.x < leftWall) {
-        body.x = leftWall;
-        body.vx = Math.abs(body.vx) * physics.wallRestitution;
-    } else if (body.x > rightWall) {
-        body.x = rightWall;
-        body.vx = -Math.abs(body.vx) * physics.wallRestitution;
-    }
-}
-
-function resolvePlinkoFloorCollision(body, layout, physics) {
-    const floorY = layout.bottomY + (layout.rowSpacing * 0.52);
-    if (body.y + body.radius < floorY) return false;
-
-    body.y = floorY - body.radius;
-    body.bucket = getPlinkoBucketFromX(layout, body.x);
-    body.vx = 0;
-    body.vy = 0;
-    body.settled = true;
-    return true;
-}
-
-function getPlinkoBucketFromX(layout, x) {
-    if (!Array.isArray(layout?.binCenters) || layout.binCenters.length === 0) return 0;
-    let closestIndex = 0;
-    let closestDistance = Infinity;
-    layout.binCenters.forEach((center, idx) => {
-        const distance = Math.abs(center - x);
-        if (distance < closestDistance) {
-            closestDistance = distance;
-            closestIndex = idx;
-        }
-    });
-    return closestIndex;
-}
-
-function animatePlinkoDrop(rows, dropResults, callback) {
-    const board = document.getElementById('plinko-board');
-    const ballLayer = document.getElementById('plinko-ball-layer');
-    if (!board || !ballLayer) {
-        callback?.();
-        return;
-    }
-
-    const layout = getPlinkoLayoutMetrics(rows);
-    const pegs = buildPlinkoPegBodies(rows, layout);
-    const totalDrops = Array.isArray(dropResults) ? dropResults.length : 1;
-    const multiDropSoftening = totalDrops > 1 ? Math.max(0.5, 1 - ((totalDrops - 1) * 0.05)) : 1;
-    const physics = {
-        gravity: 1850,
-        airDrag: 0.996,
-        pegRestitution: 0.76,
-        wallRestitution: 0.28,
-        tangentDamping: 0.985,
-        horizontalJitter: 1.2 * multiDropSoftening,
-        centering: 0.55,
-        maxSpeedX: 150,
-        maxSpeedY: 980,
-        dt: 1 / 60
-    };
-
-    const drops = (Array.isArray(dropResults) ? dropResults : []).map((drop, idx) => createPlinkoRigidBody(drop, idx, layout, rows, totalDrops));
-
-    ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball${drop.profit > 0 ? ' drop-win' : ' drop-loss'}" style="left:${drop.x}px; top:${drop.y}px; width:${layout.spacingX * 0.25}px; height:${layout.spacingX * 0.25}px;"></div>`).join('');
-    drops.forEach((drop, idx) => {
-        drop.el = document.getElementById(`plinko-ball-${idx}`);
-    });
-
-    drops.forEach(drop => {
-        if (drop.el) {
-            drop.el.style.left = `${drop.x}px`;
-            drop.el.style.top = `${drop.y}px`;
-        }
-    });
-
-    function stepRigidBody(body, deltaSeconds) {
-        if (body.settled) return;
-
-        body.elapsed += deltaSeconds;
-
-        const steeringVariance = Math.sin((body.elapsed * 9) + body.trailPhase) * physics.horizontalJitter * 0.08;
-        const centeringForce = clampMagnitude(((layout.centerX - body.x) / Math.max(1, layout.spacingX)) * physics.centering, physics.centering);
-        body.vx += (steeringVariance + centeringForce) * deltaSeconds * 60;
-        body.vy += physics.gravity * deltaSeconds;
-        body.vx *= Math.pow(physics.airDrag, deltaSeconds * 60);
-        body.vy *= Math.pow(physics.airDrag, deltaSeconds * 20);
-
-        body.vx = clampMagnitude(body.vx, physics.maxSpeedX);
-        body.vy = clampMagnitude(body.vy, physics.maxSpeedY);
-
-        body.x += body.vx * deltaSeconds;
-        body.y += body.vy * deltaSeconds;
-
-        resolvePlinkoWallCollision(body, layout, physics);
-
-        for (const peg of pegs) {
-            resolvePlinkoPegCollision(body, peg, physics);
-        }
-
-        resolvePlinkoFloorCollision(body, layout, physics);
-    }
-
-    let lastTimestamp = null;
-
-    function step(timestamp) {
-        if (lastTimestamp === null) lastTimestamp = timestamp;
-        const frameSeconds = Math.min(0.033, Math.max(0.008, (timestamp - lastTimestamp) / 1000));
-        lastTimestamp = timestamp;
-        let unfinished = 0;
-        drops.forEach(drop => {
-            if (drop.settled || !drop.el) return;
-            unfinished++;
-
-            if (!drop.startTime) drop.startTime = timestamp;
-            if (timestamp - drop.startTime < (drop.delay || 0)) return;
-
-            const fixedSteps = Math.max(1, Math.round(frameSeconds / physics.dt));
-            const substep = frameSeconds / fixedSteps;
-            for (let i = 0; i < fixedSteps; i++) {
-                stepRigidBody(drop, substep);
-            }
-
-            const speed = Math.hypot(drop.vx, drop.vy);
-            const squash = Math.min(0.24, speed / 1800);
-            const stretchX = 1 + squash;
-            const stretchY = 1 - (squash * 0.75);
-            drop.el.style.left = `${drop.x}px`;
-            drop.el.style.top = `${drop.y}px`;
-
-            const tilt = clampMagnitude(drop.vx / 18, 10);
-            drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
-
-            if (drop.settled) {
-                const bin = document.getElementById(`plinko-bin-${drop.bucket}`);
-                if (bin) bin.classList.add('active');
-            }
-        });
-
-        if (unfinished > 0) {
-            requestAnimationFrame(step);
-        } else {
-            callback?.(drops);
-        }
-    }
-
-    requestAnimationFrame(step);
 }
 
 function dropPlinkoBall() {
@@ -7129,6 +7030,16 @@ function togglePlinkoAutoBet() {
         }, 120);
     }
 }
+
+let plinkoResizeTimer = null;
+window.addEventListener('resize', () => {
+    const w = gameState.wandering;
+    if (!w?.active || !w.plinkoActive || w.plinkoAnimating) return;
+    clearTimeout(plinkoResizeTimer);
+    plinkoResizeTimer = setTimeout(() => {
+        drawPlinkoBoard(w.plinkoRows || 16, w.plinkoRisk || 'medium', w.plinkoResult);
+    }, 80);
+});
 
 function leavePlinkoEvent() {
     const w = gameState.wandering;
