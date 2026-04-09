@@ -224,7 +224,8 @@
         .plinko-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.82em; color: #888; }
         .plinko-board-wrap { position: relative; background: radial-gradient(circle at top, rgba(30, 50, 95, 0.75), rgba(7, 9, 18, 0.96)); border: 1px solid #2d3f71; border-radius: 12px; padding: 20px 14px 16px; overflow: hidden; box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.45); }
         .plinko-board { position: relative; width: 100%; min-height: 600px; }
-        .plinko-peg { position: absolute; border-radius: 50%; background: linear-gradient(180deg, #f4f7ff, #8295d1); box-shadow: 0 0 8px rgba(180, 205, 255, 0.55); transform: translate(-50%, -50%); }
+        .plinko-peg { position: absolute; border-radius: 50%; background: linear-gradient(180deg, #f4f7ff, #8295d1); box-shadow: 0 0 8px rgba(180, 205, 255, 0.55); transform: translate(-50%, -50%); transition: transform 0.08s ease, box-shadow 0.08s ease; }
+        .plinko-peg.impact { transform: translate(-50%, -50%) scale(1.08); box-shadow: 0 0 10px rgba(220, 232, 255, 0.8); }
         .plinko-ball { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #9ec8ff 35%, #4678e8 68%, #284bb1 100%); box-shadow: 0 0 8px rgba(114, 171, 255, 0.68); transform: translate(-50%, -50%) scale(1); z-index: 3; will-change: left, top, transform; }
         .plinko-ball.drop-win { box-shadow: 0 0 22px rgba(255, 215, 0, 0.9); }
         .plinko-ball.drop-loss { box-shadow: 0 0 10px rgba(120, 160, 255, 0.45); }
@@ -6724,10 +6725,11 @@ function drawPlinkoBoard(rows, risk, lastResult = null) {
 function createPlinkoRigidBody(drop, idx, layout) {
     const targetBucket = rollPlinkoBucket(drop.rows);
     const path = buildPlinkoPathForBucket(drop.rows, targetBucket);
+    const trajectory = buildPlinkoTrajectory(layout, path, idx);
     return {
         ...drop,
-        x: layout.centerX,
-        y: layout.startY - (idx * 3),
+        x: trajectory.start.x,
+        y: trajectory.start.y,
         vx: 0,
         vy: 0,
         radius: layout.ballDiameter / 2,
@@ -6738,15 +6740,10 @@ function createPlinkoRigidBody(drop, idx, layout) {
         elapsed: 0,
         settleElapsed: 0,
         path,
-        bounceSeed: Math.random() * Math.PI * 2,
-        wobbleSeed: Math.random() * Math.PI * 2,
-        lastPegIndex: -1,
+        trajectory,
+        segmentIndex: 0,
+        segmentElapsed: 0,
         currentRow: 0,
-        rowEntryY: layout.startY - (idx * 3),
-        targetPegIndex: 0,
-        targetExitX: layout.centerX,
-        targetExitY: layout.topY,
-        floorY: layout.bottomY,
         el: null
     };
 }
@@ -6768,84 +6765,71 @@ function buildPlinkoPathForBucket(rows, bucket) {
     return Array.from({ length: rows }, (_, idx) => (rightsAt.has(idx) ? 1 : 0));
 }
 
-function getPlinkoPegIndexForRow(row) {
-    if (row <= 0) return 0;
-    return (row * (row + 1) / 2) - 1;
-}
-
-function updatePlinkoRowTarget(body, layout) {
-    if (body.currentRow >= body.path.length) {
-        body.targetPegIndex = -1;
-        body.targetExitX = layout.binCenters[body.targetBucket] ?? layout.centerX;
-        body.targetExitY = layout.bottomY;
-        return;
-    }
-
-    const pegIndexBase = body.currentRow * (body.currentRow + 1) / 2;
-    const rowRightsBefore = body.path.slice(0, body.currentRow).reduce((sum, step) => sum + (step ? 1 : 0), 0);
-    const pegColumn = Math.max(0, Math.min(body.currentRow, rowRightsBefore));
-    const pegIndex = pegIndexBase + pegColumn;
-    const peg = layout.pegs[pegIndex];
-    const direction = body.path[body.currentRow] ? 1 : -1;
-
-    body.targetPegIndex = pegIndex;
-    body.targetExitX = (peg?.x ?? layout.centerX) + (direction * (layout.spacingX * 0.14));
-    body.targetExitY = (peg?.y ?? layout.topY) + (layout.rowSpacing * 0.72);
-    body.floorY = layout.bottomY;
-}
-
 function getPlinkoBucketFromPath(path) {
     return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
 }
 
-function getPlinkoGuideTarget(body, layout) {
-    if (body.currentRow >= body.path.length) {
-        return {
-            x: layout.binCenters[body.targetBucket] ?? layout.centerX,
-            y: layout.bottomY,
-            pegIndex: -1,
-            done: body.y >= layout.bottomY - 6
+function buildPlinkoTrajectory(layout, path, idx) {
+    const start = { x: layout.centerX, y: layout.startY - (idx * 3) };
+    const segments = [];
+    let rights = 0;
+    let currentPoint = { ...start };
+
+    for (let row = 0; row < path.length; row++) {
+        const rowRightsBefore = rights;
+        const pegColumn = Math.max(0, Math.min(row, rowRightsBefore));
+        const pegIndexBase = row * (row + 1) / 2;
+        const pegIndex = pegIndexBase + pegColumn;
+        const peg = layout.pegs[pegIndex];
+        const direction = path[row] ? 1 : -1;
+        const contactRadius = (layout.ballDiameter / 2) + (layout.pegDiameter / 2);
+        const bouncePower = 0.9 + (((row + idx) % 4) * 0.08);
+        const contactPoint = {
+            x: (peg?.x ?? currentPoint.x) - (direction * contactRadius * 0.92),
+            y: (peg?.y ?? currentPoint.y) - (contactRadius * 0.16)
         };
+        if (path[row]) rights++;
+
+        let nextPoint;
+        if (row + 1 < path.length) {
+            const nextRowRightsBefore = rights;
+            const nextPegColumn = Math.max(0, Math.min(row + 1, nextRowRightsBefore));
+            const nextPegIndexBase = (row + 1) * (row + 2) / 2;
+            const nextPegIndex = nextPegIndexBase + nextPegColumn;
+            const nextPeg = layout.pegs[nextPegIndex];
+            const nextDirection = path[row + 1] ? 1 : -1;
+            nextPoint = {
+                x: (nextPeg?.x ?? contactPoint.x) - (nextDirection * contactRadius * 0.9),
+                y: (nextPeg?.y ?? (contactPoint.y + layout.rowSpacing)) - (contactRadius * 0.14)
+            };
+        } else {
+            nextPoint = { x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? contactPoint.x, y: layout.bottomY };
+        }
+
+        const arcHeight = Math.max(12, layout.rowSpacing * (0.74 + (((row + idx) % 3) * 0.05)));
+        const duration = 0.18 + (row * 0.005) + (((row + idx) % 2) * 0.012);
+        const lingerOffset = {
+            x: contactPoint.x + (direction * (1.2 + (0.6 * bouncePower))),
+            y: contactPoint.y + (0.8 + (0.9 * bouncePower))
+        };
+
+        segments.push({
+            from: { x: currentPoint.x, y: currentPoint.y },
+            contact: contactPoint,
+            linger: lingerOffset,
+            to: nextPoint,
+            direction,
+            pegIndex,
+            duration,
+            arcHeight,
+            bouncePower,
+            row
+        });
+
+        currentPoint = { ...nextPoint };
     }
 
-    const wobble = Math.sin((body.elapsed * 9) + body.wobbleSeed) * 0.45;
-    return {
-        x: body.targetExitX + wobble,
-        y: body.targetExitY,
-        pegIndex: body.targetPegIndex,
-        done: false
-    };
-}
-
-function getPlinkoTargetDistanceScale(layout, targetBucket) {
-    const maxDistance = Math.max(1, (layout.binCenters.length - 1) / 2);
-    const centerBucket = (layout.binCenters.length - 1) / 2;
-    const distance = Math.abs((Number(targetBucket) || 0) - centerBucket);
-    return distance / maxDistance;
-}
-
-function clampMagnitude(value, maxMagnitude) {
-    const limit = Math.max(0, Number(maxMagnitude) || 0);
-    if (limit === 0) return 0;
-    return Math.max(-limit, Math.min(limit, value));
-}
-
-function normalizeVector(x, y) {
-    const magnitude = Math.hypot(x, y);
-    if (magnitude <= 0.0001) return { x: 0, y: -1 };
-    return { x: x / magnitude, y: y / magnitude };
-}
-
-function dotProduct(ax, ay, bx, by) {
-    return (ax * bx) + (ay * by);
-}
-
-function reflectVelocity(vx, vy, nx, ny, restitution) {
-    const alongNormal = dotProduct(vx, vy, nx, ny);
-    return {
-        x: vx - ((1 + restitution) * alongNormal * nx),
-        y: vy - ((1 + restitution) * alongNormal * ny)
-    };
+    return { start, segments };
 }
 
 let plinkoAudioContext = null;
@@ -6885,34 +6869,65 @@ function playPlinkoPegCollisionSound(intensity = 1) {
     }
 }
 
-function resolveGuidedPlinkoPegCollision(body, peg, target, deltaSeconds) {
-    const targetDistanceScale = getPlinkoTargetDistanceScale(body.layout, body.targetBucket);
-    const dx = body.x - peg.x;
-    const dy = body.y - peg.y;
-    const minDistance = body.radius + peg.radius;
-    const distSq = (dx * dx) + (dy * dy);
-    if (distSq >= (minDistance * minDistance)) return false;
+function animatePlinkoPegImpact(pegIndex) {
+    if (pegIndex < 0) return;
+    const pegEl = document.getElementById(`plinko-peg-${pegIndex}`);
+    if (!pegEl) return;
+    pegEl.classList.add('impact');
+    const existingTimer = Number(pegEl.dataset.impactTimer || 0);
+    if (existingTimer) clearTimeout(existingTimer);
+    const timer = window.setTimeout(() => {
+        pegEl.classList.remove('impact');
+        delete pegEl.dataset.impactTimer;
+    }, 70);
+    pegEl.dataset.impactTimer = String(timer);
+}
 
-    const normal = normalizeVector(dx, dy || -1);
-    const distance = Math.sqrt(Math.max(0.0001, distSq));
-    const penetration = minDistance - distance;
-    body.x += normal.x * penetration;
-    body.y += normal.y * penetration;
+function getPlinkoSegmentState(segment, progress) {
+    const t = Math.max(0, Math.min(1, progress));
+    const approachPhase = 0.34;
+    const lingerPhase = 0.52;
+    let x;
+    let y;
+    let xVelocity;
+    let yVelocity;
 
-    const reflected = reflectVelocity(body.vx, body.vy, normal.x, normal.y, 0.45 + (targetDistanceScale * 0.12));
-    body.vx = reflected.x * (0.58 + (targetDistanceScale * 0.16));
-    body.vy = Math.min(reflected.y * 0.82, -9);
+    if (t <= approachPhase) {
+        const localT = t / approachPhase;
+        const eased = easeInQuad(localT);
+        x = segment.from.x + ((segment.contact.x - segment.from.x) * eased);
+        y = segment.from.y + ((segment.contact.y - segment.from.y) * eased);
+        xVelocity = (segment.contact.x - segment.from.x) / Math.max(0.001, segment.duration * approachPhase);
+        yVelocity = (segment.contact.y - segment.from.y) / Math.max(0.001, segment.duration * approachPhase);
+    } else if (t <= lingerPhase) {
+        const localT = (t - approachPhase) / Math.max(0.001, lingerPhase - approachPhase);
+        const eased = easeOutCubic(localT);
+        x = segment.contact.x + ((segment.linger.x - segment.contact.x) * eased);
+        y = segment.contact.y + ((segment.linger.y - segment.contact.y) * eased);
+        xVelocity = (segment.linger.x - segment.contact.x) / Math.max(0.001, segment.duration * (lingerPhase - approachPhase));
+        yVelocity = (segment.linger.y - segment.contact.y) / Math.max(0.001, segment.duration * (lingerPhase - approachPhase));
+    } else {
+        const localT = (t - lingerPhase) / Math.max(0.001, 1 - lingerPhase);
+        const eased = easeOutQuad(localT);
+        x = segment.linger.x + ((segment.to.x - segment.linger.x) * eased);
+        const yLinear = segment.linger.y + ((segment.to.y - segment.linger.y) * eased);
+        const arc = Math.sin(Math.PI * eased) * segment.arcHeight * segment.bouncePower;
+        y = yLinear - arc;
+        xVelocity = (segment.to.x - segment.linger.x) / Math.max(0.001, segment.duration * (1 - lingerPhase));
+        yVelocity = ((segment.to.y - segment.linger.y) / Math.max(0.001, segment.duration * (1 - lingerPhase))) - (Math.cos(Math.PI * eased) * Math.PI * segment.arcHeight * segment.bouncePower / Math.max(0.001, segment.duration * (1 - lingerPhase)));
+    }
 
-    const pegKickDirection = Math.sign((body.path[peg.row] ? 1 : -1) || normal.x || 1);
-    body.vx += pegKickDirection * (0.35 + (targetDistanceScale * 0.3));
+    return {
+        x,
+        y,
+        vx: xVelocity,
+        vy: yVelocity,
+        contactProgress: t >= 0.3 && t <= 0.46
+    };
+}
 
-    const targetPullX = clampMagnitude((target.x - body.x) * (0.022 + (targetDistanceScale * 0.03)), 0.9 + (targetDistanceScale * 1.4));
-    const targetPullY = clampMagnitude((target.y - body.y) * 0.095, 5.2);
-    body.vx += targetPullX * deltaSeconds * 60;
-    body.vy += targetPullY * deltaSeconds * 60;
-    playPlinkoPegCollisionSound((Math.abs(body.vx) + Math.abs(body.vy)) / 90);
-
-    return true;
+function easeOutQuad(progress) {
+    return 1 - (1 - progress) * (1 - progress);
 }
 
 function animatePlinkoDrop(rows, dropResults, callback) {
@@ -6926,22 +6941,6 @@ function animatePlinkoDrop(rows, dropResults, callback) {
     const layout = getPlinkoLayoutMetrics(rows);
     const totalDrops = Array.isArray(dropResults) ? dropResults.length : 0;
     const drops = (Array.isArray(dropResults) ? dropResults : []).map((drop, idx) => createPlinkoRigidBody(drop, idx, layout));
-    const physics = {
-        gravity: 540,
-        airDrag: 0.989,
-        guideStrength: 15,
-        guideSpeed: 132,
-        wallRestitution: 0.34,
-        maxSpeedX: 48,
-        maxSpeedY: 138,
-        rowAdvanceThreshold: 7
-    };
-
-    drops.forEach(drop => updatePlinkoRowTarget(drop, layout));
-    drops.forEach(drop => {
-        drop.layout = layout;
-        drop.targetDistanceScale = getPlinkoTargetDistanceScale(layout, drop.targetBucket);
-    });
 
     ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball" style="left:${drop.x}px; top:${drop.y}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div>`).join('');
     drops.forEach((drop, idx) => {
@@ -6990,67 +6989,46 @@ function animatePlinkoDrop(rows, dropResults, callback) {
                 return;
             }
 
-            const target = getPlinkoGuideTarget(drop, layout);
-            const guideDx = target.x - drop.x;
-            const guideDy = target.y - drop.y;
-            const horizontalGuideFactor = 0.024 + (drop.targetDistanceScale * 0.04);
-            const horizontalGuideCap = 6 + (drop.targetDistanceScale * (physics.guideStrength - 6));
-            drop.vx += clampMagnitude(guideDx * horizontalGuideFactor, horizontalGuideCap) * deltaSeconds;
-            drop.vy += clampMagnitude(guideDy * 0.11, physics.guideSpeed) * deltaSeconds;
-            drop.vy += physics.gravity * deltaSeconds;
-            drop.vx *= Math.pow(physics.airDrag, deltaSeconds * 60);
-            drop.vy *= Math.pow(physics.airDrag, deltaSeconds * 40);
-            drop.vx = clampMagnitude(drop.vx, physics.maxSpeedX);
-            drop.vy = clampMagnitude(drop.vy, physics.maxSpeedY);
-            const substeps = 3;
-            for (let substep = 0; substep < substeps; substep++) {
-                drop.x += drop.vx * (deltaSeconds / substeps);
-                drop.y += drop.vy * (deltaSeconds / substeps);
-
-                const leftWall = layout.wallPadding + drop.radius;
-                const rightWall = layout.boardWidth - layout.wallPadding - drop.radius;
-                if (drop.x < leftWall) {
-                    drop.x = leftWall;
-                    drop.vx = Math.abs(drop.vx) * physics.wallRestitution;
-                } else if (drop.x > rightWall) {
-                    drop.x = rightWall;
-                    drop.vx = -Math.abs(drop.vx) * physics.wallRestitution;
-                }
-
-                const visibleRowStart = Math.max(0, drop.currentRow - 1);
-                const visibleRowEnd = Math.min(rows - 1, drop.currentRow + 1);
-                const pegStart = visibleRowStart === 0 ? 0 : (visibleRowStart * (visibleRowStart + 1) / 2);
-                const pegEnd = Math.min(layout.pegs.length - 1, ((visibleRowEnd + 1) * (visibleRowEnd + 2) / 2) - 1);
-                for (let pegIndex = pegStart; pegIndex <= pegEnd; pegIndex++) {
-                    const peg = layout.pegs[pegIndex];
-                    if (!peg) continue;
-                    if (resolveGuidedPlinkoPegCollision(drop, peg, target, deltaSeconds / substeps)) {
-                        drop.lastPegIndex = pegIndex;
-                    }
-                }
+            const segment = drop.trajectory.segments[drop.segmentIndex];
+            if (!segment) {
+                drop.landing = true;
+                drop.settleElapsed = 0;
+                return;
             }
 
-            if (drop.currentRow < rows && drop.y >= (drop.targetExitY - physics.rowAdvanceThreshold)) {
-                drop.currentRow++;
-                updatePlinkoRowTarget(drop, layout);
+            drop.segmentElapsed += deltaSeconds;
+            const segmentProgress = Math.min(1, drop.segmentElapsed / Math.max(0.001, segment.duration));
+            const state = getPlinkoSegmentState(segment, segmentProgress);
+            drop.x = state.x;
+            drop.y = state.y;
+            drop.vx = state.vx;
+            drop.vy = state.vy;
+
+            if (state.contactProgress && drop.lastPegIndex !== segment.pegIndex && segment.pegIndex >= 0) {
+                drop.lastPegIndex = segment.pegIndex;
+                animatePlinkoPegImpact(segment.pegIndex);
+                playPlinkoPegCollisionSound((Math.abs(drop.vx) + Math.abs(drop.vy)) / 120);
+            }
+
+            if (segmentProgress >= 1) {
+                drop.segmentIndex++;
+                drop.segmentElapsed = 0;
+                drop.currentRow = Math.min(rows, drop.segmentIndex);
+                if (drop.segmentIndex >= drop.trajectory.segments.length) {
+                    drop.landing = true;
+                    drop.settleElapsed = 0;
+                }
             }
 
             drop.el.style.left = `${drop.x}px`;
             drop.el.style.top = `${drop.y}px`;
 
             const speed = Math.hypot(drop.vx, drop.vy);
-            const squash = Math.min(0.14, speed / 160);
+            const squash = Math.min(0.16, speed / 220);
             const stretchX = 1 + squash;
             const stretchY = 1 - (squash * 0.7);
-            const tilt = Math.max(-7, Math.min(7, drop.vx * 0.35));
+            const tilt = Math.max(-10, Math.min(10, drop.vx * 0.18));
             drop.el.style.transform = `translate(-50%, -50%) rotate(${tilt.toFixed(2)}deg) scale(${stretchX.toFixed(3)}, ${stretchY.toFixed(3)})`;
-
-            if (target.done && drop.currentRow >= rows) {
-                drop.landing = true;
-                drop.settleElapsed = 0;
-                drop.vx *= 0.2;
-                drop.vy = 0;
-            }
         });
 
         if (unfinished > 0) {
