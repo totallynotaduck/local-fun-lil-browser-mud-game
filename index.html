@@ -6493,8 +6493,22 @@ function renderWandering() {
 }
 
 function getPlinkoRiskMultipliers(rows, risk) {
-    const rowCount = 16;
-    const center = rowCount / 2;
+    const rowCount = Math.max(1, Math.floor(Number(rows) || 16));
+    const binCount = getPlinkoBinCount(rowCount);
+    if (rowCount === 16 && binCount === 18) {
+        if (risk === 'low') {
+            return [2.4, 2, 1.7, 1.4, 1.2, 1, 0.85, 0.65, 0.78, 0.78, 0.65, 0.85, 1, 1.2, 1.4, 1.7, 2, 2.4];
+        }
+        if (risk === 'medium') {
+            return [5.5, 4.5, 3.5, 2.8, 2.1, 1.55, 1.05, 0.6, 0.44, 0.44, 0.6, 1.05, 1.55, 2.1, 2.8, 3.5, 4.5, 5.5];
+        }
+    }
+
+    if (risk === 'high' && rowCount === 16 && binCount === 18) {
+        return [1000, 120, 30, 10, 4, 1.5, 0.6, 0.2, 0.35, 0.35, 0.2, 0.6, 1.5, 4, 10, 30, 120, 1000];
+    }
+
+    const center = (binCount - 1) / 2;
     const targetRoi = 0.8;
     const riskConfig = {
         low: { floor: 0.55, edgeBoost: 1.55, exponent: 1.15 },
@@ -6502,16 +6516,14 @@ function getPlinkoRiskMultipliers(rows, risk) {
         high: { floor: 0.12, edgeBoost: 14, exponent: 2.3 }
     }[risk] || { floor: 0.28, edgeBoost: 4.2, exponent: 1.65 };
 
-    const rawMultipliers = Array.from({ length: rowCount + 1 }, (_, idx) => {
+    const rawMultipliers = Array.from({ length: binCount }, (_, idx) => {
         const distance = Math.abs(idx - center) / Math.max(1, center);
         return riskConfig.floor + (riskConfig.edgeBoost * Math.pow(distance, riskConfig.exponent));
     });
 
-    const binomialProbabilities = Array.from({ length: rowCount + 1 }, (_, successes) => {
-        return combination(rowCount, successes) / Math.pow(2, rowCount);
-    });
+    const bucketProbabilities = getPlinkoBucketProbabilities(rowCount);
 
-    const currentExpectedValue = rawMultipliers.reduce((sum, multiplier, idx) => sum + (multiplier * binomialProbabilities[idx]), 0) || 1;
+    const currentExpectedValue = rawMultipliers.reduce((sum, multiplier, idx) => sum + (multiplier * (bucketProbabilities[idx] || 0)), 0) || 1;
     const scaleFactor = targetRoi / currentExpectedValue;
 
     return rawMultipliers.map(multiplier => {
@@ -6544,6 +6556,25 @@ function getPlinkoBinColor(multiplier, risk) {
         ? 'linear-gradient(180deg, #65d68d, #237a43)'
         : 'linear-gradient(180deg, #5bc8ff, #2351b5)';
     return 'linear-gradient(180deg, #62708a, #303746)';
+}
+
+function getPlinkoBinCount(rows) {
+    return Math.max(2, Math.floor(Number(rows) || 16) + 2);
+}
+
+function getPlinkoBucketProbabilities(rows) {
+    const rowCount = Math.max(1, Math.floor(Number(rows) || 16));
+    const binCount = getPlinkoBinCount(rowCount);
+    const probabilities = Array(binCount).fill(0);
+    const branchProbability = 1 / Math.pow(2, rowCount + 1);
+
+    for (let entryLane = 0; entryLane < 2; entryLane++) {
+        for (let rights = 0; rights <= rowCount; rights++) {
+            probabilities[entryLane + rights] += combination(rowCount, rights) * branchProbability;
+        }
+    }
+
+    return probabilities;
 }
 
 function formatPlinkoBinLabel(multiplier, compact = false) {
@@ -6582,6 +6613,7 @@ function renderPlinko() {
     const currency = w.plinkoCurrency === 'soulGems' ? 'soulGems' : 'gold';
     const ballCount = Math.max(1, Math.min(25, Math.floor(Number(w.plinkoBallCount) || 1)));
     const balance = getPlinkoBalance(currency);
+    const binCount = getPlinkoBinCount(rows);
     const multipliers = getPlinkoRiskMultipliers(rows, risk);
     const useCompactBinLabels = typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches;
     const history = Array.isArray(w.plinkoHistory) ? w.plinkoHistory.slice(-8).reverse() : [];
@@ -6638,7 +6670,7 @@ function renderPlinko() {
             <div id="plinko-board-scale" style="width:min(100%, 400px); margin:0 auto;">
                 <div id="plinko-board" class="plinko-board"></div>
             </div>
-            <div id="plinko-bins" class="plinko-bins" style="grid-template-columns: repeat(${rows + 1}, minmax(0, 1fr)); max-width:min(100%, 400px); margin:10px auto 0;">
+            <div id="plinko-bins" class="plinko-bins" style="grid-template-columns: repeat(${binCount}, minmax(0, 1fr)); max-width:min(100%, 400px); margin:10px auto 0;">
                 ${multipliers.map((multiplier, idx) => `<div id="plinko-bin-${idx}" class="plinko-bin" style="background:${getPlinkoBinColor(multiplier, risk)};" title="${multiplier}x">${formatPlinkoBinLabel(multiplier, useCompactBinLabels)}</div>`).join('')}
             </div>
         </div>
@@ -6656,23 +6688,24 @@ function renderPlinko() {
 
 function getPlinkoLayoutMetrics(rows) {
     const boardSize = 400;
-    const binCount = rows + 1;
+    const binCount = getPlinkoBinCount(rows);
     const sidePadding = 28;
     const topY = 34;
     const bottomY = 334;
     const startY = 18;
     const centerX = boardSize / 2;
-    const spacingX = (boardSize - (sidePadding * 2)) / rows;
+    const spacingX = (boardSize - (sidePadding * 2)) / Math.max(1, rows + 2);
     const rowSpacing = (bottomY - topY) / rows;
     const pegDiameter = 5;
     const ballDiameter = 9;
     const wallPadding = 18;
     const binWidth = (boardSize - (sidePadding * 2)) / binCount;
     const binCenters = Array.from({ length: binCount }, (_, idx) => sidePadding + (binWidth * idx) + (binWidth / 2));
+    const entryLanes = [centerX - (spacingX / 2), centerX + (spacingX / 2)];
     const pegs = [];
 
     for (let row = 0; row < rows; row++) {
-        const pegCount = row + 1;
+        const pegCount = row + 3;
         const startX = centerX - ((pegCount - 1) * spacingX / 2);
         const y = topY + (row * rowSpacing);
         for (let peg = 0; peg < pegCount; peg++) {
@@ -6692,6 +6725,7 @@ function getPlinkoLayoutMetrics(rows) {
         scale: 1,
         binCenters,
         binWidth,
+        entryLanes,
         spacingX,
         centerX,
         pegDiameter,
@@ -6723,9 +6757,10 @@ function drawPlinkoBoard(rows, risk, lastResult = null) {
 }
 
 function createPlinkoRigidBody(drop, idx, layout) {
-    const targetBucket = rollPlinkoBucket(drop.rows);
-    const path = buildPlinkoPathForBucket(drop.rows, targetBucket);
-    const trajectory = buildPlinkoTrajectory(layout, path, idx);
+    const path = Array.from({ length: Math.max(1, Math.floor(Number(drop.rows) || 16)) }, () => (Math.random() >= 0.5 ? 1 : 0));
+    const entryLane = Math.random() >= 0.5 ? 1 : 0;
+    const targetBucket = entryLane + getPlinkoBucketFromPath(path);
+    const trajectory = buildPlinkoTrajectory(layout, path, entryLane, idx);
     return {
         ...drop,
         x: trajectory.start.x,
@@ -6740,6 +6775,7 @@ function createPlinkoRigidBody(drop, idx, layout) {
         elapsed: 0,
         settleElapsed: 0,
         path,
+        entryLane,
         trajectory,
         currentRow: 0,
         lastPegIndex: -1,
@@ -6747,35 +6783,25 @@ function createPlinkoRigidBody(drop, idx, layout) {
     };
 }
 
-function rollPlinkoBucket(rows) {
-    let rights = 0;
-    for (let i = 0; i < rows; i++) {
-        if (Math.random() >= 0.5) rights++;
-    }
-    return rights;
-}
-
-function buildPlinkoPathForBucket(rows, bucket) {
-    const clampedBucket = Math.max(0, Math.min(rows, Math.floor(Number(bucket) || 0)));
-    const rightsAt = new Set();
-    while (rightsAt.size < clampedBucket) {
-        rightsAt.add(Math.floor(Math.random() * rows));
-    }
-    return Array.from({ length: rows }, (_, idx) => (rightsAt.has(idx) ? 1 : 0));
-}
-
 function getPlinkoBucketFromPath(path) {
     return (Array.isArray(path) ? path : []).reduce((sum, step) => sum + (step ? 1 : 0), 0);
 }
 
-function buildPlinkoTrajectory(layout, path, idx) {
-    const start = { x: layout.centerX, y: layout.startY - (idx * 3) };
+function buildPlinkoTrajectory(layout, path, entryLane, idx) {
+    const safeEntryLane = entryLane === 1 ? 1 : 0;
+    const entryX = layout.entryLanes[safeEntryLane] ?? layout.centerX;
+    const start = {
+        x: entryX + ((Math.random() - 0.5) * layout.spacingX * 0.14),
+        y: layout.startY - (idx * 3)
+    };
     let rights = 0;
 
     const rowTargets = path.map((step, row) => {
         rights += step ? 1 : 0;
         const direction = step ? 1 : -1;
-        const laneCenterX = layout.centerX + (((2 * rights) - (row + 1)) * layout.spacingX / 2);
+        const laneCount = row + 3;
+        const laneIndex = safeEntryLane + rights;
+        const laneCenterX = layout.centerX + ((laneIndex - ((laneCount - 1) / 2)) * layout.spacingX);
         const lateralBias = direction * ((layout.spacingX * 0.12) + (Math.random() * 2.4));
         const verticalBias = layout.rowSpacing * (0.5 + (Math.random() * 0.08));
         return {
@@ -6789,7 +6815,7 @@ function buildPlinkoTrajectory(layout, path, idx) {
         start,
         rowTargets,
         finalTarget: {
-            x: layout.binCenters[getPlinkoBucketFromPath(path)] ?? layout.centerX,
+            x: layout.binCenters[safeEntryLane + getPlinkoBucketFromPath(path)] ?? layout.centerX,
             y: layout.bottomY
         }
     };
@@ -6932,7 +6958,8 @@ function animatePlinkoDrop(rows, dropResults, callback) {
     ballLayer.innerHTML = drops.map((drop, idx) => `<div id="plinko-ball-${idx}" class="plinko-ball" style="left:${drop.x}px; top:${drop.y}px; width:${layout.ballDiameter}px; height:${layout.ballDiameter}px;"></div>`).join('');
     drops.forEach((drop, idx) => {
         drop.el = document.getElementById(`plinko-ball-${idx}`);
-        drop.edgeDistance = Math.abs((drop.targetBucket - (rows / 2)) / Math.max(1, rows / 2));
+        const edgeCenter = (layout.binCenters.length - 1) / 2;
+        drop.edgeDistance = Math.abs((drop.targetBucket - edgeCenter) / Math.max(1, edgeCenter));
     });
 
     let lastTimestamp = null;
